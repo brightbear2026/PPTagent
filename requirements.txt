@@ -1,0 +1,27 @@
+# PPT Agent依赖
+python-pptx==1.0.2
+pydantic==2.12.5
+requests==2.31.0
+zhipuai==2.1.5.20250825
+
+# Layer 1: 输入解析
+python-docx>=1.1.0
+openpyxl>=3.1.0
+mistune>=3.0.0
+
+# FastAPI 后端
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# JWT认证
+PyJWT>=2.8.0
+
+# 加密
+cryptography>=42.0.0
+
+# 数据库
+psycopg2-binary>=2.9.0
+
+# OpenAI兼容客户端
+openai>=1.0.0

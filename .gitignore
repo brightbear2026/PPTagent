@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Environment & secrets
+.env
+*.key
+
+# Storage
+*.db
+*.sqlite3
+storage/data/
+storage/uploads/
+storage/.master_key
+
+# Output
+output/*.pptx
+
+# Node
+node_modules/
+frontend-react/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Superpowers / temp
+.superpowers/
+
+# Claude local settings
+.claude/
+
+# Misc
+*.log
+*.txt

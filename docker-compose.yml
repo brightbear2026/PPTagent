@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ppt-agent-db
+    environment:
+      POSTGRES_DB: pptagent
+      POSTGRES_USER: pptagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pptagent_local}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pptagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ppt-agent-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://pptagent:${POSTGRES_PASSWORD:-pptagent_local}@postgres:5432/pptagent
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-dev_master_key_change_in_production}
+      JWT_SECRET: ${JWT_SECRET:-pptagent_dev_secret_change_in_production}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ppt_output:/app/output
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ppt-agent-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ppt_output:

@@ -1,0 +1,456 @@
+/* ============================================================
+   Step3Content — Three-column content editor
+   Left: page nav | Middle: editing | Right: live preview
+   ============================================================ */
+
+import React, { useState } from 'react';
+import {
+  Card, Button, Input, Select, Tag, List, Tooltip, message, Space,
+  Empty, Typography, Popconfirm,
+} from 'antd';
+import {
+  DeleteOutlined, PlusOutlined, RedoOutlined,
+  BarChartOutlined, ApartmentOutlined, ArrowLeftOutlined,
+} from '@ant-design/icons';
+import { updateStage, rerunPage } from '../../api/client';
+import type { OutlineResult, ContentResult, SlideContent, TextBlock } from '../../types';
+
+const { TextArea } = Input;
+const { Text } = Typography;
+
+interface Step3Props {
+  taskId: string;
+  content: ContentResult;
+  outline: OutlineResult | null;
+  onConfirm: () => void;
+  onBack?: () => void;
+  buildFailed?: boolean;
+}
+
+const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, onConfirm, onBack, buildFailed }) => {
+  const [slides, setSlides] = useState<SlideContent[]>(content.slides);
+  const [selectedPage, setSelectedPage] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
+  React.useEffect(() => {
+    if (buildFailed && confirmed) {
+      setConfirmed(false);
+    }
+  }, [buildFailed]);
+
+  const currentSlide = slides[selectedPage] || null;
+
+  // Suppress unused outline warning — used for page context in future
+  void outline;
+
+  // ── Mutations ──
+
+  const updateSlide = (index: number, updater: (s: SlideContent) => SlideContent) => {
+    setSlides((prev) => prev.map((s, i) => (i === index ? updater(s) : s)));
+  };
+
+  const updateTextBlock = (slideIdx: number, blockIdx: number, field: keyof TextBlock, value: any) => {
+    updateSlide(slideIdx, (s) => ({
+      ...s,
+      text_blocks: s.text_blocks.map((b, i) => (i === blockIdx ? { ...b, [field]: value } : b)),
+    }));
+  };
+
+  const addTextBlock = (slideIdx: number) => {
+    updateSlide(slideIdx, (s) => ({
+      ...s,
+      text_blocks: [...s.text_blocks, { content: '', level: 1, is_bold: false }],
+    }));
+  };
+
+  const removeTextBlock = (slideIdx: number, blockIdx: number) => {
+    updateSlide(slideIdx, (s) => ({
+      ...s,
+      text_blocks: s.text_blocks.filter((_, i) => i !== blockIdx),
+    }));
+  };
+
+  const updateTakeaway = (slideIdx: number, value: string) => {
+    updateSlide(slideIdx, (s) => ({ ...s, takeaway_message: value }));
+  };
+
+  const handleRerunPage = async (slideIdx: number) => {
+    const pageNum = slides[slideIdx].page_number;
+    try {
+      await rerunPage(taskId, pageNum);
+      message.success(`第${pageNum}页已重新生成`);
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '重跑失败');
+    }
+  };
+
+  const handleSave = async () => {
+    if (confirmed || saving) return;
+    setSaving(true);
+    try {
+      await updateStage(taskId, 'content', {
+        total_pages: slides.length,
+        failed_pages: slides.filter((s) => s.is_failed).map((s) => s.page_number),
+        slides: slides,
+      });
+      await onConfirm();
+      setConfirmed(true);
+      message.success('内容已确认，正在构建PPT...');
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Render ──
+
+  return (
+    <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 220px)' }}>
+      {/* Left: page navigation */}
+      <Card
+        style={{ width: 200, flexShrink: 0, borderRadius: 2, overflow: 'auto' }}
+        styles={{ body: { padding: 8 } }}
+        title={<span style={{ fontSize: 14, color: '#002B4E' }}>页面导航</span>}
+      >
+        <List
+          size="small"
+          dataSource={slides}
+          renderItem={(slide, idx) => (
+            <List.Item
+              onClick={() => setSelectedPage(idx)}
+              style={{
+                cursor: 'pointer',
+                background: idx === selectedPage ? '#F0EBE0' : 'transparent',
+                borderRadius: 2,
+                padding: '6px 8px',
+                marginBottom: 2,
+                borderLeft: slide.is_failed ? '3px solid #ff4d4f' : '3px solid transparent',
+              }}
+            >
+              <div style={{ width: '100%' }}>
+                <div style={{ fontSize: 12, color: '#8B9DAF', marginBottom: 2 }}>
+                  P{slide.page_number}
+                  <Tag
+                    style={{ marginLeft: 4, fontSize: 10, lineHeight: '16px', padding: '0 4px', borderRadius: 2 }}
+                    color={slide.slide_type === 'data' ? 'blue' : slide.slide_type === 'diagram' ? 'cyan' : 'default'}
+                  >
+                    {slide.slide_type}
+                  </Tag>
+                </div>
+                <div
+                  style={{ fontSize: 12, color: '#002B4E', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {slide.takeaway_message || '(空)'}
+                </div>
+              </div>
+            </List.Item>
+          )}
+        />
+      </Card>
+
+      {/* Middle: editor */}
+      <Card
+        style={{ flex: 1, borderRadius: 2, overflow: 'auto' }}
+        styles={{ body: { padding: 20 } }}
+      >
+        {currentSlide ? (
+          <>
+            {/* Takeaway */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#002B4E', display: 'block', marginBottom: 6 }}>
+                核心论点 (Takeaway)
+              </label>
+              <Input
+                value={currentSlide.takeaway_message}
+                onChange={(e) => updateTakeaway(selectedPage, e.target.value)}
+                style={{ borderRadius: 2, fontWeight: 500 }}
+              />
+            </div>
+
+            {/* Text blocks */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#002B4E' }}>
+                  文字内容
+                </label>
+                <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => addTextBlock(selectedPage)}>
+                  添加
+                </Button>
+              </div>
+
+              {currentSlide.text_blocks.map((block, bIdx) => (
+                <div
+                  key={bIdx}
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginBottom: 8,
+                    alignItems: 'flex-start',
+                    paddingLeft: block.level * 20,
+                  }}
+                >
+                  <Select
+                    value={block.level}
+                    onChange={(v) => updateTextBlock(selectedPage, bIdx, 'level', v)}
+                    style={{ width: 80, flexShrink: 0 }}
+                    size="small"
+                    options={[
+                      { label: '正文', value: 0 },
+                      { label: '要点', value: 1 },
+                      { label: '细节', value: 2 },
+                    ]}
+                  />
+                  <TextArea
+                    value={block.content}
+                    onChange={(e) => updateTextBlock(selectedPage, bIdx, 'content', e.target.value)}
+                    autoSize={{ minRows: 1, maxRows: 4 }}
+                    style={{ flex: 1, borderRadius: 2, fontSize: 13 }}
+                    placeholder="输入内容..."
+                  />
+                  <Popconfirm title="删除此条？" onConfirm={() => removeTextBlock(selectedPage, bIdx)}>
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />} style={{ flexShrink: 0, marginTop: 4 }} />
+                  </Popconfirm>
+                </div>
+              ))}
+
+              {currentSlide.text_blocks.length === 0 && (
+                <Empty description="暂无文字内容" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </div>
+
+            {/* Chart suggestion */}
+            {currentSlide.chart_suggestion && (
+              <Card
+                size="small"
+                title={
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    <BarChartOutlined style={{ marginRight: 6, color: '#005B96' }} />
+                    图表: {currentSlide.chart_suggestion.title}
+                  </span>
+                }
+                style={{ marginBottom: 12, borderRadius: 2 }}
+              >
+                <Space size={16} wrap>
+                  <Tag color="blue">{currentSlide.chart_suggestion.chart_type}</Tag>
+                  <Text style={{ fontSize: 13, color: '#5C5C5C' }}>
+                    {currentSlide.chart_suggestion.so_what}
+                  </Text>
+                </Space>
+              </Card>
+            )}
+
+            {/* Diagram spec */}
+            {currentSlide.diagram_spec && (
+              <Card
+                size="small"
+                title={
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    <ApartmentOutlined style={{ marginRight: 6, color: '#48A9E6' }} />
+                    概念图: {currentSlide.diagram_spec.title}
+                  </span>
+                }
+                style={{ marginBottom: 12, borderRadius: 2 }}
+              >
+                <Tag color="cyan">{currentSlide.diagram_spec.diagram_type}</Tag>
+              </Card>
+            )}
+
+            {/* Source note */}
+            {currentSlide.source_note && (
+              <div style={{ fontSize: 12, color: '#8B9DAF', marginTop: 8 }}>
+                来源: {currentSlide.source_note}
+              </div>
+            )}
+
+            {/* Warnings / Failed */}
+            {currentSlide.is_failed && (
+              <div style={{ color: '#ff4d4f', marginTop: 8, fontSize: 13 }}>
+                生成失败: {currentSlide.error_message}
+              </div>
+            )}
+
+            {/* Page actions */}
+            <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+              {onBack && (
+                <Button
+                  icon={<ArrowLeftOutlined />}
+                  onClick={onBack}
+                  disabled={confirmed || saving}
+                  style={{ borderRadius: 2 }}
+                >
+                  返回大纲
+                </Button>
+              )}
+              <Tooltip title="重新生成本页">
+                <Button
+                  size="small"
+                  icon={<RedoOutlined />}
+                  onClick={() => handleRerunPage(selectedPage)}
+                >
+                  重跑本页
+                </Button>
+              </Tooltip>
+              <div style={{ flex: 1 }} />
+              <Button
+                type="primary"
+                onClick={handleSave}
+                loading={saving || confirmed}
+                disabled={confirmed}
+                style={{
+                  background: '#C9A84C',
+                  borderColor: '#C9A84C',
+                  color: '#002B4E',
+                  fontWeight: 700,
+                  borderRadius: 2,
+                }}
+              >
+                确认内容，生成PPT
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Empty description="选择左侧页面进行编辑" style={{ marginTop: 80 }} />
+        )}
+      </Card>
+
+      {/* Right: live preview */}
+      <Card
+        style={{ width: 380, flexShrink: 0, borderRadius: 2, overflow: 'auto' }}
+        styles={{ body: { padding: 16 } }}
+        title={<span style={{ fontSize: 14, color: '#002B4E' }}>实时预览</span>}
+      >
+        {currentSlide ? (
+          <SlidePreview slide={currentSlide} />
+        ) : (
+          <Empty description="选择页面查看预览" style={{ marginTop: 80 }} />
+        )}
+      </Card>
+    </div>
+  );
+};
+
+// ── Slide Preview Component ──
+
+const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
+  const aspectRatio = 16 / 9;
+  const width = 348;
+  const height = width / aspectRatio;
+
+  return (
+    <div
+      style={{
+        width,
+        height,
+        background: '#fff',
+        borderRadius: 2,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
+        padding: 12,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        border: '1px solid #e8e4d9',
+      }}
+    >
+      {/* Top accent bar */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0,
+        height: 3, background: 'linear-gradient(90deg, #003D6E, #C9A84C)',
+      }} />
+
+      {/* Takeaway */}
+      <div style={{
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#003D6E',
+        marginBottom: 6,
+        lineHeight: 1.4,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+      }}>
+        {slide.takeaway_message}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: '#C9A84C', marginBottom: 6, opacity: 0.5 }} />
+
+      {/* Text blocks */}
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        {slide.text_blocks.map((block, i) => (
+          <div
+            key={i}
+            style={{
+              fontSize: block.level === 0 ? 10 : 9,
+              color: block.level === 0 ? '#2D3436' : '#5C5C5C',
+              paddingLeft: block.level * 12,
+              marginBottom: 3,
+              lineHeight: 1.4,
+              fontWeight: block.is_bold ? 600 : 400,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {block.level > 0 && (
+              <span style={{ color: '#C9A84C', marginRight: 4 }}>-</span>
+            )}
+            {block.content}
+          </div>
+        ))}
+      </div>
+
+      {/* Chart indicator */}
+      {slide.chart_suggestion && (
+        <div style={{
+          background: '#F0F5FF',
+          borderRadius: 2,
+          padding: '4px 8px',
+          marginTop: 4,
+          fontSize: 9,
+          color: '#003D6E',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}>
+          <BarChartOutlined style={{ fontSize: 10 }} />
+          {slide.chart_suggestion.title || '图表'}
+          <Tag color="blue" style={{ fontSize: 8, lineHeight: '14px', padding: '0 3px', margin: 0, marginLeft: 'auto' }}>
+            {slide.chart_suggestion.chart_type}
+          </Tag>
+        </div>
+      )}
+
+      {/* Diagram indicator */}
+      {slide.diagram_spec && (
+        <div style={{
+          background: '#F0FFFF',
+          borderRadius: 2,
+          padding: '4px 8px',
+          marginTop: 4,
+          fontSize: 9,
+          color: '#48A9E6',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}>
+          <ApartmentOutlined style={{ fontSize: 10 }} />
+          {slide.diagram_spec.title || '概念图'}
+        </div>
+      )}
+
+      {/* Source */}
+      {slide.source_note && (
+        <div style={{ fontSize: 8, color: '#8B9DAF', marginTop: 4 }}>
+          来源: {slide.source_note}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Step3Content;

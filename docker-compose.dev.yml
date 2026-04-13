@@ -1,0 +1,61 @@
+# 开发环境配置 - 支持热重载
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ppt-agent-db-dev
+    environment:
+      POSTGRES_DB: pptagent
+      POSTGRES_USER: pptagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pptagent_local}
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pptagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ppt-agent-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://pptagent:${POSTGRES_PASSWORD:-pptagent_local}@postgres:5432/pptagent
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-dev_master_key_change_in_production}
+      JWT_SECRET: ${JWT_SECRET:-pptagent_dev_secret_change_in_production}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./api:/app/api
+      - ./pipeline:/app/pipeline
+      - ./models:/app/models
+      - ./llm_client:/app/llm_client
+      - ./storage:/app/storage
+      - ./templates:/app/templates
+      - ppt_output_dev:/app/output
+    command: python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ppt-agent-frontend-dev
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata_dev:
+  ppt_output_dev:

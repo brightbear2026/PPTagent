@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+*.egg
+.pytest_cache
+.mypy_cache
+
+# 虚拟环境
+venv
+.venv
+env
+.env
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# 输出文件
+output/*.pptx
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 测试
+tests/
+test_*.py
+
+# 文档
+*.md
+!README.md
+
+# Streamlit (已弃用)
+.streamlit/
+
+# React node_modules
+frontend-react/node_modules
+frontend-react/dist
+
+# Claude Code
+.claude/
