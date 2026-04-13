@@ -201,6 +201,36 @@ class ContentFiller:
                 f"- {f}" for f in analysis.key_findings[:5]
             ))
 
+        # 原始表格数据（chart_suggestion必须引用这些真实数据）
+        table_blocks = []
+        for et in getattr(analysis, 'enriched_tables', [])[:3]:
+            t = et.original
+            if not t.headers:
+                continue
+            header_line = " | ".join(str(h) for h in t.headers[:8])
+            rows_preview = []
+            for row in t.rows[:8]:
+                cells = [str(c)[:15] if c is not None else "" for c in row[:8]]
+                rows_preview.append(" | ".join(cells))
+            summary_lines = []
+            for col, stats in et.summary.items():
+                if isinstance(stats, dict):
+                    summary_lines.append(
+                        f"  {col}: 合计={stats.get('total','')}, "
+                        f"均值={stats.get('avg','')}, "
+                        f"最大={stats.get('max','')}, 最小={stats.get('min','')}"
+                    )
+            sheet_name = t.source_sheet or "表格"
+            block = f"### {sheet_name}\n{header_line}\n" + "\n".join(rows_preview)
+            if summary_lines:
+                block += "\n统计:\n" + "\n".join(summary_lines)
+            table_blocks.append(block)
+        if table_blocks:
+            parts.append(
+                "## 原始表格数据（chart_suggestion的数据必须完全来自以下表格，禁止编造数字！）\n"
+                + "\n\n".join(table_blocks)
+            )
+
         return "\n\n".join(parts)
 
     def _build_batch_prompt(
@@ -221,152 +251,58 @@ class ContentFiller:
 
         pages_block = "\n\n".join(page_descriptions)
 
-        return f"""你是一位顶级咨询公司的PPT内容专家。
-请为以下页面生成详细内容。内容必须专业、具体、数据驱动。
+        return f"""你是一位顶级咨询公司的PPT内容专家。请为以下页面生成详细内容。
 
 {shared_context}
 
 ---
-
 ## 需要生成的页面
-
 {pages_block}
 
 ---
+## 输出格式
 
-## 输出要求
-
-返回JSON数组，每个元素对应一页的详细内容。格式：
+返回JSON数组，每个元素对应一页：
 ```json
-[
-  {{
-    "page_number": {batch[0].page_number},
-    "takeaway_message": "可能微调措辞后的核心论点",
-    "text_blocks": [
-      {{"content": "正文段落或子弹点内容", "level": 0, "is_bold": false}},
-      {{"content": "子弹点1（关键支撑）", "level": 1, "is_bold": false}},
-      {{"content": "子弹点2", "level": 1, "is_bold": false}}
-    ],
-    "visual_hint": {{
-      "block_type": "kpi_cards",
-      "items": [
-        {{"title": "收入", "value": "15.6亿", "description": "同比+32%", "trend": "up"}},
-        {{"title": "利润", "value": "3.2亿", "description": "同比+18%", "trend": "up"}}
-      ]
-    }},
-    "chart_suggestion": null,
-    "diagram_spec": null,
-    "source_note": "数据来源脚注"
-  }},
-  {{
-    "page_number": ...,
-    "takeaway_message": "...",
-    "text_blocks": [...],
-    "visual_hint": {{
-      "block_type": "step_cards",
-      "items": [
-        {{"title": "需求分析", "description": "收集业务需求，明确目标"}},
-        {{"title": "方案设计", "description": "架构评审，技术选型"}}
-      ]
-    }},
-    "chart_suggestion": {{
-      "chart_type": "column",
-      "data_feature": "time_series",
-      "title": "图表标题",
-      "categories": ["2022", "2023", "2024"],
-      "series": [{{"name": "收入(亿)", "values": [12.0, 13.5, 15.6]}}],
-      "so_what": "图表结论，如：收入持续增长，2024年加速"
-    }},
-    "diagram_spec": null,
-    "source_note": "..."
-  }}
-]
+[{{"page_number": N, "takeaway_message": "核心论点", "text_blocks": [{{"content": "...", "level": 0, "is_bold": false}}], "chart_suggestion": null, "diagram_spec": null, "visual_hint": null, "source_note": ""}}]
 ```
 
-### text_blocks level说明
-- 0: 正文段落
-- 1: 一级子弹点（主要论据）
-- 2: 二级子弹点（细节/数据）
+### text_blocks
+level: 0=正文段落, 1=一级子弹点, 2=二级子弹点。每页2-5个。
 
-### chart_suggestion 规则
-- **积极生成图表**：只要页面涉及数据对比、趋势、占比、排名，都应提供 chart_suggestion
-- slide_type为"data"时必须提供图表
-- slide_type为"content"时，如果 takeaway 或 text_blocks 包含具体数字/百分比/对比，也应生成图表
-- chart_type: "bar"(横向条形图), "column"(纵向柱状图), "line"(折线图), "pie"(饼图), "combo"(柱+线组合图)
-- 数据必须来自原始材料，不可编造数字
-- so_what 是这张图的结论，用一句话说明
-- 即使只有2-3个数据点也值得做图表（对比更直观）
+### chart_suggestion（primary_visual="chart"时必填，其余null）
+```json
+{{"chart_type": "column", "data_feature": "time_series", "title": "图表标题", "categories": ["2022","2023","2024"], "series": [{{"name": "收入(亿)", "values": [12.0, 13.5, 15.6]}}], "so_what": "结论"}}
+```
+chart_type: bar/column/line/pie/combo。**categories和series的数字必须完全来自「原始表格数据」章节，严禁编造！**
 
-### diagram_spec 规则
-- slide_type为"diagram"时必须提供
-- 当内容描述流程、架构、关系时，即使不是 diagram 类型也可以提供
-- 支持类型:
-  - process_flow: 流程/步骤图
-    ```json
-    {{"diagram_type": "process_flow", "title": "...",
-      "direction": "horizontal",
-      "nodes": [{{"id": "1", "label": "步骤1", "desc": "描述"}}],
-      "connections": [{{"from": "1", "to": "2", "label": "→"}}]}}
-    ```
-  - architecture: 架构/层级图
-    ```json
-    {{"diagram_type": "architecture", "title": "...",
-      "variant": "layers",
-      "layers": [{{"label": "层名", "items": ["组件1", "组件2"]}}]}}
-    ```
-  - relationship: 因果/关系图
-    ```json
-    {{"diagram_type": "relationship", "title": "...",
-      "variant": "causal",
-      "nodes": [{{"id": "1", "label": "因素", "role": "cause"}}],
-      "edges": [{{"from": "1", "to": "2", "label": "+30%", "type": "directed"}}]}}
-    ```
-  - framework: 矩阵/SWOT/金字塔
-    ```json
-    {{"diagram_type": "framework", "title": "...",
-      "variant": "matrix_2x2",
-      "x_axis": {{"label": "维度X", "low": "低", "high": "高"}},
-      "y_axis": {{"label": "维度Y", "low": "低", "high": "高"}},
-      "quadrants": [{{"position": "top_left", "label": "象限名", "items": ["项目A"]}}]}}
-    ```
+### diagram_spec（primary_visual="diagram"时必填，其余null）
+- process_flow: {{"diagram_type":"process_flow","title":"...","direction":"horizontal","nodes":[{{"id":"1","label":"步骤","desc":"描述"}}],"connections":[{{"from":"1","to":"2"}}]}}
+- architecture: {{"diagram_type":"architecture","title":"...","variant":"layers","layers":[{{"label":"层名","items":["组件"]}}]}}
+- relationship: {{"diagram_type":"relationship","title":"...","variant":"causal","nodes":[{{"id":"1","label":"因素"}}],"edges":[{{"from":"1","to":"2","label":"影响"}}]}}
+- framework: {{"diagram_type":"framework","title":"...","variant":"matrix_2x2|swot|pyramid|funnel",...}}
 
-### visual_hint 规则（重要！决定页面视觉呈现形式）
-每页必须提供 visual_hint 字段，指导页面用什么可视化形式呈现文字内容。
-可选值及适用场景：
-- **"kpi_cards"**: 页面包含2-4个关键指标/数字 → 大数字卡片
-  items格式: [{{"title": "指标名", "value": "15.6亿", "description": "同比增长32%", "trend": "up"}}]
-- **"comparison_columns"**: A vs B 对比/方案对比/优劣势对比 → 并列栏
-  items格式: [{{"title": "方案A", "description": "• 成本低\\n• 部署快"}}]
-- **"step_cards"**: 3-6个步骤/阶段/流程 → 编号卡片+箭头
-  items格式: [{{"title": "步骤1: 分析", "description": "收集业务需求"}}]
-- **"icon_text_grid"**: 4-6个并列要点/能力/特性 → 图标网格
-  items格式: [{{"title": "数据分析", "description": "结构化数据处理引擎"}}]
-- **"stat_highlight"**: 单个核心数据/震撼数字 → 超大字号居中
-  items格式: [{{"value": "32%", "title": "收入增长率", "description": "远超行业平均15%"}}]
-- **"callout_box"**: 关键洞察/重要引用/结论金句 → 引用框
-  items格式: [{{"title": "关键洞察", "description": "引用内容..."}}]
-- **"bullet_list"**: 仅当以上都不适合时使用（尽量少用！）
+### visual_hint（primary_visual="visual_block"时必填，其余null）
+block_type选择：
+| block_type | 适用场景 | items字段 |
+|---|---|---|
+| kpi_cards | 2-4个关键指标 | title, value, description, trend(up/down/flat) |
+| step_cards | 3-6个步骤 | title, description |
+| comparison_columns | A vs B对比 | title, description |
+| icon_text_grid | 4-6个并列要点 | title, description |
+| stat_highlight | 单个震撼数字 | value, title, description |
+| callout_box | 关键洞察/金句 | title, description |
+尽量避免bullet_list！有数字用kpi_cards，有步骤用step_cards，有对比用comparison_columns。
 
-**选择原则：尽量避免 bullet_list！** 大多数内容都可以用更好的可视化形式：
-- 有具体数字 → kpi_cards 或 stat_highlight
-- 有步骤/流程描述 → step_cards
-- 有对比/两种方案 → comparison_columns
-- 有多个并列要点 → icon_text_grid
-- 有关键结论/洞察 → callout_box
-
-### primary_visual 互斥规则（最重要！严格遵守！）
-每页有一个 primary_visual 属性，决定该页只能输出哪种视觉内容：
-- primary_visual="chart": **只填** chart_suggestion，visual_hint=null, diagram_spec=null
-- primary_visual="diagram": **只填** diagram_spec，visual_hint=null, chart_suggestion=null
-- primary_visual="visual_block": **只填** visual_hint，chart_suggestion=null, diagram_spec=null
-- primary_visual="text_only": 三个都必须为 null
-
-**严禁同时输出多种视觉内容！** 每页只有一个"主角"。
+### primary_visual互斥规则（严格遵守！）
+- "chart": 只填chart_suggestion，其余null
+- "diagram": 只填diagram_spec，其余null
+- "visual_block": 只填visual_hint，其余null
+- "text_only": 三个都null
 
 ### 质量标准
-- text_blocks 内容要具体，包含实际数据，不能只有框架性文字
-- 每页2-5个text_blocks
-- takeaway可微调措辞但不可改变核心论点
+- text_blocks要具体，包含实际数据
+- takeaway可微调措辞但不改核心论点
 - 数据必须来自原始材料，不可编造
 
 只输出JSON数组，不要其他文字。"""
@@ -524,7 +460,30 @@ class ContentFiller:
                     except json.JSONDecodeError:
                         start = None
 
-        return None
+        # 最后尝试：逐个提取 JSON 对象（容忍部分页面格式错误）
+        return self._extract_individual_pages(text)
+
+    def _extract_individual_pages(self, text: str) -> Optional[list]:
+        """逐个提取 {"page_number": N, ...} JSON对象，容忍部分页面损坏"""
+        results = []
+        pattern = r'\{\s*"page_number"\s*:\s*\d+'
+        for match in re.finditer(pattern, text):
+            start = match.start()
+            depth = 0
+            for i in range(start, len(text)):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            obj = json.loads(text[start:i + 1])
+                            if isinstance(obj, dict) and "page_number" in obj:
+                                results.append(obj)
+                        except json.JSONDecodeError:
+                            pass
+                        break
+        return results if results else None
 
     # ================================================================
     # 质量校验

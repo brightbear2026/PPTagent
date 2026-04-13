@@ -17,10 +17,10 @@ class ChartGenerator:
     输出：填充 charts, diagrams
     """
 
-    def __init__(self, llm_client: GLMClient):
+    def __init__(self, llm_client: GLMClient, enriched_tables=None):
         self.llm = llm_client
         self.chart_type_selector = ChartTypeSelector()
-        self.chart_spec_builder = ChartSpecBuilder(llm_client)
+        self.chart_spec_builder = ChartSpecBuilder(llm_client, enriched_tables=enriched_tables)
         self.diagram_builder = DiagramBuilder(llm_client)
 
     def generate_for_slides(self, slides: List[SlideSpec]) -> List[SlideSpec]:

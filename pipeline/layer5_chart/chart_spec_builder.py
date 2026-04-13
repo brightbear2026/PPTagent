@@ -12,8 +12,9 @@ from llm_client.glm_client import GLMClient
 class ChartSpecBuilder:
     """从slide文本内容中提取数据，构建ChartSpec"""
 
-    def __init__(self, llm_client: GLMClient):
+    def __init__(self, llm_client: GLMClient, enriched_tables=None):
         self.llm = llm_client
+        self.enriched_tables = enriched_tables or []
 
     def build_from_slide(self, slide: SlideSpec, chart_type: ChartType,
                          theme_colors: list[str]) -> Optional[ChartSpec]:
@@ -65,6 +66,7 @@ class ChartSpecBuilder:
     def _extract_chart_data(self, slide: SlideSpec, chart_type: ChartType) -> Optional[dict]:
         """使用LLM从文本中提取图表数据"""
         text_content = self._format_text_blocks(slide)
+        table_section = self._format_enriched_tables()
 
         prompt = f"""你是一个数据分析专家。请从以下PPT页面内容中提取适合制作{chart_type.value}图表的结构化数据。
 
@@ -73,14 +75,12 @@ class ChartSpecBuilder:
 
 ## 页面文本内容
 {text_content}
-
+{table_section}
 ## 要求
-1. 提取可用于图表展示的类别（categories）和数值（values）
-2. 如果文本中包含具体数字，优先使用真实数据
-3. 如果没有具体数字，根据文本描述生成合理的示意数据
-4. 生成1-2个数据系列（series）
-5. 为图表生成一个"so what"结论（一句话概括）
-6. 生成1-3个key_insights
+1. categories和series的数字必须完全来自原始表格数据，严禁编造
+2. 生成1-2个数据系列（series）
+3. 为图表生成一个"so what"结论（一句话概括）
+4. 生成1-3个key_insights
 
 ## 输出格式（纯JSON，不要markdown标记）
 {{
@@ -114,6 +114,25 @@ class ChartSpecBuilder:
             prefix = "- " if block.level == 0 else "  - "
             lines.append(f"{prefix}{block.content}")
         return "\n".join(lines)
+
+    def _format_enriched_tables(self) -> str:
+        """将enriched_tables格式化为prompt中的表格数据段"""
+        if not self.enriched_tables:
+            return ""
+        blocks = []
+        for et in self.enriched_tables[:3]:
+            t = et.original
+            if not t.headers:
+                continue
+            header_line = " | ".join(str(h) for h in t.headers[:8])
+            rows_preview = []
+            for row in t.rows[:8]:
+                cells = [str(c)[:15] if c is not None else "" for c in row[:8]]
+                rows_preview.append(" | ".join(cells))
+            blocks.append(f"## 原始表格({t.source_sheet or '表'})\n{header_line}\n" + "\n".join(rows_preview))
+        if not blocks:
+            return ""
+        return "\n## 原始表格数据（categories和values必须完全来自这里）\n" + "\n\n".join(blocks) + "\n"
 
     def _parse_json(self, text: str) -> Optional[dict]:
         """解析LLM返回的JSON（容错处理）"""

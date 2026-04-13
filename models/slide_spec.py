@@ -621,6 +621,17 @@ class AnalysisResult:
                  "table_value": w.table_value, "severity": w.severity}
                 for w in self.validation_warnings
             ],
+            "enriched_tables": [
+                {
+                    "original": {
+                        "headers": et.original.headers,
+                        "rows": et.original.rows,
+                        "source_sheet": et.original.source_sheet,
+                    },
+                    "summary": et.summary,
+                }
+                for et in self.enriched_tables
+            ],
         }
 
     @classmethod
@@ -650,6 +661,18 @@ class AnalysisResult:
                     table_value=w.get("table_value", ""),
                     severity=w.get("severity", "warning"))
                 for w in data.get("validation_warnings", [])
+            ],
+            enriched_tables=[
+                EnrichedTableData(
+                    original=TableData(
+                        headers=et["original"]["headers"],
+                        rows=et["original"]["rows"],
+                        source_sheet=et["original"].get("source_sheet", ""),
+                    ),
+                    summary=et.get("summary", {}),
+                )
+                for et in data.get("enriched_tables", [])
+                if isinstance(et, dict) and "original" in et
             ],
         )
 

@@ -412,9 +412,19 @@ class PipelineController:
         if not outline_result or not content_result:
             raise RuntimeError("缺少大纲或内容结果，无法构建PPT")
 
-        from models.slide_spec import OutlineResult, ContentResult
+        from models.slide_spec import OutlineResult, ContentResult, AnalysisResult, EnrichedTableData
         outline = OutlineResult.from_dict(outline_result)
         content = ContentResult.from_dict(content_result)
+
+        # 加载 enriched_tables 用于图表数据校验
+        enriched_tables: list[EnrichedTableData] = []
+        try:
+            analyze_result = self.store.get_stage_result(task_id, "analyze")
+            if analyze_result:
+                analysis = AnalysisResult.from_dict(analyze_result)
+                enriched_tables = analysis.enriched_tables
+        except Exception as e:
+            print(f"[build] 加载enriched_tables失败（兼容旧数据）: {e}")
 
         language = task.get("language", "zh")
         total_pages = len(outline.items)
@@ -466,11 +476,16 @@ class PipelineController:
                 # source_note
                 slide.source_note = page_content.source_note
 
-                # ── chart_suggestion → ChartSpec ──
+                # ── chart_suggestion → ChartSpec（校验+回填真实数据）──
                 if page_content.chart_suggestion:
                     slide.charts = self._convert_chart_suggestion(
                         page_content.chart_suggestion
                     )
+                    if slide.charts and enriched_tables:
+                        slide.charts = [
+                            self._validate_and_fix_chart(c, enriched_tables)
+                            for c in slide.charts
+                        ]
 
                 # ── diagram_spec (ContentDiagramSpec) → DiagramSpec ──
                 if page_content.diagram_spec:
@@ -547,9 +562,11 @@ class PipelineController:
             ):
                 try:
                     llm = self._get_llm_for_stage("build")
-                    chart_gen = ChartGenerator(llm)
+                    chart_gen = ChartGenerator(llm, enriched_tables=enriched_tables)
                     chart = chart_gen._generate_chart(slide)
                     if chart:
+                        if enriched_tables:
+                            chart = self._validate_and_fix_chart(chart, enriched_tables)
                         slide.charts.append(chart)
                 except Exception as e:
                     print(f"[build] 图表生成失败 slide {slide.slide_index}: {e}")
@@ -790,6 +807,153 @@ class PipelineController:
         if vb and getattr(vb, 'block_type', 'bullet_list') != 'bullet_list':
             return 'visual_block'
         return 'text_only'
+
+    # ================================================================
+    # 图表数据校验（用真实表格数据替换LLM编造的数字）
+    # ================================================================
+
+    def _validate_and_fix_chart(self, chart, enriched_tables: list):
+        """用enriched_tables的真实数据校验/替换LLM编造的图表数据"""
+        if not enriched_tables or not chart.categories or not chart.series:
+            return chart
+
+        matched = self._find_matching_table_data(chart, enriched_tables)
+        if not matched:
+            return chart
+
+        table, cat_col_idx, val_cols = matched
+
+        # 用真实数据重建 categories 和 series
+        real_categories = []
+        real_rows = []
+        for row in table.original.rows:
+            if cat_col_idx < len(row) and row[cat_col_idx] is not None:
+                real_categories.append(str(row[cat_col_idx]))
+                real_rows.append(row)
+
+        if not real_categories:
+            return chart
+
+        # 重建每个 series 的 values
+        new_series = []
+        for si, (val_col_idx, col_name) in enumerate(val_cols):
+            values = []
+            for row in real_rows:
+                if val_col_idx < len(row):
+                    v = row[val_col_idx]
+                    if isinstance(v, (int, float)):
+                        values.append(float(v))
+                    elif isinstance(v, str):
+                        try:
+                            cleaned = v.replace(",", "").replace("%", "").replace("亿", "").replace("万", "").strip()
+                            values.append(float(cleaned))
+                        except (ValueError, TypeError):
+                            values.append(0.0)
+                    else:
+                        values.append(0.0)
+                else:
+                    values.append(0.0)
+            if values:
+                series_name = chart.series[si].name if si < len(chart.series) else col_name
+                from models.slide_spec import ChartSeries
+                new_series.append(ChartSeries(name=series_name, values=values))
+
+        if new_series:
+            chart.categories = real_categories
+            chart.series = new_series
+            print(f"[build] 图表 '{chart.title}' 已用真实表格数据替换")
+
+        return chart
+
+    def _find_matching_table_data(self, chart, enriched_tables: list):
+        """
+        模糊匹配：找到chart对应的表格、分类列、数值列。
+        返回 (enriched_table, category_col_idx, [(value_col_idx, col_name), ...]) 或 None。
+        """
+        chart_title = (chart.title or "").lower()
+        chart_cats = [str(c).lower() for c in chart.categories]
+        series_names = [s.name.lower() for s in chart.series] if chart.series else []
+
+        best_match = None
+        best_score = 0
+
+        for et in enriched_tables:
+            t = et.original
+            if not t.headers or not t.rows:
+                continue
+
+            headers_lower = [str(h).lower() for h in t.headers]
+
+            # 找分类列：哪一列的值与 chart.categories 最匹配
+            for col_idx in range(len(t.headers)):
+                col_values = []
+                for row in t.rows:
+                    if col_idx < len(row) and row[col_idx] is not None:
+                        col_values.append(str(row[col_idx]).lower())
+
+                # 计算匹配度：chart.categories中有多少出现在该列
+                cat_matches = sum(
+                    1 for cat in chart_cats
+                    if any(cat in cv or cv in cat for cv in col_values)
+                )
+                if cat_matches < max(1, len(chart_cats) * 0.5):
+                    continue
+
+                # 找数值列：按series名称或chart title匹配
+                val_cols = []
+                for vi, header in enumerate(headers_lower):
+                    if vi == col_idx:
+                        continue
+                    # 检查该列是否数值列
+                    is_numeric = vi in {idx for idx, _ in self._get_numeric_cols(t)}
+                    if not is_numeric:
+                        continue
+                    # 匹配度加分
+                    name_score = 0
+                    for sn in series_names:
+                        if sn in header or header in sn:
+                            name_score += 3
+                    if chart_title and (chart_title in header or header in chart_title):
+                        name_score += 2
+                    val_cols.append((vi, t.headers[vi], name_score))
+
+                if not val_cols:
+                    continue
+
+                # 按匹配度排序，取前N个（N=series数量）
+                val_cols.sort(key=lambda x: x[2], reverse=True)
+                n_series = max(len(chart.series), 1)
+                selected_cols = [(idx, name) for idx, name, _ in val_cols[:n_series]]
+
+                score = cat_matches * 10 + sum(s for _, _, s in val_cols[:n_series])
+                if score > best_score:
+                    best_score = score
+                    best_match = (et, col_idx, selected_cols)
+
+        return best_match
+
+    @staticmethod
+    def _get_numeric_cols(table) -> list[tuple[int, str]]:
+        """识别表格中的数值列"""
+        result = []
+        for col_idx, header in enumerate(table.headers):
+            numeric_count = 0
+            for row in table.rows:
+                if col_idx < len(row):
+                    val = row[col_idx]
+                    if isinstance(val, (int, float)):
+                        numeric_count += 1
+                    elif isinstance(val, str):
+                        try:
+                            cleaned = val.replace(",", "").replace("%", "").replace("亿", "").replace("万", "").strip()
+                            if cleaned:
+                                float(cleaned)
+                                numeric_count += 1
+                        except ValueError:
+                            pass
+            if table.rows and numeric_count / len(table.rows) > 0.5:
+                result.append((col_idx, header))
+        return result
 
     # ================================================================
     # 辅助方法
