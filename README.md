@@ -4,26 +4,40 @@
 
 ## 特性
 
-- **多格式输入** -- 支持 TXT、DOCX、XLSX/CSV、PPTX、Markdown
-- **6层智能流水线** -- 内容提取 -> 叙事编排 -> 结构规划 -> 视觉设计 -> 图表生成 -> PPT构建
-- **4个确认检查点** -- 数据解析、内容提取、叙事结构、页面结构，每步人工确认
-- **多模型协作** -- 智谱GLM（提取）+ DeepSeek-R1（推理）+ 通义Qwen-Max（图表），国内模型专模型做专事
-- **原生图表** -- python-pptx 原生图表对象，矢量可编辑
-- **加密存储** -- API Key 使用 Fernet + PBKDF2 加密，支持多用户隔离
-- **16:9专业版式** -- 12种内容布局模板，5套视觉主题
-- **Docker部署** -- 一键启动前后端服务
+- **多格式输入** — 支持 TXT、DOCX、XLSX/CSV、PPTX、Markdown
+- **6层智能流水线** — 内容提取 → 叙事编排 → 结构规划 → 视觉设计 → 图表生成 → PPT构建
+- **4个确认检查点** — 数据解析、内容提取、叙事结构、页面结构，每步人工确认
+- **多模型协作** — 智谱GLM（提取）+ DeepSeek-R1（推理）+ 通义Qwen-Max（图表）
+- **真实数据驱动** — 图表数据来自原始表格，LLM不编造数字
+- **原生图表** — python-pptx 原生图表对象，矢量可编辑
+- **加密存储** — API Key 使用 Fernet + PBKDF2 加密，支持多用户隔离
+- **16:9专业版式** — 12种内容布局模板，5套视觉主题
+- **Docker部署** — 一键启动前后端服务
+
+## 技术栈
+
+| 组件 | 技术 |
+|---|---|
+| 后端 | FastAPI + Uvicorn |
+| 前端 | React 18 + TypeScript + Vite + Ant Design |
+| LLM | 智谱GLM-4 + DeepSeek-R1 + 阿里通义Qwen-Max |
+| PPT生成 | python-pptx（原生图表对象） |
+| 存储 | SQLite + 文件系统 |
+| 加密 | Fernet + PBKDF2HMAC |
+| 部署 | Docker + docker-compose |
 
 ## 快速开始
 
 ### 环境要求
 
 - Python 3.9+
+- Node.js 18+
 - 至少一个 LLM API Key（智谱AI / DeepSeek / 阿里通义）
 
 ### 本地运行
 
 ```bash
-# 1. 安装依赖
+# 1. 安装后端依赖
 pip3 install -r requirements.txt
 
 # 2. 生成加密主密钥
@@ -33,12 +47,12 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 export MASTER_ENCRYPTION_KEY='your-generated-key'
 
 # 4. 启动后端
-python3 api/main.py
+cd api && python3 -m uvicorn main:app --reload --port 8000
 # -> http://localhost:8000
 
 # 5. 启动前端（新终端）
-python3 -m streamlit run frontend/app.py --server.port 8501
-# -> http://localhost:8501
+cd frontend-react && npm install && npm run dev
+# -> http://localhost:3000
 ```
 
 ### Docker 部署
@@ -55,7 +69,7 @@ docker-compose down
 ```
 
 访问地址：
-- 前端：http://localhost:8501
+- 前端：http://localhost:3000
 - 后端API：http://localhost:8000
 - API文档：http://localhost:8000/docs
 
@@ -117,18 +131,6 @@ docker-compose down
 | 叙事结构确认 | 核心论点、各段角色、过渡逻辑 | 修改论点、调整顺序 |
 | 页面结构确认 | 每页Takeaway和类型 | 修改Takeaway、合并/拆分页面 |
 
-### 技术栈
-
-| 组件 | 技术 |
-|---|---|
-| 后端 | FastAPI + Uvicorn |
-| 前端 | Streamlit（过渡期，将迁移到 React） |
-| LLM | 智谱GLM + DeepSeek + 阿里通义Qwen |
-| PPT生成 | python-pptx（原生图表） |
-| 存储 | SQLite + 文件系统 |
-| 加密 | Fernet + PBKDF2HMAC |
-| 部署 | Docker + docker-compose |
-
 ## 项目结构
 
 ```
@@ -136,6 +138,7 @@ PPTagent/
   api/                         # FastAPI 后端
     main.py                    # API 端点 + 流水线调度
     pipeline_controller.py     # Pipeline 阶段控制器（4个检查点）
+    auth.py                    # JWT 认证
   pipeline/                    # 核心 6 层流水线
     layer1_input/              # 输入解析
     layer2_content/            # 内容提取 + 叙事编排
@@ -155,7 +158,12 @@ PPTagent/
     task_store.py              # SQLite 存储
     encryption.py              # API Key 加密
   templates/                   # 布局骨架 + 视觉主题
-  frontend/                    # Streamlit 前端
+  frontend-react/              # React 前端
+    src/
+      components/wizard/       # 向导式步骤组件
+      pages/                   # 页面路由
+      api/                     # 后端 API 客户端
+      hooks/                   # SSE 等自定义 hooks
   output/                      # 生成的 PPT 文件
 ```
 
@@ -204,9 +212,9 @@ PPTagent/
 
 ## 相关文档
 
-- [CLAUDE.md](CLAUDE.md) -- 项目架构设计和技术决策
-- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) -- 开发规范
-- [API_GUIDE.md](API_GUIDE.md) -- API 端点详细文档
+- [CLAUDE.md](CLAUDE.md) — 项目架构设计和技术决策
+- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) — 开发规范
+- [API_GUIDE.md](API_GUIDE.md) — API 端点详细文档
 
 ## License
 
