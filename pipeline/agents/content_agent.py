@@ -84,6 +84,10 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
             f"[ContentAgent] per-slide并行，共{len(all_slides)}页，最多{self.MAX_CONCURRENT}并发"
         )
 
+        report = context.get("report_progress", lambda p, m: None)
+        total_slides = len(all_slides)
+        completed_count = 0
+
         with ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT) as executor:
             futures: Dict = {
                 executor.submit(
@@ -103,15 +107,23 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
                     if result:
                         with self._lock:
                             self._page_contents[result.get("page_number", pn)] = result
-                        logger.debug(f"[ContentAgent] P{pn} 完成")
+                            completed_count += 1
+                        pct = 50 + int(completed_count / max(total_slides, 1) * 19)
+                        report(pct, f"内容填充: 第{pn}页完成 ({completed_count}/{total_slides})")
                     else:
                         logger.warning(f"[ContentAgent] P{pn} 解析失败，使用占位内容")
                         with self._lock:
                             self._page_contents[pn] = self._make_placeholder(slide)
+                            completed_count += 1
+                        report(50 + int(completed_count / max(total_slides, 1) * 19),
+                               f"内容填充: 第{pn}页（占位） ({completed_count}/{total_slides})")
                 except Exception as e:
                     logger.warning(f"[ContentAgent] P{pn} 异常: {e}，使用占位内容")
                     with self._lock:
                         self._page_contents[pn] = self._make_placeholder(slide)
+                        completed_count += 1
+                    report(50 + int(completed_count / max(total_slides, 1) * 19),
+                           f"内容填充: 第{pn}页（失败） ({completed_count}/{total_slides})")
 
         if not self._page_contents:
             raise ValueError("内容填充失败：所有页面均未生成内容")
