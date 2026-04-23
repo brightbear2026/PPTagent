@@ -179,12 +179,8 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
         except Exception as _e:
             logger.debug(f"[ContentAgent] SkillRegistry 加载失败（非致命）: {_e}")
 
-        # 当文章未被结构化为 source_pages 时，用 raw_text 切片作为 fallback
-        raw_text_fallback = ""
-        if not source_pages:
-            raw_text = raw.get("raw_text", "")
-            if raw_text:
-                raw_text_fallback = raw_text[:4000]
+        # 始终准备 raw_text fallback（关键词匹配全部失败时的最后保底）
+        raw_text_fallback = (raw.get("raw_text", "") or "")[:4000]
 
         return {
             "task": task,
@@ -220,13 +216,13 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
                 f"P{prev_slide.get('page_number')}: {prev_title} | {prev_kw}\n"
             )
 
-        # 材料注入
+        # 材料注入：chart 页优先注入表格；无表格或非 chart 页改用章节文本；均无则 raw_text 保底
         material_text = ""
         if pv == "chart" and shared["tables"]:
             chart_data = self._find_chart_table(slide, shared["tables"])
             if chart_data:
                 material_text = f"\n## 数据表格（直接使用，禁止编造数字）\n{chart_data}\n"
-        else:
+        if not material_text:
             section_text = self._find_best_section(slide, shared["source_pages"])
             if section_text:
                 material_text = f"\n## 相关原文材料\n{section_text}\n"
@@ -234,8 +230,13 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
                 material_text = f"\n## 原文材料（节选）\n{shared['raw_text_fallback']}\n"
 
         # 视觉要求
+        has_table_data = bool(pv == "chart" and shared["tables"] and material_text.startswith("\n## 数据表格"))
         if pv == "chart":
-            visual_req = "⚠️ chart_suggestion 必须填写（使用表格数据，chart_type 使用合法值）"
+            visual_req = (
+                "⚠️ chart_suggestion 必须填写（使用上方表格数据，chart_type 使用合法值）"
+                if has_table_data
+                else "⚠️ chart_suggestion 必须填写（从原文材料中提炼数据，chart_type 使用合法值）"
+            )
         elif pv == "diagram":
             visual_req = "⚠️ diagram_spec 必须填写（diagram_type 使用合法值）"
         elif pv == "visual_block":

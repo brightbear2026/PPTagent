@@ -24,9 +24,11 @@ const C = {
 
 const DiagramPreview: React.FC<Props> = ({ diagram, width, height }) => {
   const type = diagram.diagram_type;
-  if (type === 'process_flow')  return <ProcessFlow  diagram={diagram} width={width} height={height} />;
-  if (type === 'hierarchy')     return <Hierarchy    diagram={diagram} width={width} height={height} />;
-  if (type === 'comparison')    return <Comparison   diagram={diagram} width={width} height={height} />;
+  if (type === 'process_flow')  return <ProcessFlow   diagram={diagram} width={width} height={height} />;
+  if (type === 'hierarchy')     return <Hierarchy     diagram={diagram} width={width} height={height} />;
+  if (type === 'comparison')    return <Comparison    diagram={diagram} width={width} height={height} />;
+  if (type === 'architecture')  return <Architecture  diagram={diagram} width={width} height={height} />;
+  if (type === 'framework')     return <Framework     diagram={diagram} width={width} height={height} />;
   return <NodeList diagram={diagram} width={width} height={height} />;
 };
 
@@ -210,6 +212,146 @@ const NodeList: React.FC<Props> = ({ diagram, width, height }) => {
       <Footer label={diagram.title} width={width} height={height} />
     </svg>
   );
+};
+
+/* ── architecture: layered blocks ── */
+const Architecture: React.FC<Props> = ({ diagram, width, height }) => {
+  const raw = diagram as any;
+  const layers: Array<{ label: string; items: string[] }> = raw.layers ?? [];
+  if (!layers.length) return <Fallback label={diagram.title} width={width} height={height} />;
+
+  const pad = 8;
+  const layerH = Math.min(Math.floor((height - 28) / layers.length), 36);
+  const layerColors = [C.primary, '#005B96', '#007BC0', '#48A9E6', '#7EC8E3'];
+
+  return (
+    <svg width={width} height={height} style={{ display: 'block' }}>
+      {layers.map((layer, li) => {
+        const y = pad + li * (layerH + 4);
+        const fill = layerColors[li % layerColors.length];
+        const items = (layer.items ?? []).slice(0, 5);
+        const itemW = items.length ? Math.floor((width - 2 * pad - 64) / items.length) : 0;
+        return (
+          <g key={li}>
+            <rect x={pad} y={y} width={56} height={layerH} rx={2} fill={fill} />
+            <text x={pad + 28} y={y + layerH / 2} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill={C.white}>
+              {trunc(layer.label ?? '', 6)}
+            </text>
+            {items.map((item, ii) => (
+              <g key={ii}>
+                <rect x={pad + 60 + ii * (itemW + 3)} y={y + 3} width={itemW} height={layerH - 6} rx={2}
+                  fill={C.bg} stroke={C.border} strokeWidth={0.5} />
+                <text x={pad + 60 + ii * (itemW + 3) + itemW / 2} y={y + layerH / 2}
+                  textAnchor="middle" dominantBaseline="middle" fontSize={7.5} fill={fill}>
+                  {trunc(String(item ?? ''), 8)}
+                </text>
+              </g>
+            ))}
+          </g>
+        );
+      })}
+      <Footer label={diagram.title} width={width} height={height} />
+    </svg>
+  );
+};
+
+/* ── framework: quadrant / pyramid / funnel ── */
+const Framework: React.FC<Props> = ({ diagram, width, height }) => {
+  const raw = diagram as any;
+
+  // quadrant / SWOT
+  if (raw.quadrants?.length) {
+    const qs: Array<{ position: string; label: string; items: string[] }> = raw.quadrants;
+    const posMap: Record<string, { x: number; y: number }> = {
+      top_left:     { x: 0, y: 0 },
+      top_right:    { x: 1, y: 0 },
+      bottom_left:  { x: 0, y: 1 },
+      bottom_right: { x: 1, y: 1 },
+    };
+    const pad = 8, gap = 4;
+    const qW = (width - 2 * pad - gap) / 2;
+    const qH = (height - 28 - 2 * pad - gap) / 2;
+    const fills = [C.primary, '#005B96', '#FF6B35', '#48A9E6'];
+    return (
+      <svg width={width} height={height} style={{ display: 'block' }}>
+        {qs.slice(0, 4).map((q, i) => {
+          const pos = posMap[q.position] ?? { x: i % 2, y: Math.floor(i / 2) };
+          const x = pad + pos.x * (qW + gap);
+          const y = pad + pos.y * (qH + gap);
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={qW} height={qH} rx={2} fill={fills[i % fills.length]} opacity={0.85} />
+              <text x={x + qW / 2} y={y + 11} textAnchor="middle" fontSize={8} fill={C.white} fontWeight="bold">
+                {trunc(q.label ?? q.position, 10)}
+              </text>
+              {(q.items ?? []).slice(0, 3).map((item, ii) => (
+                <text key={ii} x={x + qW / 2} y={y + 22 + ii * 12} textAnchor="middle" fontSize={7.5} fill={C.white}>
+                  {trunc(String(item ?? ''), 12)}
+                </text>
+              ))}
+            </g>
+          );
+        })}
+        <Footer label={diagram.title} width={width} height={height} />
+      </svg>
+    );
+  }
+
+  // pyramid
+  if (raw.pyramid_levels?.length) {
+    const levels: Array<{ label: string; desc?: string }> = raw.pyramid_levels;
+    const n = levels.length;
+    const levelH = Math.min(Math.floor((height - 28) / n), 32);
+    const pad = 8;
+    return (
+      <svg width={width} height={height} style={{ display: 'block' }}>
+        {levels.map((lvl, i) => {
+          const w = Math.floor((width - 2 * pad) * (n - i) / n);
+          const x = pad + (width - 2 * pad - w) / 2;
+          const y = pad + i * (levelH + 3);
+          const opacity = 0.5 + 0.5 * (n - i) / n;
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={w} height={levelH} rx={2} fill={C.primary} opacity={opacity} />
+              <text x={x + w / 2} y={y + levelH / 2} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill={C.white}>
+                {trunc(lvl.label ?? '', 14)}
+              </text>
+            </g>
+          );
+        })}
+        <Footer label={diagram.title} width={width} height={height} />
+      </svg>
+    );
+  }
+
+  // funnel
+  if (raw.funnel_stages?.length) {
+    const stages: Array<{ label: string; value?: number }> = raw.funnel_stages;
+    const n = stages.length;
+    const stageH = Math.min(Math.floor((height - 28) / n), 28);
+    const pad = 8;
+    return (
+      <svg width={width} height={height} style={{ display: 'block' }}>
+        {stages.map((st, i) => {
+          const ratio = 1 - i * 0.15;
+          const w = Math.max(Math.floor((width - 2 * pad) * ratio), 40);
+          const x = pad + (width - 2 * pad - w) / 2;
+          const y = pad + i * (stageH + 3);
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={w} height={stageH} rx={2} fill={C.accent} opacity={0.7 + 0.3 * (1 - i / n)} />
+              <text x={x + w / 2} y={y + stageH / 2} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill={C.white}>
+                {trunc(st.label ?? '', 12)}
+              </text>
+            </g>
+          );
+        })}
+        <Footer label={diagram.title} width={width} height={height} />
+      </svg>
+    );
+  }
+
+  return <NodeList diagram={diagram} width={width} height={height} />;
 };
 
 /* ── Fallback ── */
