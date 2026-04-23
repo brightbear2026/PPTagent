@@ -140,17 +140,57 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
 
   return (
     <div>
-      {/* Narrative logic */}
+      {/* Narrative logic + SCQA structure */}
       <Card
         style={{ borderRadius: 2, marginBottom: 16 }}
         styles={{ body: { padding: '16px 20px' } }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: outline.scqa ? 14 : 0 }}>
           <Tag color="gold" style={{ marginTop: 2, flexShrink: 0 }}>叙事逻辑</Tag>
           <Text style={{ color: '#002B4E', fontSize: 14, lineHeight: 1.7 }}>
             {outline.narrative_logic}
           </Text>
         </div>
+
+        {outline.scqa && (
+          <div style={{
+            marginTop: 12,
+            padding: '12px 16px',
+            background: '#FAFAFA',
+            border: '1px solid #E8E8E8',
+            borderRadius: 4,
+          }}>
+            <Text style={{ fontSize: 12, color: '#8B6D00', fontWeight: 600, letterSpacing: 1 }}>
+              论证结构（SCQA）
+            </Text>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginTop: 8 }}>
+              {outline.scqa.situation && (
+                <div>
+                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>S 情境</Text>
+                  <div style={{ fontSize: 13, color: '#262626', marginTop: 2 }}>{outline.scqa.situation}</div>
+                </div>
+              )}
+              {outline.scqa.complication && (
+                <div>
+                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>C 挑战</Text>
+                  <div style={{ fontSize: 13, color: '#262626', marginTop: 2 }}>{outline.scqa.complication}</div>
+                </div>
+              )}
+              {outline.scqa.question && (
+                <div>
+                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>Q 核心问题</Text>
+                  <div style={{ fontSize: 13, color: '#262626', marginTop: 2 }}>{outline.scqa.question}</div>
+                </div>
+              )}
+              {outline.scqa.answer && (
+                <div>
+                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>A 顶层结论</Text>
+                  <div style={{ fontSize: 13, color: '#003D6E', fontWeight: 600, marginTop: 2 }}>{outline.scqa.answer}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Outline cards */}

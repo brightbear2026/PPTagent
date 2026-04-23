@@ -61,15 +61,27 @@ export interface SkippedPage {
 export interface OutlineItem {
   page_number: number;
   slide_type: string;       // "title" | "content" | "data" | "diagram" | "comparison" | "summary"
+  title?: string;
   takeaway_message: string;
   supporting_hint: string;
   data_source: string;
+  narrative_arc?: string;   // "opening" | "context" | "evidence" | "solution" | "recommendation" | "closing"
+  section?: string;
+}
+
+export interface SCQA {
+  situation: string;
+  complication: string;
+  question: string;
+  answer: string;
 }
 
 export interface OutlineResult {
   narrative_logic: string;
   items: OutlineItem[];
   data_gap_suggestions: string[];
+  scqa?: SCQA;
+  root_claim?: string;
 }
 
 // ── 内容 ──
