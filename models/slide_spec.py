@@ -196,6 +196,68 @@ class ImageData:
 
 
 @dataclass
+class SourcePage:
+    """原文中检测到的页面/章节"""
+    title: str                    # 页面标题
+    content: str                  # 页面正文
+    page_number: int = 0          # 页码
+
+
+@dataclass
+class StructuredSection:
+    """文档层级结构中的一个章节（用于结构化解析）"""
+    title: str                              # 章节标题
+    level: int                              # 层级深度：1=顶级, 2=子节, 3=三级
+    content: str                            # 章节正文（不含子节内容）
+    children: list[StructuredSection] = field(default_factory=list)
+    tables: list[TableData] = field(default_factory=list)
+    char_count: int = 0                     # 章节正文字符数
+    source_page_number: int = 0             # 原文页码（如果有）
+
+    def total_char_count(self) -> int:
+        """包含子节的总字符数"""
+        total = self.char_count
+        for child in self.children:
+            total += child.total_char_count()
+        return total
+
+    def flatten(self) -> list[StructuredSection]:
+        """展平为线性的章节列表（深度优先）"""
+        result = [self]
+        for child in self.children:
+            result.extend(child.flatten())
+        return result
+
+    def to_dict(self) -> dict:
+        return {
+            "title": self.title,
+            "level": self.level,
+            "content": self.content,
+            "children": [c.to_dict() for c in self.children],
+            "tables": [
+                {"headers": t.headers, "rows": t.rows, "source_sheet": t.source_sheet}
+                for t in self.tables
+            ],
+            "char_count": self.char_count,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> StructuredSection:
+        return cls(
+            title=d.get("title", ""),
+            level=d.get("level", 1),
+            content=d.get("content", ""),
+            children=[cls.from_dict(c) for c in d.get("children", [])],
+            tables=[
+                TableData(headers=t["headers"], rows=t["rows"],
+                          source_sheet=t.get("source_sheet", ""))
+                for t in d.get("tables", [])
+            ],
+            char_count=d.get("char_count", 0),
+        )
+
+
+@dataclass
 class RawContent:
     """第1层输出：统一的原始内容对象"""
     source_type: str              # "doc", "excel", "text", "ppt"
@@ -204,6 +266,9 @@ class RawContent:
     images: list[ImageData] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     detected_language: str = "zh"  # "zh" | "en" | "mixed"
+    source_pages: list[SourcePage] = field(default_factory=list)  # 检测到的页面结构
+    is_structured: bool = False     # 原文是否已按页/章节组织
+    structured_sections: list[StructuredSection] = field(default_factory=list)  # 层级章节树
 
 
 # ============================================================
@@ -299,6 +364,23 @@ class ChartSpec:
     show_data_labels: bool = False
     color_override: list[str] = field(default_factory=list)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "ChartSpec":
+        if isinstance(data.get("chart_type"), str):
+            try:
+                data["chart_type"] = ChartType(data["chart_type"])
+            except ValueError:
+                data["chart_type"] = ChartType.COLUMN
+        if isinstance(data.get("series"), list):
+            data["series"] = [
+                ChartSeries(**s) if isinstance(s, dict) else s
+                for s in data["series"]
+            ]
+        # 清理不存在的字段
+        valid = {f.name for f in cls.__dataclass_fields__.values()}
+        data = {k: v for k, v in data.items() if k in valid}
+        return cls(**data)
+
 
 @dataclass
 class ChartSeries:
@@ -341,6 +423,28 @@ class DiagramSpec:
     edges: list[DiagramEdge] = field(default_factory=list)
     layout_direction: str = "TB"   # "TB", "LR", "BT", "RL"
     title: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "DiagramSpec":
+        if isinstance(data.get("nodes"), list):
+            for n in data["nodes"]:
+                if isinstance(n, dict) and isinstance(n.get("shape"), str):
+                    try:
+                        n["shape"] = DiagramNodeShape(n["shape"])
+                    except ValueError:
+                        n["shape"] = DiagramNodeShape.ROUNDED_RECT
+            data["nodes"] = [DiagramNode(**n) if isinstance(n, dict) else n for n in data["nodes"]]
+        if isinstance(data.get("edges"), list):
+            for e in data["edges"]:
+                if isinstance(e, dict) and isinstance(e.get("style"), str):
+                    try:
+                        e["style"] = ConnectorStyle(e["style"])
+                    except ValueError:
+                        e["style"] = ConnectorStyle.ELBOW
+            data["edges"] = [DiagramEdge(**e) if isinstance(e, dict) else e for e in data["edges"]]
+        valid = {f.name for f in cls.__dataclass_fields__.values()}
+        data = {k: v for k, v in data.items() if k in valid}
+        return cls(**data)
 
 
 # ============================================================
@@ -439,6 +543,19 @@ class LayoutCoordinates:
     visual_block_areas: list[Rect] = field(default_factory=list)  # 可视化块独立slot坐标
     footnote_area: Optional[Rect] = None
     logo_area: Optional[Rect] = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "LayoutCoordinates":
+        def to_rect(d):
+            return Rect(**d) if isinstance(d, dict) else d
+        data = dict(data)
+        for attr in ("title_area", "takeaway_area", "footnote_area", "logo_area"):
+            if attr in data and isinstance(data[attr], dict):
+                data[attr] = to_rect(data[attr])
+        for attr in ("body_areas", "chart_areas", "diagram_areas", "picture_areas", "visual_block_areas"):
+            if attr in data and isinstance(data[attr], list):
+                data[attr] = [to_rect(r) for r in data[attr]]
+        return cls(**data)
     source_area: Optional[Rect] = None  # 数据来源标注
 
 
@@ -505,6 +622,65 @@ class SlideSpec:
         self.is_dirty = False
         self.dirty_layers = []
 
+    def to_dict(self) -> dict:
+        """序列化为JSON安全的dict"""
+        from dataclasses import asdict
+        d = asdict(self)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SlideSpec":
+        """从dict反序列化"""
+        # 处理 enum 字段
+        if "slide_type" in data and isinstance(data["slide_type"], str):
+            try:
+                data["slide_type"] = SlideType(data["slide_type"])
+            except ValueError:
+                data["slide_type"] = SlideType.CONTENT
+        if "narrative_arc" in data and isinstance(data["narrative_arc"], str):
+            try:
+                data["narrative_arc"] = NarrativeRole(data["narrative_arc"])
+            except ValueError:
+                data["narrative_arc"] = NarrativeRole.EVIDENCE
+        if "content_pattern" in data and isinstance(data["content_pattern"], str) and data["content_pattern"]:
+            try:
+                data["content_pattern"] = ContentPattern(data["content_pattern"])
+            except ValueError:
+                data["content_pattern"] = None
+
+        # 处理嵌套 dataclass 列表
+        if "text_blocks" in data and isinstance(data["text_blocks"], list):
+            data["text_blocks"] = [
+                TextBlock(**tb) if isinstance(tb, dict) else tb
+                for tb in data["text_blocks"]
+            ]
+        if "charts" in data and isinstance(data["charts"], list):
+            data["charts"] = [
+                ChartSpec.from_dict(c) if isinstance(c, dict) else c
+                for c in data["charts"]
+            ]
+        if "diagrams" in data and isinstance(data["diagrams"], list):
+            data["diagrams"] = [
+                DiagramSpec.from_dict(d) if isinstance(d, dict) else d
+                for d in data["diagrams"]
+            ]
+        if "visual_block" in data and isinstance(data["visual_block"], dict):
+            data["visual_block"] = VisualBlock.from_dict(data["visual_block"])
+
+        # 处理 visual_theme（dict → VisualTheme）
+        if "visual_theme" in data and isinstance(data["visual_theme"], dict):
+            data["visual_theme"] = VisualTheme(**data["visual_theme"])
+
+        # 处理 layout_coordinates
+        if "layout" in data and isinstance(data["layout"], dict):
+            data["layout"] = LayoutCoordinates.from_dict(data["layout"])
+
+        # 清理未知字段
+        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        data = {k: v for k, v in data.items() if k in valid_fields}
+
+        return cls(**data)
+
 
 # ============================================================
 # Presentation — 整个PPT
@@ -531,6 +707,28 @@ class PresentationSpec:
     def apply_brand_if_present(self):
         if self.brand:
             self.theme.apply_brand(self.brand)
+
+    def to_dict(self) -> dict:
+        """序列化为JSON安全的dict"""
+        from dataclasses import asdict
+        d = asdict(self)
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PresentationSpec":
+        """从dict反序列化"""
+        if "slides" in data and isinstance(data["slides"], list):
+            data["slides"] = [
+                SlideSpec.from_dict(s) if isinstance(s, dict) else s
+                for s in data["slides"]
+            ]
+        if "theme" in data and isinstance(data["theme"], dict):
+            data["theme"] = VisualTheme(**data["theme"])
+        if "brand" in data and isinstance(data["brand"], dict):
+            data["brand"] = BrandKit(**data["brand"])
+        valid = {f.name for f in cls.__dataclass_fields__.values()}
+        data = {k: v for k, v in data.items() if k in valid}
+        return cls(**data)
 
 
 # ============================================================
@@ -592,8 +790,23 @@ class ValidationWarning:
 
 
 @dataclass
+class StrategyInsight:
+    """analyze阶段LLM策略分析输出 — 指导outline生成的核心框架"""
+    document_summary: str = ""             # LLM生成的文档概要（3-5句话）
+    audience_analysis: str = ""            # 目标受众关注点分析
+    scenario_strategy: str = ""            # 针对该汇报场景的叙事策略
+    core_themes: list[str] = field(default_factory=list)       # 核心主题列表（3-7个）
+    recommended_structure: str = ""        # 推荐的叙事框架（如SCR/SCQA/Issue Tree）
+    recommended_page_range: str = ""       # 推荐页数范围（如"15-20页"）
+    key_messages: list[str] = field(default_factory=list)      # 核心论点（3-5个）
+
+
+@dataclass
 class AnalysisResult:
     """analyze阶段完整输出"""
+    # LLM策略分析（必须 — 指导outline的核心框架）
+    strategy: StrategyInsight = field(default_factory=StrategyInsight)
+    # 数据分析
     derived_metrics: list[DerivedMetric] = field(default_factory=list)
     key_findings: list[str] = field(default_factory=list)              # LLM提取的关键发现
     data_gaps: list[DataGapSuggestion] = field(default_factory=list)
@@ -602,7 +815,17 @@ class AnalysisResult:
 
     def to_dict(self) -> dict:
         """序列化为可存储的dict"""
+        s = self.strategy
         return {
+            "strategy": {
+                "document_summary": s.document_summary,
+                "audience_analysis": s.audience_analysis,
+                "scenario_strategy": s.scenario_strategy,
+                "core_themes": s.core_themes,
+                "recommended_structure": s.recommended_structure,
+                "recommended_page_range": s.recommended_page_range,
+                "key_messages": s.key_messages,
+            },
             "derived_metrics": [
                 {"metric_type": m.metric_type.value, "name": m.name,
                  "value": m.value, "formatted_value": m.formatted_value,
@@ -637,7 +860,20 @@ class AnalysisResult:
     @classmethod
     def from_dict(cls, data: dict) -> AnalysisResult:
         """从dict反序列化"""
+        # 反序列化 strategy
+        sd = data.get("strategy", {})
+        strategy = StrategyInsight(
+            document_summary=sd.get("document_summary", ""),
+            audience_analysis=sd.get("audience_analysis", ""),
+            scenario_strategy=sd.get("scenario_strategy", ""),
+            core_themes=sd.get("core_themes", []),
+            recommended_structure=sd.get("recommended_structure", ""),
+            recommended_page_range=sd.get("recommended_page_range", ""),
+            key_messages=sd.get("key_messages", []),
+        )
+
         return cls(
+            strategy=strategy,
             derived_metrics=[
                 DerivedMetric(
                     metric_type=MetricType(m["metric_type"]), name=m["name"],
@@ -690,6 +926,7 @@ class OutlineItem:
     supporting_hint: str = ""           # 该页需要什么支撑材料
     data_source: str = ""               # 引用的数据来源 e.g. "Sheet1: 季度收入表"
     primary_visual: str = ""            # PrimaryVisualType值: "chart"/"diagram"/"visual_block"/"text_only"
+    narrative_arc: str = ""             # NarrativeRole值，由 OutlineAgent LLM 直接填写
 
 
 @dataclass
@@ -707,7 +944,8 @@ class OutlineResult:
                  "takeaway_message": i.takeaway_message,
                  "supporting_hint": i.supporting_hint,
                  "data_source": i.data_source,
-                 "primary_visual": i.primary_visual}
+                 "primary_visual": i.primary_visual,
+                 "narrative_arc": i.narrative_arc}
                 for i in self.items
             ],
             "data_gap_suggestions": self.data_gap_suggestions,
@@ -723,7 +961,8 @@ class OutlineResult:
                     takeaway_message=i["takeaway_message"],
                     supporting_hint=i.get("supporting_hint", ""),
                     data_source=i.get("data_source", ""),
-                    primary_visual=i.get("primary_visual", ""))
+                    primary_visual=i.get("primary_visual", ""),
+                    narrative_arc=i.get("narrative_arc", ""))
                 for i in data.get("items", [])
             ],
             data_gap_suggestions=data.get("data_gap_suggestions", []),
@@ -1012,7 +1251,6 @@ class SupplementalData:
     page_number: Optional[int] = None   # None=全局, 数字=特定页
     text_data: str = ""
     file_path: str = ""                 # 上传文件路径
-    micro_analysis: Optional[AnalysisResult] = None  # 微型分析结果
 
 
 @dataclass

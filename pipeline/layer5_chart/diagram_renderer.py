@@ -20,9 +20,23 @@ class DiagramRenderer:
     """参数化概念图渲染器"""
 
     def render(self, slide, diag_spec: DiagramSpec, rect: Rect, theme: VisualTheme):
-        """根据 diagram_type 分发到对应模板"""
+        """根据 diagram_type 分发到对应模板。
+        优先通过 SkillRegistry 查找 Diagram Skill 渲染，fallback 用原有方法。
+        """
         dtype = diag_spec.diagram_type
 
+        # 优先使用 SkillRegistry
+        try:
+            from pipeline.skills import SkillRegistry
+            from pipeline.skills.diagrams import ProcessFlowSkill  # 触发注册
+            skill = SkillRegistry.get().find("diagram", dtype)
+            if skill is not None:
+                skill.render(slide, diag_spec, rect, theme)
+                return
+        except Exception as e:
+            print(f"   Diagram Skill渲染失败({dtype}): {e}，fallback到原方法")
+
+        # Fallback: 原有 if/elif 分发
         if dtype == "process_flow":
             self._render_process_flow(slide, diag_spec, rect, theme)
         elif dtype == "relationship":

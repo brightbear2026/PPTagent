@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "description": "PPT Agent布局骨架库 - 12核心+6扩展",
+  "version": 2,
+  "description": "PPT Agent布局骨架库 - 12核心+6扩展+4 visual_block（含约束元数据）",
   "canvas": {
     "width_emu": 12192000,
     "height_emu": 6858000,
@@ -12,11 +12,18 @@
       "category": "core",
       "content_pattern": "TITLE_ONLY",
       "slots": {
-        "title": {"x": 0.05, "y": 0.2, "w": 0.9, "h": 0.2},
-        "subtitle": {"x": 0.1, "y": 0.45, "w": 0.8, "h": 0.12},
-        "takeaway": {"x": 0.1, "y": 0.6, "w": 0.8, "h": 0.08},
-        "footnote": {"x": 0.05, "y": 0.92, "w": 0.9, "h": 0.05},
+        "title": {"x": 0.05, "y": 0.2, "w": 0.9, "h": 0.2, "max_chars": 60, "overflow": "shrink"},
+        "subtitle": {"x": 0.1, "y": 0.45, "w": 0.8, "h": 0.12, "max_chars": 120, "overflow": "shrink"},
+        "takeaway": {"x": 0.1, "y": 0.6, "w": 0.8, "h": 0.08, "max_chars": 80, "overflow": "shrink"},
+        "footnote": {"x": 0.05, "y": 0.92, "w": 0.9, "h": 0.05, "max_chars": 60, "overflow": "truncate"},
         "logo": {"x": 0.85, "y": 0.03, "w": 0.1, "h": 0.06}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 200,
+        "max_fill_ratio": 0.40,
+        "min_fill_ratio": 0.10,
+        "overflow_strategy": "shrink"
       }
     },
     "agenda_vertical": {
@@ -24,10 +31,17 @@
       "category": "core",
       "content_pattern": "AGENDA_LIST",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12},
-        "body": {"x": 0.05, "y": 0.15, "w": 0.9, "h": 0.72},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12, "max_chars": 40, "overflow": "shrink"},
+        "body": {"x": 0.05, "y": 0.15, "w": 0.9, "h": 0.72, "max_chars": 800, "overflow": "truncate"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"},
         "logo": {"x": 0.85, "y": 0.0, "w": 0.1, "h": 0.06}
+      },
+      "constraints": {
+        "max_title_chars": 40,
+        "max_body_chars": 800,
+        "max_fill_ratio": 0.60,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "truncate"
       }
     },
     "text_top_evidence_bottom": {
@@ -35,12 +49,19 @@
       "category": "core",
       "content_pattern": "ARGUMENT_EVIDENCE",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12},
-        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06},
-        "body": {"x": 0.0, "y": 0.2, "w": 1.0, "h": 0.38},
-        "evidence": {"x": 0.0, "y": 0.6, "w": 1.0, "h": 0.3},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05},
-        "source": {"x": 0.0, "y": 0.97, "w": 0.5, "h": 0.03}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "body": {"x": 0.0, "y": 0.2, "w": 1.0, "h": 0.38, "max_chars": 400, "overflow": "shrink"},
+        "evidence": {"x": 0.0, "y": 0.6, "w": 1.0, "h": 0.3, "max_chars": 350, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"},
+        "source": {"x": 0.0, "y": 0.97, "w": 0.5, "h": 0.03, "max_chars": 40, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 400,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.20,
+        "overflow_strategy": "shrink"
       }
     },
     "split_50_50": {
@@ -48,11 +69,18 @@
       "category": "core",
       "content_pattern": "TWO_COLUMN",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12},
-        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06},
-        "left": {"x": 0.0, "y": 0.2, "w": 0.48, "h": 0.7},
-        "right": {"x": 0.52, "y": 0.2, "w": 0.48, "h": 0.7},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "left": {"x": 0.0, "y": 0.2, "w": 0.48, "h": 0.7, "max_chars": 350, "overflow": "shrink"},
+        "right": {"x": 0.52, "y": 0.2, "w": 0.48, "h": 0.7, "max_chars": 350, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 350,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "split_33_33_33": {
@@ -60,12 +88,19 @@
       "category": "core",
       "content_pattern": "THREE_COLUMN",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12},
-        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06},
-        "col1": {"x": 0.0, "y": 0.2, "w": 0.31, "h": 0.7},
-        "col2": {"x": 0.345, "y": 0.2, "w": 0.31, "h": 0.7},
-        "col3": {"x": 0.69, "y": 0.2, "w": 0.31, "h": 0.7},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "col1": {"x": 0.0, "y": 0.2, "w": 0.31, "h": 0.7, "max_chars": 250, "overflow": "shrink"},
+        "col2": {"x": 0.345, "y": 0.2, "w": 0.31, "h": 0.7, "max_chars": 250, "overflow": "shrink"},
+        "col3": {"x": 0.69, "y": 0.2, "w": 0.31, "h": 0.7, "max_chars": 250, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 250,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "chart_left_60_text_right_40": {
@@ -73,11 +108,18 @@
       "category": "core",
       "content_pattern": "LEFT_CHART_RIGHT_TEXT",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12},
-        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
         "chart": {"x": 0.0, "y": 0.2, "w": 0.58, "h": 0.7},
-        "body": {"x": 0.62, "y": 0.2, "w": 0.38, "h": 0.7},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "body": {"x": 0.62, "y": 0.2, "w": 0.38, "h": 0.7, "max_chars": 280, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 280,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.20,
+        "overflow_strategy": "shrink"
       }
     },
     "text_left_40_chart_right_60": {
@@ -85,11 +127,18 @@
       "category": "core",
       "content_pattern": "LEFT_TEXT_RIGHT_CHART",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12},
-        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06},
-        "body": {"x": 0.0, "y": 0.2, "w": 0.38, "h": 0.7},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.12, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.12, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "body": {"x": 0.0, "y": 0.2, "w": 0.38, "h": 0.7, "max_chars": 280, "overflow": "shrink"},
         "chart": {"x": 0.42, "y": 0.2, "w": 0.58, "h": 0.7},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 280,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.20,
+        "overflow_strategy": "shrink"
       }
     },
     "four_quadrant": {
@@ -97,13 +146,20 @@
       "category": "core",
       "content_pattern": "MATRIX_2X2",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "top_left": {"x": 0.0, "y": 0.18, "w": 0.48, "h": 0.35},
-        "top_right": {"x": 0.52, "y": 0.18, "w": 0.48, "h": 0.35},
-        "bottom_left": {"x": 0.0, "y": 0.55, "w": 0.48, "h": 0.35},
-        "bottom_right": {"x": 0.52, "y": 0.55, "w": 0.48, "h": 0.35},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 50, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "top_left": {"x": 0.0, "y": 0.18, "w": 0.48, "h": 0.35, "max_chars": 150, "overflow": "truncate"},
+        "top_right": {"x": 0.52, "y": 0.18, "w": 0.48, "h": 0.35, "max_chars": 150, "overflow": "truncate"},
+        "bottom_left": {"x": 0.0, "y": 0.55, "w": 0.48, "h": 0.35, "max_chars": 150, "overflow": "truncate"},
+        "bottom_right": {"x": 0.52, "y": 0.55, "w": 0.48, "h": 0.35, "max_chars": 150, "overflow": "truncate"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 50,
+        "max_body_chars": 150,
+        "max_fill_ratio": 0.60,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "truncate"
       }
     },
     "timeline_bar": {
@@ -111,10 +167,17 @@
       "category": "core",
       "content_pattern": "TIMELINE_HORIZONTAL",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
         "diagram": {"x": 0.03, "y": 0.2, "w": 0.94, "h": 0.68},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 400,
+        "max_fill_ratio": 0.55,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "process_steps": {
@@ -122,10 +185,17 @@
       "category": "core",
       "content_pattern": "PROCESS_FLOW",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
         "diagram": {"x": 0.03, "y": 0.2, "w": 0.94, "h": 0.68},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 400,
+        "max_fill_ratio": 0.55,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "text_top_chart_bottom": {
@@ -133,11 +203,18 @@
       "category": "core",
       "content_pattern": "DATA_DASHBOARD",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "body": {"x": 0.0, "y": 0.18, "w": 1.0, "h": 0.2},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "body": {"x": 0.0, "y": 0.18, "w": 1.0, "h": 0.2, "max_chars": 200, "overflow": "shrink"},
         "chart": {"x": 0.0, "y": 0.4, "w": 1.0, "h": 0.5},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 200,
+        "max_fill_ratio": 0.60,
+        "min_fill_ratio": 0.20,
+        "overflow_strategy": "shrink"
       }
     },
     "full_width_table": {
@@ -145,10 +222,17 @@
       "category": "core",
       "content_pattern": "FULL_TABLE",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "body": {"x": 0.0, "y": 0.18, "w": 1.0, "h": 0.72},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "body": {"x": 0.0, "y": 0.18, "w": 1.0, "h": 0.72, "max_chars": 800, "overflow": "truncate"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 800,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.20,
+        "overflow_strategy": "truncate"
       }
     },
     "comparison_table": {
@@ -156,13 +240,20 @@
       "category": "extended",
       "content_pattern": "TWO_COLUMN",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "left_header": {"x": 0.0, "y": 0.18, "w": 0.48, "h": 0.08},
-        "right_header": {"x": 0.52, "y": 0.18, "w": 0.48, "h": 0.08},
-        "left": {"x": 0.0, "y": 0.28, "w": 0.48, "h": 0.6},
-        "right": {"x": 0.52, "y": 0.28, "w": 0.48, "h": 0.6},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "left_header": {"x": 0.0, "y": 0.18, "w": 0.48, "h": 0.08, "max_chars": 30, "overflow": "shrink"},
+        "right_header": {"x": 0.52, "y": 0.18, "w": 0.48, "h": 0.08, "max_chars": 30, "overflow": "shrink"},
+        "left": {"x": 0.0, "y": 0.28, "w": 0.48, "h": 0.6, "max_chars": 350, "overflow": "shrink"},
+        "right": {"x": 0.52, "y": 0.28, "w": 0.48, "h": 0.6, "max_chars": 350, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 350,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "quote_highlight": {
@@ -170,11 +261,18 @@
       "category": "extended",
       "content_pattern": "ARGUMENT_EVIDENCE",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "quote": {"x": 0.1, "y": 0.2, "w": 0.8, "h": 0.25},
-        "attribution": {"x": 0.15, "y": 0.48, "w": 0.7, "h": 0.08},
-        "body": {"x": 0.0, "y": 0.6, "w": 1.0, "h": 0.28},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "quote": {"x": 0.1, "y": 0.2, "w": 0.8, "h": 0.25, "max_chars": 200, "overflow": "shrink"},
+        "attribution": {"x": 0.15, "y": 0.48, "w": 0.7, "h": 0.08, "max_chars": 40, "overflow": "truncate"},
+        "body": {"x": 0.0, "y": 0.6, "w": 1.0, "h": 0.28, "max_chars": 300, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 300,
+        "max_fill_ratio": 0.55,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "image_left_text_right": {
@@ -182,26 +280,40 @@
       "category": "extended",
       "content_pattern": "LEFT_CHART_RIGHT_TEXT",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
         "image": {"x": 0.0, "y": 0.18, "w": 0.45, "h": 0.7},
-        "body": {"x": 0.5, "y": 0.18, "w": 0.5, "h": 0.7},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "body": {"x": 0.5, "y": 0.18, "w": 0.5, "h": 0.7, "max_chars": 350, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 350,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
-    "kpi_dashboard": {
+    "kpi_dashboard_extended": {
       "name": "KPI仪表盘",
       "category": "extended",
       "content_pattern": "DATA_DASHBOARD",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "kpi1": {"x": 0.0, "y": 0.12, "w": 0.24, "h": 0.15},
-        "kpi2": {"x": 0.25, "y": 0.12, "w": 0.24, "h": 0.15},
-        "kpi3": {"x": 0.5, "y": 0.12, "w": 0.24, "h": 0.15},
-        "kpi4": {"x": 0.75, "y": 0.12, "w": 0.24, "h": 0.15},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 50, "overflow": "shrink"},
+        "kpi1": {"x": 0.0, "y": 0.12, "w": 0.24, "h": 0.15, "max_chars": 40, "overflow": "truncate"},
+        "kpi2": {"x": 0.25, "y": 0.12, "w": 0.24, "h": 0.15, "max_chars": 40, "overflow": "truncate"},
+        "kpi3": {"x": 0.5, "y": 0.12, "w": 0.24, "h": 0.15, "max_chars": 40, "overflow": "truncate"},
+        "kpi4": {"x": 0.75, "y": 0.12, "w": 0.24, "h": 0.15, "max_chars": 40, "overflow": "truncate"},
         "chart": {"x": 0.0, "y": 0.3, "w": 0.6, "h": 0.58},
-        "body": {"x": 0.62, "y": 0.3, "w": 0.38, "h": 0.58},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "body": {"x": 0.62, "y": 0.3, "w": 0.38, "h": 0.58, "max_chars": 280, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 50,
+        "max_body_chars": 280,
+        "max_fill_ratio": 0.60,
+        "min_fill_ratio": 0.20,
+        "overflow_strategy": "shrink"
       }
     },
     "stacked_blocks": {
@@ -209,12 +321,19 @@
       "category": "extended",
       "content_pattern": "ARGUMENT_EVIDENCE",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "block1": {"x": 0.0, "y": 0.18, "w": 1.0, "h": 0.24},
-        "block2": {"x": 0.0, "y": 0.44, "w": 1.0, "h": 0.24},
-        "block3": {"x": 0.0, "y": 0.7, "w": 1.0, "h": 0.2},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "block1": {"x": 0.0, "y": 0.18, "w": 1.0, "h": 0.24, "max_chars": 200, "overflow": "truncate"},
+        "block2": {"x": 0.0, "y": 0.44, "w": 1.0, "h": 0.24, "max_chars": 200, "overflow": "truncate"},
+        "block3": {"x": 0.0, "y": 0.7, "w": 1.0, "h": 0.2, "max_chars": 180, "overflow": "truncate"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 200,
+        "max_fill_ratio": 0.65,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "truncate"
       }
     },
     "diagonal_split": {
@@ -222,12 +341,19 @@
       "category": "extended",
       "content_pattern": "TWO_COLUMN",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
         "left_accent": {"x": 0.0, "y": 0.18, "w": 0.08, "h": 0.72},
-        "body": {"x": 0.12, "y": 0.18, "w": 0.38, "h": 0.72},
+        "body": {"x": 0.12, "y": 0.18, "w": 0.38, "h": 0.72, "max_chars": 300, "overflow": "shrink"},
         "chart": {"x": 0.55, "y": 0.18, "w": 0.45, "h": 0.72},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 300,
+        "max_fill_ratio": 0.60,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "kpi_dashboard": {
@@ -235,14 +361,21 @@
       "category": "visual_block",
       "content_pattern": "KPI_HIGHLIGHT",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "block1": {"x": 0.03, "y": 0.2, "w": 0.22, "h": 0.35},
-        "block2": {"x": 0.27, "y": 0.2, "w": 0.22, "h": 0.35},
-        "block3": {"x": 0.51, "y": 0.2, "w": 0.22, "h": 0.35},
-        "block4": {"x": 0.75, "y": 0.2, "w": 0.22, "h": 0.35},
-        "body": {"x": 0.03, "y": 0.58, "w": 0.94, "h": 0.3},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 50, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "block1": {"x": 0.03, "y": 0.2, "w": 0.22, "h": 0.35, "max_chars": 60, "overflow": "truncate"},
+        "block2": {"x": 0.27, "y": 0.2, "w": 0.22, "h": 0.35, "max_chars": 60, "overflow": "truncate"},
+        "block3": {"x": 0.51, "y": 0.2, "w": 0.22, "h": 0.35, "max_chars": 60, "overflow": "truncate"},
+        "block4": {"x": 0.75, "y": 0.2, "w": 0.22, "h": 0.35, "max_chars": 60, "overflow": "truncate"},
+        "body": {"x": 0.03, "y": 0.58, "w": 0.94, "h": 0.3, "max_chars": 300, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 50,
+        "max_body_chars": 300,
+        "max_fill_ratio": 0.55,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "shrink"
       }
     },
     "step_cards_horizontal": {
@@ -250,15 +383,22 @@
       "category": "visual_block",
       "content_pattern": "STEP_FLOW",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "block1": {"x": 0.03, "y": 0.2, "w": 0.18, "h": 0.55},
-        "block2": {"x": 0.22, "y": 0.2, "w": 0.18, "h": 0.55},
-        "block3": {"x": 0.41, "y": 0.2, "w": 0.18, "h": 0.55},
-        "block4": {"x": 0.60, "y": 0.2, "w": 0.18, "h": 0.55},
-        "block5": {"x": 0.79, "y": 0.2, "w": 0.18, "h": 0.55},
-        "body": {"x": 0.03, "y": 0.78, "w": 0.94, "h": 0.12},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 50, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "block1": {"x": 0.03, "y": 0.2, "w": 0.18, "h": 0.55, "max_chars": 80, "overflow": "truncate"},
+        "block2": {"x": 0.22, "y": 0.2, "w": 0.18, "h": 0.55, "max_chars": 80, "overflow": "truncate"},
+        "block3": {"x": 0.41, "y": 0.2, "w": 0.18, "h": 0.55, "max_chars": 80, "overflow": "truncate"},
+        "block4": {"x": 0.60, "y": 0.2, "w": 0.18, "h": 0.55, "max_chars": 80, "overflow": "truncate"},
+        "block5": {"x": 0.79, "y": 0.2, "w": 0.18, "h": 0.55, "max_chars": 80, "overflow": "truncate"},
+        "body": {"x": 0.03, "y": 0.78, "w": 0.94, "h": 0.12, "max_chars": 120, "overflow": "truncate"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 50,
+        "max_body_chars": 80,
+        "max_fill_ratio": 0.60,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "truncate"
       }
     },
     "icon_grid_2x3": {
@@ -266,15 +406,22 @@
       "category": "visual_block",
       "content_pattern": "ICON_GRID",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "block1": {"x": 0.03, "y": 0.2, "w": 0.30, "h": 0.33},
-        "block2": {"x": 0.35, "y": 0.2, "w": 0.30, "h": 0.33},
-        "block3": {"x": 0.67, "y": 0.2, "w": 0.30, "h": 0.33},
-        "block4": {"x": 0.03, "y": 0.56, "w": 0.30, "h": 0.33},
-        "block5": {"x": 0.35, "y": 0.56, "w": 0.30, "h": 0.33},
-        "block6": {"x": 0.67, "y": 0.56, "w": 0.30, "h": 0.33},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 50, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "block1": {"x": 0.03, "y": 0.2, "w": 0.30, "h": 0.33, "max_chars": 100, "overflow": "truncate"},
+        "block2": {"x": 0.35, "y": 0.2, "w": 0.30, "h": 0.33, "max_chars": 100, "overflow": "truncate"},
+        "block3": {"x": 0.67, "y": 0.2, "w": 0.30, "h": 0.33, "max_chars": 100, "overflow": "truncate"},
+        "block4": {"x": 0.03, "y": 0.56, "w": 0.30, "h": 0.33, "max_chars": 100, "overflow": "truncate"},
+        "block5": {"x": 0.35, "y": 0.56, "w": 0.30, "h": 0.33, "max_chars": 100, "overflow": "truncate"},
+        "block6": {"x": 0.67, "y": 0.56, "w": 0.30, "h": 0.33, "max_chars": 100, "overflow": "truncate"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 50,
+        "max_body_chars": 100,
+        "max_fill_ratio": 0.55,
+        "min_fill_ratio": 0.15,
+        "overflow_strategy": "truncate"
       }
     },
     "stat_callout_center": {
@@ -282,11 +429,18 @@
       "category": "visual_block",
       "content_pattern": "STAT_CALLOUT",
       "slots": {
-        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1},
-        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06},
-        "block1": {"x": 0.15, "y": 0.22, "w": 0.7, "h": 0.3},
-        "body": {"x": 0.1, "y": 0.55, "w": 0.8, "h": 0.3},
-        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05}
+        "title": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.1, "max_chars": 60, "overflow": "shrink"},
+        "takeaway": {"x": 0.0, "y": 0.1, "w": 1.0, "h": 0.06, "max_chars": 80, "overflow": "shrink"},
+        "block1": {"x": 0.15, "y": 0.22, "w": 0.7, "h": 0.3, "max_chars": 60, "overflow": "truncate"},
+        "body": {"x": 0.1, "y": 0.55, "w": 0.8, "h": 0.3, "max_chars": 300, "overflow": "shrink"},
+        "footnote": {"x": 0.0, "y": 0.92, "w": 1.0, "h": 0.05, "max_chars": 60, "overflow": "truncate"}
+      },
+      "constraints": {
+        "max_title_chars": 60,
+        "max_body_chars": 300,
+        "max_fill_ratio": 0.50,
+        "min_fill_ratio": 0.10,
+        "overflow_strategy": "shrink"
       }
     }
   }

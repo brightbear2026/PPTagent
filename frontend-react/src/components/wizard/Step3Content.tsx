@@ -14,6 +14,8 @@ import {
 } from '@ant-design/icons';
 import { updateStage, rerunPage } from '../../api/client';
 import type { OutlineResult, ContentResult, SlideContent, TextBlock } from '../../types';
+import ChartPreview from '../preview/ChartPreview';
+import DiagramPreview from '../preview/DiagramPreview';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -22,12 +24,13 @@ interface Step3Props {
   taskId: string;
   content: ContentResult;
   outline: OutlineResult | null;
+  generation?: number;
   onConfirm: () => void;
   onBack?: () => void;
   buildFailed?: boolean;
 }
 
-const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, onConfirm, onBack, buildFailed }) => {
+const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generation, onConfirm, onBack, buildFailed }) => {
   const [slides, setSlides] = useState<SlideContent[]>(content.slides);
   const [selectedPage, setSelectedPage] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -93,7 +96,7 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, onConfir
         total_pages: slides.length,
         failed_pages: slides.filter((s) => s.is_failed).map((s) => s.page_number),
         slides: slides,
-      });
+      }, generation);
       await onConfirm();
       setConfirmed(true);
       message.success('内容已确认，正在构建PPT...');
@@ -336,7 +339,16 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, onConfir
 const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
   const aspectRatio = 16 / 9;
   const width = 348;
-  const height = width / aspectRatio;
+  const height = width / aspectRatio; // ≈196
+
+  const hasChart   = !!slide.chart_suggestion;
+  const hasDiagram = !!slide.diagram_spec;
+  const hasVisual  = hasChart || hasDiagram;
+
+  // When there's a visual, allocate ~100px for it; text area shrinks accordingly
+  const VISUAL_H = 100;
+  const HEADER_H = 44; // takeaway + divider
+  const textMaxH  = hasVisual ? height - HEADER_H - VISUAL_H - 16 : height - HEADER_H - 8;
 
   return (
     <div
@@ -347,6 +359,7 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
         borderRadius: 2,
         boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
         padding: 12,
+        paddingTop: 15,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
@@ -362,90 +375,81 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
 
       {/* Takeaway */}
       <div style={{
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 700,
         color: '#003D6E',
-        marginBottom: 6,
+        marginBottom: 5,
         lineHeight: 1.4,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
+        flexShrink: 0,
       }}>
-        {slide.takeaway_message}
+        {slide.takeaway_message || '（无标题）'}
       </div>
 
       {/* Divider */}
-      <div style={{ height: 1, background: '#C9A84C', marginBottom: 6, opacity: 0.5 }} />
+      <div style={{ height: 1, background: '#C9A84C', marginBottom: 5, opacity: 0.5, flexShrink: 0 }} />
 
       {/* Text blocks */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {slide.text_blocks.map((block, i) => (
+      <div style={{ overflow: 'hidden', maxHeight: textMaxH, flexShrink: 0 }}>
+        {slide.text_blocks.slice(0, 6).map((block, i) => (
           <div
             key={i}
             style={{
-              fontSize: block.level === 0 ? 10 : 9,
+              fontSize: block.level === 0 ? 9 : 8.5,
               color: block.level === 0 ? '#2D3436' : '#5C5C5C',
-              paddingLeft: block.level * 12,
-              marginBottom: 3,
-              lineHeight: 1.4,
+              paddingLeft: block.level * 10,
+              marginBottom: 2,
+              lineHeight: 1.35,
               fontWeight: block.is_bold ? 600 : 400,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
           >
-            {block.level > 0 && (
-              <span style={{ color: '#C9A84C', marginRight: 4 }}>-</span>
-            )}
+            {block.level > 0 && <span style={{ color: '#C9A84C', marginRight: 3 }}>›</span>}
             {block.content}
           </div>
         ))}
       </div>
 
-      {/* Chart indicator */}
-      {slide.chart_suggestion && (
-        <div style={{
-          background: '#F0F5FF',
-          borderRadius: 2,
-          padding: '4px 8px',
-          marginTop: 4,
-          fontSize: 9,
-          color: '#003D6E',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-        }}>
-          <BarChartOutlined style={{ fontSize: 10 }} />
-          {slide.chart_suggestion.title || '图表'}
-          <Tag color="blue" style={{ fontSize: 8, lineHeight: '14px', padding: '0 3px', margin: 0, marginLeft: 'auto' }}>
-            {slide.chart_suggestion.chart_type}
-          </Tag>
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
+
+      {/* ── Chart Preview ── */}
+      {hasChart && slide.chart_suggestion && (
+        <div style={{ flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ fontSize: 7.5, color: '#8B9DAF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <BarChartOutlined style={{ fontSize: 9 }} />
+            <span>{slide.chart_suggestion.title}</span>
+            <Tag color="blue" style={{ fontSize: 7, lineHeight: '14px', padding: '0 3px', margin: 0, marginLeft: 'auto' }}>
+              {slide.chart_suggestion.chart_type}
+            </Tag>
+          </div>
+          <ChartPreview chart={slide.chart_suggestion} width={width - 24} height={VISUAL_H - 14} />
         </div>
       )}
 
-      {/* Diagram indicator */}
-      {slide.diagram_spec && (
-        <div style={{
-          background: '#F0FFFF',
-          borderRadius: 2,
-          padding: '4px 8px',
-          marginTop: 4,
-          fontSize: 9,
-          color: '#48A9E6',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-        }}>
-          <ApartmentOutlined style={{ fontSize: 10 }} />
-          {slide.diagram_spec.title || '概念图'}
+      {/* ── Diagram Preview ── */}
+      {hasDiagram && slide.diagram_spec && (
+        <div style={{ flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ fontSize: 7.5, color: '#8B9DAF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <ApartmentOutlined style={{ fontSize: 9 }} />
+            <span>{slide.diagram_spec.title || '概念图'}</span>
+            <Tag color="cyan" style={{ fontSize: 7, lineHeight: '14px', padding: '0 3px', margin: 0, marginLeft: 'auto' }}>
+              {slide.diagram_spec.diagram_type}
+            </Tag>
+          </div>
+          <DiagramPreview diagram={slide.diagram_spec} width={width - 24} height={VISUAL_H - 14} />
         </div>
       )}
 
       {/* Source */}
-      {slide.source_note && (
-        <div style={{ fontSize: 8, color: '#8B9DAF', marginTop: 4 }}>
+      {slide.source_note && !hasVisual && (
+        <div style={{ fontSize: 7.5, color: '#8B9DAF', marginTop: 3, flexShrink: 0 }}>
           来源: {slide.source_note}
         </div>
       )}

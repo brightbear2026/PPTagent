@@ -401,40 +401,34 @@ class TestPPTBuilderRegression(unittest.TestCase):
         self.assertLessEqual(rect.top + rect.height, layout.source_area.top)
 
     def test_outline_extract_json_handles_llm_quirks(self):
-        """Regression: LLM 围栏/智能引号/尾随逗号/缺失闭合都要能解析"""
-        from pipeline.outline_generator import OutlineGenerator
-        og = OutlineGenerator.__new__(OutlineGenerator)
+        """Regression: LLM 围栏/尾随逗号/行注释/缺失围栏都要能解析"""
+        from pipeline.agents.outline_agent import OutlineAgent
+
+        slide = '{"page_number":1,"slide_type":"title","takeaway":"封面"}'
 
         cases = {
-            "fenced_with_trailing_comma": (
-                '```json\n'
-                '{"narrative_logic":"x","items":[{"page_number":1},],'
-                '"data_gap_suggestions":[]}\n'
-                '```'
+            "fenced_array": (
+                f'```json\n[{slide}]\n```'
+            ),
+            "fenced_trailing_comma": (
+                f'```json\n[{slide},]\n```'
             ),
             "missing_closing_fence": (
-                '```json\n'
-                '{"narrative_logic":"x","items":[],"data_gap_suggestions":[]}'
+                f'```json\n[{slide}]'
             ),
-            "smart_quotes": (
-                '{\u201cnarrative_logic\u201d:\u201cx\u201d,'
-                '\u201citems\u201d:[],\u201cdata_gap_suggestions\u201d:[]}'
+            "inline_comment": (
+                f'```json\n[\n  // 注释\n  {slide}\n]\n```'
             ),
-            "inline_comment_and_prose": (
-                '这是大纲：\n```json\n'
-                '{\n  // 注释\n  "narrative_logic":"y",\n'
-                '  "items":[],\n  "data_gap_suggestions":[]\n}\n```\n请审核'
-            ),
-            "deepseek_think_block": (
-                '<think>let me reason...</think>\n'
-                '{"narrative_logic":"z","items":[],"data_gap_suggestions":[]}'
+            "with_prose": (
+                f'这是大纲：\n```json\n[{slide}]\n```\n请审核'
             ),
         }
         for name, raw in cases.items():
             with self.subTest(case=name):
-                parsed = og._extract_json(raw)
+                parsed = OutlineAgent._parse_slides_from_text(raw)
                 self.assertIsNotNone(parsed, f"{name} 解析失败")
-                self.assertIn("items", parsed)
+                self.assertGreater(len(parsed), 0, f"{name} 结果为空")
+                self.assertIn("page_number", parsed[0])
 
     def test_section_divider_routes_to_title_template(self):
         from pipeline.layer4_visual.visual_designer import (

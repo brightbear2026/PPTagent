@@ -30,22 +30,28 @@ class TestStageModelConfig(unittest.TestCase):
             StageModelConfig(provider="zhipu", model="glm-4-plus", temperature=3.0)
 
     def test_defaults(self):
-        self.assertIn("layer2_extract", STAGE_DEFAULTS)
-        self.assertEqual(STAGE_DEFAULTS["layer2_extract"].provider, "zhipu")
+        self.assertIn("analyze", STAGE_DEFAULTS)
+        self.assertEqual(STAGE_DEFAULTS["analyze"].provider, "zhipu")
+        self.assertIn("outline", STAGE_DEFAULTS)
+        self.assertEqual(STAGE_DEFAULTS["outline"].provider, "deepseek")
+        self.assertIn("content", STAGE_DEFAULTS)
+        self.assertIn("design", STAGE_DEFAULTS)
 
 
 class TestPipelineModelConfig(unittest.TestCase):
     def test_default_config(self):
         c = PipelineModelConfig()
-        self.assertEqual(c.layer2_extract.provider, "zhipu")
-        self.assertEqual(c.layer2_narrative.provider, "deepseek")
-        self.assertEqual(c.layer3.provider, "deepseek")
-        self.assertEqual(c.layer5_chart_narrative.provider, "tongyi")
+        self.assertEqual(c.analyze.provider, "zhipu")
+        self.assertEqual(c.outline.provider, "deepseek")
+        self.assertEqual(c.content.provider, "deepseek")
+        self.assertEqual(c.design.provider, "tongyi")
 
     def test_get_stage_config(self):
         c = PipelineModelConfig()
-        sc = c.get_stage_config("layer2_extract")
+        sc = c.get_stage_config("analyze")
         self.assertEqual(sc.provider, "zhipu")
+        sc2 = c.get_stage_config("outline")
+        self.assertEqual(sc2.provider, "deepseek")
 
     def test_get_unknown_stage_raises(self):
         c = PipelineModelConfig()
@@ -55,21 +61,22 @@ class TestPipelineModelConfig(unittest.TestCase):
     def test_set_stage_config(self):
         c = PipelineModelConfig()
         new_config = StageModelConfig(provider="moonshot", model="moonshot-v1-8k", api_key="test")
-        c.set_stage_config("layer2_extract", new_config)
-        self.assertEqual(c.layer2_extract.provider, "moonshot")
+        c.set_stage_config("analyze", new_config)
+        self.assertEqual(c.analyze.provider, "moonshot")
 
     def test_mask_api_keys(self):
         c = PipelineModelConfig()
-        c.layer2_extract.api_key = "sk-1234567890abcdef"
+        c.analyze.api_key = "sk-1234567890abcdef"
         masked = c.mask_api_keys()
-        self.assertIn("****", masked.layer2_extract.api_key)
-        self.assertNotEqual(masked.layer2_extract.api_key, c.layer2_extract.api_key)
+        self.assertIn("****", masked.analyze.api_key)
+        self.assertNotEqual(masked.analyze.api_key, c.analyze.api_key)
 
     def test_serialization(self):
         c = PipelineModelConfig()
         json_str = c.model_dump_json()
         c2 = PipelineModelConfig.model_validate_json(json_str)
-        self.assertEqual(c2.layer2_extract.provider, c.layer2_extract.provider)
+        self.assertEqual(c2.analyze.provider, c.analyze.provider)
+        self.assertEqual(c2.design.provider, c.design.provider)
 
 
 if __name__ == "__main__":

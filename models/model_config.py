@@ -1,6 +1,7 @@
 """
 Pipeline各阶段的模型配置
-5阶段Pipeline中的LLM调用阶段：analyze, outline, content, build
+6阶段Pipeline中的LLM调用阶段：analyze, outline, content, design
+render阶段为纯代码渲染，不需要LLM。
 """
 
 from typing import Optional
@@ -52,7 +53,7 @@ STAGE_DEFAULTS: dict[str, StageModelConfig] = {
         provider="zhipu",
         model="glm-4-plus",
         temperature=0.3,
-        max_tokens=4096,
+        max_tokens=8192,
     ),
     "outline": StageModelConfig(
         provider="deepseek",
@@ -68,7 +69,7 @@ STAGE_DEFAULTS: dict[str, StageModelConfig] = {
         max_tokens=4096,
         base_url="https://api.deepseek.com/v1",
     ),
-    "build": StageModelConfig(
+    "design": StageModelConfig(
         provider="tongyi",
         model="qwen-max",
         temperature=0.5,
@@ -81,7 +82,8 @@ STAGE_DEFAULTS: dict[str, StageModelConfig] = {
 class PipelineModelConfig(BaseModel):
     """
     Pipeline全阶段模型配置
-    4个LLM调用阶段各自独立配置：analyze, outline, content, build
+    4个LLM调用阶段各自独立配置：analyze, outline, content, design
+    render阶段为纯代码，不需要LLM配置。
     """
 
     analyze: StageModelConfig = Field(
@@ -93,8 +95,12 @@ class PipelineModelConfig(BaseModel):
     content: StageModelConfig = Field(
         default_factory=lambda: STAGE_DEFAULTS["content"].model_copy(),
     )
+    design: StageModelConfig = Field(
+        default_factory=lambda: STAGE_DEFAULTS["design"].model_copy(),
+    )
+    # build 保留为向后兼容别名（映射到 design）
     build: StageModelConfig = Field(
-        default_factory=lambda: STAGE_DEFAULTS["build"].model_copy(),
+        default_factory=lambda: STAGE_DEFAULTS["design"].model_copy(),
     )
 
     model_config = {"extra": "forbid"}
@@ -105,7 +111,8 @@ class PipelineModelConfig(BaseModel):
             "analyze": self.analyze,
             "outline": self.outline,
             "content": self.content,
-            "build": self.build,
+            "design": self.design,
+            "build": self.build,   # 向后兼容
         }
         if stage_name not in mapping:
             raise ValueError(
@@ -116,7 +123,7 @@ class PipelineModelConfig(BaseModel):
 
     def set_stage_config(self, stage_name: str, config: StageModelConfig) -> None:
         """更新指定阶段的配置"""
-        valid_stages = {"analyze", "outline", "content", "build"}
+        valid_stages = {"analyze", "outline", "content", "design", "build"}
         if stage_name not in valid_stages:
             raise ValueError(
                 f"未知阶段 '{stage_name}'，"
@@ -127,7 +134,7 @@ class PipelineModelConfig(BaseModel):
     def mask_api_keys(self) -> "PipelineModelConfig":
         """返回api_key被遮蔽的副本（用于API响应）"""
         masked = self.model_copy(deep=True)
-        for stage in [masked.analyze, masked.outline, masked.content, masked.build]:
+        for stage in [masked.analyze, masked.outline, masked.content, masked.design]:
             if stage.api_key:
                 stage.api_key = stage.api_key[:8] + "****" + stage.api_key[-4:]
         return masked

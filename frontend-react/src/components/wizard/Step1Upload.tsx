@@ -8,9 +8,90 @@ import {
 } from 'antd';
 import {
   UploadOutlined, FileTextOutlined, InboxOutlined, RocketOutlined,
+  CheckCircleFilled, LoadingOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
 import { generateFromText, generateFromFile } from '../../api/client';
 import type { GenerateParams } from '../../types';
+
+// parse:5-15%, analyze:15-30%, outline:30-50%（到50%时已跳到Step2）
+const PIPELINE_SUB_STEPS = [
+  { label: '解析文档结构', hint: '识别章节、表格、图片', start: 5,  end: 15 },
+  { label: '分析受众与策略', hint: '生成叙事框架和核心主题', start: 15, end: 30 },
+  { label: '生成PPT大纲', hint: '规划每页的结构与视觉', start: 30, end: 50 },
+];
+
+function getSubStepStatus(stepStart: number, stepEnd: number, progress: number) {
+  if (progress >= stepEnd) return 'done';
+  if (progress >= stepStart) return 'active';
+  return 'wait';
+}
+
+const PipelineSubProgress: React.FC<{ progress: number }> = ({ progress }) => {
+  return (
+    <div style={{
+      marginTop: 16,
+      padding: '14px 16px',
+      background: '#F7F5F0',
+      borderRadius: 4,
+      border: '1px solid #E8E4D9',
+    }}>
+      <div style={{ fontSize: 12, color: '#8B9DAF', marginBottom: 10, fontWeight: 500, letterSpacing: 0.3 }}>
+        AI 处理进度
+      </div>
+      {PIPELINE_SUB_STEPS.map((step) => {
+        const status = getSubStepStatus(step.start, step.end, progress);
+        return (
+          <div
+            key={step.label}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              marginBottom: 10,
+              opacity: status === 'wait' ? 0.4 : 1,
+              transition: 'opacity 0.3s',
+            }}
+          >
+            {/* 状态图标 */}
+            <div style={{ marginTop: 2, fontSize: 14, lineHeight: 1 }}>
+              {status === 'done' && <CheckCircleFilled style={{ color: '#52c41a' }} />}
+              {status === 'active' && <LoadingOutlined style={{ color: '#C9A84C' }} />}
+              {status === 'wait' && <ClockCircleOutlined style={{ color: '#bfbfbf' }} />}
+            </div>
+            {/* 文字 */}
+            <div>
+              <div style={{
+                fontSize: 13,
+                fontWeight: status === 'active' ? 600 : 400,
+                color: status === 'active' ? '#002B4E' : '#595959',
+                lineHeight: 1.4,
+              }}>
+                {step.label}
+              </div>
+              <div style={{ fontSize: 11, color: '#8B9DAF', marginTop: 2 }}>
+                {step.hint}
+              </div>
+            </div>
+            {/* 进度条（仅 active 状态显示） */}
+            {status === 'active' && (
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 60, height: 3, background: '#E8E4D9', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${Math.round((progress - step.start) / (step.end - step.start) * 100)}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #003D6E, #C9A84C)',
+                    transition: 'width 0.4s ease',
+                  }} />
+                </div>
+                <span style={{ fontSize: 11, color: '#8B9DAF' }}>{progress}%</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 const SCENARIO_OPTIONS = [
   { value: '', label: '自动选择（根据材料判断）' },
@@ -27,10 +108,9 @@ interface Step1Props {
   onStart: (taskId: string) => void;
   loading: boolean;
   progress: number;
-  stepMessage?: string;
 }
 
-const Step1Upload: React.FC<Step1Props> = ({ onStart, loading, progress, stepMessage }) => {
+const Step1Upload: React.FC<Step1Props> = ({ onStart, loading, progress }) => {
   const [form] = Form.useForm();
   const [inputMode, setInputMode] = useState<'text' | 'file'>('text');
   const [fileList, setFileList] = useState<any[]>([]);
@@ -136,9 +216,14 @@ const Step1Upload: React.FC<Step1Props> = ({ onStart, loading, progress, stepMes
                 borderRadius: 2,
               }}
             >
-              {loading ? `${stepMessage || '处理中'} (${progress}%)` : '开始生成'}
+              {loading ? `正在处理... (${progress}%)` : '开始生成'}
             </Button>
           </Form.Item>
+
+          {/* 子阶段进度：parse(5-15%) 和 analyze(15-30%) 对用户透明可见 */}
+          {loading && (
+            <PipelineSubProgress progress={progress} />
+          )}
         </Card>
 
         {/* Right: input area */}

@@ -11,7 +11,7 @@ class TestLayoutSkeletonRegistry(unittest.TestCase):
         from templates.skeleton_registry import LayoutSkeletonRegistry
         registry = LayoutSkeletonRegistry()
         all_s = registry.list_skeletons()
-        self.assertEqual(len(all_s), 18)
+        self.assertEqual(len(all_s), 22)
 
     def test_core_skeletons(self):
         from templates.skeleton_registry import LayoutSkeletonRegistry

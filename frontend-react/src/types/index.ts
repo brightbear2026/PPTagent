@@ -26,7 +26,7 @@ export type TaskStatusEnum =
   | 'failed'
   | 'cancelled';
 
-export type PipelineStageName = 'parse' | 'analyze' | 'outline' | 'content' | 'build';
+export type PipelineStageName = 'parse' | 'analyze' | 'outline' | 'content' | 'design' | 'render';
 
 export interface TaskInfo {
   task_id: string;
@@ -49,6 +49,11 @@ export interface StageInfo {
   started_at?: string | null;
   completed_at?: string | null;
   error?: string | null;
+}
+
+export interface SkippedPage {
+  page_number: number;
+  reason: string;
 }
 
 // ── 大纲 ──
@@ -205,10 +210,12 @@ export interface StageModelConfig {
 }
 
 export interface PipelineModelConfig {
+  config_mode?: 'universal' | 'advanced';
   analyze: StageModelConfig;
   outline: StageModelConfig;
   content: StageModelConfig;
-  build: StageModelConfig;
+  design: StageModelConfig;
+  build: StageModelConfig;   // backward compat alias for design
 }
 
 // ── SSE ──

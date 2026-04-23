@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from models import RawContent, ImageData
+from models.slide_spec import StructuredSection, TableData
 
 
 class DocxParser:
@@ -59,9 +60,40 @@ class DocxParser:
         except Exception:
             metadata = {"file_name": Path(file_path).name}
 
-        # 检测语言
+        # 检测语言和页面结构
         from .text_parser import TextParser
-        lang = TextParser()._detect_language(raw_text)
+        tp = TextParser()
+        lang = tp._detect_language(raw_text)
+        source_pages, is_structured = tp.detect_structure(raw_text)
+
+        # 结构化章节提取（利用段落样式）
+        structured_sections = []
+        try:
+            structured_sections = self._extract_structure(doc)
+        except Exception as e:
+            print(f"[docx] 结构化提取失败，降级为扁平模式: {e}")
+
+        # 如果text_parser没检测到结构，但docx有Heading段落，以docx结构为准
+        if not is_structured and structured_sections:
+            is_structured = True
+            print(f"[docx] 从段落样式检测到{len(structured_sections)}个结构化章节")
+
+        # 如果两种方式都没检测到足够结构，用文本内容做章节检测
+        if not is_structured or len(source_pages) < 2:
+            text_pages, text_structured = self._detect_text_sections(raw_text)
+            if text_structured and len(text_pages) > len(source_pages):
+                source_pages = text_pages
+                if not is_structured:
+                    is_structured = True
+                    print(f"[docx] 从文本编号检测到{len(source_pages)}个结构化章节")
+
+        # 补充：如果 structured_sections 太少但 source_pages 充足，从 source_pages 构建
+        if len(structured_sections) < 2 and len(source_pages) >= 2:
+            structured_sections = self._pages_to_sections(source_pages)
+            print(f"[docx] 从source_pages构建{len(structured_sections)}个结构化章节")
+
+        if is_structured:
+            print(f"[docx] 结构化文档: {len(source_pages)}页, {len(structured_sections)}章节")
 
         return RawContent(
             source_type="doc",
@@ -69,7 +101,107 @@ class DocxParser:
             images=images,
             metadata=metadata,
             detected_language=lang,
+            source_pages=source_pages,
+            is_structured=is_structured,
+            structured_sections=structured_sections,
         )
+
+    def _extract_structure(self, doc) -> list[StructuredSection]:
+        """
+        利用python-docx段落样式提取层级章节树。
+        Heading1/2/3 → 对应 level 1/2/3，其余段落归入最近的章节。
+        表格归入其前方的最近章节。
+        """
+        # 标题样式名映射
+        HEADING_MAP = {
+            "Heading 1": 1, "Heading1": 1, "heading 1": 1,
+            "Heading 2": 2, "Heading2": 2, "heading 2": 2,
+            "Heading 3": 3, "Heading3": 3, "heading 3": 3,
+            "Title": 0,  # 文档标题，不计入章节
+        }
+
+        # 第一遍：收集所有段落和标题位置
+        elements = []  # (type, level_or_None, text)
+        for para in doc.paragraphs:
+            style_name = ""
+            try:
+                style_name = para.style.name if para.style else ""
+            except Exception:
+                pass
+
+            text = (para.text or "").strip()
+            if not text:
+                continue
+
+            if style_name in HEADING_MAP:
+                elements.append(("heading", HEADING_MAP[style_name], text))
+            else:
+                elements.append(("body", None, text))
+
+        # 表格也收集进来，标记在最后一个段落之后
+        for table in doc.tables:
+            try:
+                headers = []
+                rows = []
+                for row in table.rows:
+                    cells = []
+                    for cell in row.cells:
+                        try:
+                            cells.append((cell.text or "").strip())
+                        except Exception:
+                            cells.append("")
+                    if not headers:
+                        headers = cells
+                    else:
+                        rows.append(cells)
+                if headers:
+                    td = TableData(headers=headers, rows=rows)
+                    elements.append(("table", None, td))
+            except Exception:
+                continue
+
+        # 第二遍：构建章节树
+        sections = []       # 顶级章节列表
+        stack = []          # 当前章节栈 [(section, level), ...]
+
+        for elem_type, level, content in elements:
+            if elem_type == "heading" and level is not None and level > 0:
+                section = StructuredSection(
+                    title=content,
+                    level=level,
+                    content="",
+                    char_count=0,
+                )
+
+                # 找到正确的父级
+                while stack and stack[-1][1] >= level:
+                    stack.pop()
+
+                if stack:
+                    stack[-1][0].children.append(section)
+                else:
+                    sections.append(section)
+
+                stack.append((section, level))
+
+            elif elem_type == "body":
+                # 归入当前章节
+                if stack:
+                    current = stack[-1][0]
+                    if current.content:
+                        current.content += "\n\n" + content
+                    else:
+                        current.content = content
+                    current.char_count = len(current.content)
+
+            elif elem_type == "body":
+                pass  # already handled above
+
+            elif elem_type == "table":
+                if stack:
+                    stack[-1][0].tables.append(content)
+
+        return sections if sections else []
 
     def _extract_text_fallback(self, doc) -> str:
         """文本提取降级：仅尝试段落，不碰表格"""
@@ -222,6 +354,27 @@ class DocxParser:
             except Exception:
                 continue
         return None
+
+    def _detect_text_sections(self, raw_text: str) -> tuple[list, bool]:
+        """用 TextParser 的编号检测能力，从文本内容中检测章节"""
+        from .text_parser import TextParser
+        tp = TextParser()
+        pages = tp._detect_section_structure(raw_text)
+        return pages, bool(pages)
+
+    @staticmethod
+    def _pages_to_sections(pages: list) -> list[StructuredSection]:
+        """将 SourcePage 列表转为 StructuredSection 列表"""
+        sections = []
+        for p in pages:
+            sections.append(StructuredSection(
+                title=p.title,
+                level=1,
+                content=p.content,
+                char_count=len(p.content),
+                source_page_number=p.page_number,
+            ))
+        return sections
 
     def _extract_metadata(self, doc, file_path: str) -> dict:
         """提取文档元数据"""

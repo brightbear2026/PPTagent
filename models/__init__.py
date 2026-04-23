@@ -18,6 +18,8 @@ from .slide_spec import (
     # Layer 1: Input Parser
     TableData,
     ImageData,
+    SourcePage,
+    StructuredSection,
     RawContent,
 
     # Layer 2: Content Analysis
@@ -56,6 +58,15 @@ from .slide_spec import (
     # Core
     SlideSpec,
     PresentationSpec,
+
+    # Analysis
+    MetricType,
+    DerivedMetric,
+    DataGapSuggestion,
+    EnrichedTableData,
+    ValidationWarning,
+    StrategyInsight,
+    AnalysisResult,
 )
 
 from .model_config import StageModelConfig, PipelineModelConfig
@@ -75,6 +86,8 @@ __all__ = [
     # Layer 1
     "TableData",
     "ImageData",
+    "SourcePage",
+    "StructuredSection",
     "RawContent",
 
     # Layer 2
@@ -113,6 +126,15 @@ __all__ = [
     # Core
     "SlideSpec",
     "PresentationSpec",
+
+    # Analysis
+    "MetricType",
+    "DerivedMetric",
+    "DataGapSuggestion",
+    "EnrichedTableData",
+    "ValidationWarning",
+    "StrategyInsight",
+    "AnalysisResult",
 
     # Model Config
     "StageModelConfig",

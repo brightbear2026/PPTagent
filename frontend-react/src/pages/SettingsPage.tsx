@@ -1,11 +1,11 @@
 /* ============================================================
-   SettingsPage — Flexible LLM model configuration
-   Supports preset providers + fully custom OpenAI-compatible endpoints
+   SettingsPage — LLM model configuration
+   Two modes: Universal (1 key for all) / Advanced (per-stage)
    ============================================================ */
 
 import React, { useEffect, useState } from 'react';
-import { Form, Select, Input, Button, message, Card, Space, Typography, Divider, Switch } from 'antd';
-import { KeyOutlined, SaveOutlined, ApiOutlined } from '@ant-design/icons';
+import { Form, Select, Input, Button, message, Card, Space, Typography, Divider, Switch, Radio, Alert } from 'antd';
+import { KeyOutlined, SaveOutlined, ApiOutlined, ThunderboltOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { getModelConfig, updateModelConfig } from '../api/client';
 import type { PipelineModelConfig, StageModelConfig } from '../types';
 
@@ -52,34 +52,30 @@ const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
 
 const STAGE_INFO: Record<string, { label: string; desc: string }> = {
   analyze: {
-    label: '数据分析',
-    desc: '纯代码计算为主，LLM 辅助发现数据规律，推荐智谱GLM或通义千问',
+    label: '策略分析',
+    desc: 'LLM读取文档概要，分析受众和场景，制定叙事策略框架',
   },
   outline: {
     label: '大纲生成',
-    desc: '需要强推理能力，推荐 DeepSeek-R1 或 GPT-4o',
+    desc: '需要强推理能力，推荐 DeepSeek-R1',
   },
   content: {
     label: '内容填充',
-    desc: '需要中文理解 + 结构化输出，推荐智谱GLM或通义千问',
+    desc: '需要中文理解 + 结构化输出',
   },
-  build: {
-    label: '图表叙事',
-    desc: '数据洞察与图表 so-what 生成，推荐通义千问或 DeepSeek',
+  design: {
+    label: '视觉设计',
+    desc: '图表叙事与 so-what 生成，推荐通义千问',
   },
 };
 
-interface StageFormValues {
-  provider: string;
-  model: string;
-  api_key: string;
-  base_url: string;
-}
+type ConfigMode = 'universal' | 'advanced';
 
 const SettingsPage: React.FC = () => {
   const [config, setConfig] = useState<PipelineModelConfig | null>(null);
+  const [mode, setMode] = useState<ConfigMode>('advanced');
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchConfig(); }, []);
 
@@ -88,6 +84,11 @@ const SettingsPage: React.FC = () => {
     try {
       const res = await getModelConfig();
       setConfig(res.config);
+      const savedMode = (res.config as any).config_mode as ConfigMode || 'advanced';
+      // 未配置任何key时自动切到通用模式
+      const anyKey = res.config.analyze.has_api_key || res.config.outline.has_api_key
+        || res.config.content.has_api_key || (res.config.design || res.config.build)?.has_api_key;
+      setMode(anyKey ? savedMode : 'universal');
     } catch {
       message.error('获取模型配置失败');
     } finally {
@@ -95,10 +96,34 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleSave = async (stage: string, values: StageFormValues) => {
-    setSaving(stage);
+  const handleUniversalSave = async (values: {
+    provider: string; model: string; api_key: string; base_url: string;
+  }) => {
+    setSaving(true);
     try {
       await updateModelConfig({
+        config_mode: 'universal',
+        universal_provider: values.provider,
+        universal_model: values.model,
+        universal_api_key: values.api_key,
+        universal_base_url: values.base_url || undefined,
+      });
+      message.success('通用配置已保存，所有阶段使用同一模型');
+      fetchConfig();
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAdvancedSave = async (stage: string, values: {
+    provider: string; model: string; api_key: string; base_url: string;
+  }) => {
+    setSaving(true);
+    try {
+      await updateModelConfig({
+        config_mode: 'advanced',
         [stage]: {
           provider: values.provider,
           model: values.model,
@@ -111,7 +136,7 @@ const SettingsPage: React.FC = () => {
     } catch (err: any) {
       message.error(err.response?.data?.detail || '保存失败');
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
   };
 
@@ -128,7 +153,7 @@ const SettingsPage: React.FC = () => {
         { key: 'analyze', data: config.analyze },
         { key: 'outline', data: config.outline },
         { key: 'content', data: config.content },
-        { key: 'build', data: config.build },
+        { key: 'design', data: config.design || config.build },
       ]
     : [];
 
@@ -137,30 +162,212 @@ const SettingsPage: React.FC = () => {
       <h2 style={{ color: '#002B4E', fontSize: 22, fontWeight: 600, marginBottom: 8 }}>
         系统设置
       </h2>
-      <p style={{ color: '#8B9DAF', fontSize: 14, marginBottom: 28 }}>
-        配置各阶段使用的LLM模型 — 支持预设厂商或任意OpenAI兼容接口
+      <p style={{ color: '#8B9DAF', fontSize: 14, marginBottom: 20 }}>
+        配置各阶段使用的LLM模型和API Key
       </p>
 
-      {stages.map(({ key, data }) => (
-        <StageConfigCard
-          key={key}
-          stageKey={key}
-          stageData={data}
-          saving={saving === key}
-          onSave={(values) => handleSave(key, values)}
-        />
-      ))}
+      {/* ── 模式切换 ── */}
+      <Radio.Group
+        value={mode}
+        onChange={e => setMode(e.target.value)}
+        style={{ marginBottom: 24 }}
+        optionType="button"
+        buttonStyle="solid"
+      >
+        <Radio.Button value="universal">
+          <ThunderboltOutlined style={{ marginRight: 6 }} />
+          通用配置
+        </Radio.Button>
+        <Radio.Button value="advanced">
+          <ExperimentOutlined style={{ marginRight: 6 }} />
+          分阶段配置
+        </Radio.Button>
+      </Radio.Group>
+
+      {mode === 'universal' && (
+        <>
+          <Alert
+            message="通用模式：只需配置一个模型，所有阶段统一使用"
+            description="适合大多数用户。如果你有多个模型厂商的API Key，可以切换到「分阶段配置」按能力分工。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 20 }}
+          />
+          <UniversalConfigCard
+            stageData={config?.analyze}
+            saving={saving}
+            onSave={handleUniversalSave}
+          />
+        </>
+      )}
+
+      {mode === 'advanced' && (
+        <>
+          <Alert
+            message="分阶段模式：每个阶段独立配置模型"
+            description="推荐组合：大纲/内容用 DeepSeek-R1（推理强），图表用通义千问（数据稳定）。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 20 }}
+          />
+          {stages.map(({ key, data }) => (
+            <StageConfigCard
+              key={key}
+              stageKey={key}
+              stageData={data}
+              saving={saving}
+              onSave={(values) => handleAdvancedSave(key, values)}
+            />
+          ))}
+        </>
+      )}
     </div>
   );
 };
 
-// ── Sub-component: Stage Config Card ──
+// ── Sub-component: Universal Config Card ──
+
+interface UniversalConfigCardProps {
+  stageData?: StageModelConfig;
+  saving: boolean;
+  onSave: (values: { provider: string; model: string; api_key: string; base_url: string }) => void;
+}
+
+const UniversalConfigCard: React.FC<UniversalConfigCardProps> = ({
+  stageData, saving, onSave,
+}) => {
+  const [form] = Form.useForm();
+  const [selectedProvider, setSelectedProvider] = useState(stageData?.provider || 'deepseek');
+  const [customMode, setCustomMode] = useState(false);
+
+  useEffect(() => {
+    const provider = stageData?.provider || 'deepseek';
+    const isCustom = provider === 'custom' || !PROVIDER_PRESETS[provider];
+    setCustomMode(isCustom);
+    setSelectedProvider(isCustom ? 'custom' : provider);
+    form.setFieldsValue({
+      provider: isCustom ? 'custom' : provider,
+      model: stageData?.model || PROVIDER_PRESETS['deepseek'].models[0],
+      api_key: '',
+      base_url: stageData?.base_url || PROVIDER_PRESETS['deepseek'].base_url,
+    });
+  }, [stageData, form]);
+
+  const preset = PROVIDER_PRESETS[selectedProvider];
+  const modelOptions = preset?.models || [];
+
+  const handleProviderChange = (v: string) => {
+    setSelectedProvider(v);
+    const isCustom = v === 'custom';
+    setCustomMode(isCustom);
+    const p = PROVIDER_PRESETS[v];
+    form.setFieldsValue({
+      model: p?.models?.[0] || '',
+      base_url: p?.base_url || '',
+    });
+  };
+
+  return (
+    <Card
+      title={
+        <span style={{ color: '#002B4E', fontWeight: 600 }}>
+          <KeyOutlined style={{ marginRight: 8, color: '#C9A84C' }} />
+          通用模型配置
+        </span>
+      }
+      style={{ marginBottom: 20, borderRadius: 2 }}
+      styles={{ body: { padding: '20px 24px' } }}
+    >
+      <Form form={form} layout="vertical" onFinish={onSave}>
+        {!customMode ? (
+          <Space style={{ width: '100%' }} size={16} align="start">
+            <Form.Item label="模型厂商" name="provider" style={{ width: 200, marginBottom: 16 }}>
+              <Select onChange={handleProviderChange}>
+                {Object.entries(PROVIDER_PRESETS)
+                  .filter(([k]) => k !== 'custom')
+                  .map(([k, v]) => (
+                    <Select.Option key={k} value={k}>{v.label}</Select.Option>
+                  ))}
+              </Select>
+            </Form.Item>
+            <Form.Item label="模型" name="model" style={{ flex: 1, marginBottom: 16 }}>
+              <Select showSearch allowClear={false}>
+                {modelOptions.map(m => (
+                  <Select.Option key={m} value={m}>{m}</Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Space>
+        ) : (
+          <>
+            <Form.Item name="provider" hidden><Input /></Form.Item>
+            <Space style={{ width: '100%' }} size={16} align="start">
+              <Form.Item
+                label="模型名称"
+                name="model"
+                style={{ flex: 1, marginBottom: 16 }}
+                rules={[{ required: true, message: '请输入模型名称' }]}
+              >
+                <Input placeholder="例如: gpt-4o, claude-3-opus" style={{ borderRadius: 2 }} />
+              </Form.Item>
+            </Space>
+            <Form.Item
+              label={<span><ApiOutlined style={{ marginRight: 4 }} />API Base URL (OpenAI兼容)</span>}
+              name="base_url"
+              style={{ marginBottom: 16 }}
+              rules={[{ required: true, message: '自定义模式需要填写Base URL' }]}
+            >
+              <Input placeholder="https://your-endpoint.com/v1" style={{ maxWidth: 500, borderRadius: 2 }} />
+            </Form.Item>
+          </>
+        )}
+
+        <Space style={{ width: '100%', marginBottom: 16 }} size={16} align="center">
+          <Form.Item label="API Key" name="api_key" style={{ flex: 1, marginBottom: 0 }}
+            extra={stageData?.has_api_key ? '已配置，留空则保持不变' : '未配置'}
+          >
+            <Input.Password
+              placeholder={stageData?.has_api_key ? '已配置 (留空不改)' : '请输入API Key'}
+              style={{ maxWidth: 500 }}
+            />
+          </Form.Item>
+          <Space>
+            <Text style={{ fontSize: 12, color: '#8B9DAF' }}>自定义模式</Text>
+            <Switch
+              size="small"
+              checked={customMode}
+              onChange={(checked) => {
+                setCustomMode(checked);
+                if (checked) {
+                  setSelectedProvider('custom');
+                  form.setFieldValue('provider', 'custom');
+                }
+              }}
+            />
+          </Space>
+        </Space>
+
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={saving}
+          icon={<SaveOutlined />}
+          style={{ background: '#003D6E', borderColor: '#003D6E' }}
+        >
+          保存（应用到所有阶段）
+        </Button>
+      </Form>
+    </Card>
+  );
+};
+
+// ── Sub-component: Stage Config Card (advanced mode) ──
 
 interface StageConfigCardProps {
   stageKey: string;
   stageData: StageModelConfig;
   saving: boolean;
-  onSave: (values: StageFormValues) => void;
+  onSave: (values: { provider: string; model: string; api_key: string; base_url: string }) => void;
 }
 
 const StageConfigCard: React.FC<StageConfigCardProps> = ({

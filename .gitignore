@@ -19,8 +19,11 @@ venv/
 storage/data/
 storage/uploads/
 storage/.master_key
+api/storage/
+api/output/
 
 # Output
+output/
 output/*.pptx
 
 # Node
@@ -45,6 +48,9 @@ htmlcov/
 # Claude local settings
 .claude/
 
+# Design docs (internal)
+"AI自动生成PPT：技术路线全景与最优架构设计.md"
+AI自动生成PPT*
+
 # Misc
 *.log
-*.txt

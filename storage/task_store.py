@@ -7,8 +7,10 @@
 使用 psycopg2 + RealDictCursor
 """
 
+import asyncio
 import json
 import os
+import threading
 import time
 import psycopg2
 import psycopg2.extras
@@ -21,13 +23,14 @@ DATABASE_URL = os.environ.get(
     "postgresql://pptagent:pptagent_local@localhost:5432/pptagent"
 )
 
-# Pipeline阶段定义（5阶段 + 2检查点）
+# Pipeline阶段定义（6阶段 + 2检查点）
 PIPELINE_STAGES = [
     "parse",             # 输入解析（静默）
     "analyze",           # 数据分析（静默）
     "outline",           # 大纲生成（检查点1）
     "content",           # 内容填充（检查点2）
-    "build",             # PPT构建（静默）
+    "design",            # 视觉设计+图表生成（静默，LLM辅助）
+    "render",            # PPT渲染+布局验证（静默，纯代码）
 ]
 
 
@@ -36,7 +39,40 @@ class TaskStore:
 
     def __init__(self, database_url: str = None):
         self.database_url = database_url or DATABASE_URL
+        # in-memory pub-sub for SSE (not persisted, per-process)
+        self._queues: Dict[str, asyncio.Queue] = {}
+        self._queue_lock = threading.Lock()
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._init_db()
+
+    # ── SSE 事件推送 ──
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """由 FastAPI startup 调用，保存主事件循环引用，用于跨线程推送。"""
+        self._event_loop = loop
+
+    def subscribe(self, task_id: str) -> asyncio.Queue:
+        """SSE handler 调用：注册并返回该 task 的更新队列。"""
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        with self._queue_lock:
+            self._queues[task_id] = q
+        return q
+
+    def unsubscribe(self, task_id: str) -> None:
+        """SSE 连接关闭时取消订阅。"""
+        with self._queue_lock:
+            self._queues.pop(task_id, None)
+
+    def _notify(self, task_id: str) -> None:
+        """update_task 后通知订阅队列（线程安全，从 worker thread 调用）。"""
+        with self._queue_lock:
+            q = self._queues.get(task_id)
+        if q is None or self._event_loop is None:
+            return
+        try:
+            self._event_loop.call_soon_threadsafe(q.put_nowait, True)
+        except Exception:
+            pass
 
     @contextmanager
     def _connect(self):
@@ -52,106 +88,60 @@ class TaskStore:
             conn.close()
 
     def _init_db(self, retries=5, delay=2):
-        """初始化数据库表"""
+        """Run Alembic migrations to initialize / upgrade the database schema."""
+        import logging as _logging
+        import os
+
+        _log = _logging.getLogger(__name__)
+        here = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(here)
+        alembic_ini = os.path.join(project_root, "alembic.ini")
+        # migrations/ dir is used (not alembic/) to avoid shadowing the alembic PyPI package
+
         for attempt in range(retries):
             try:
-                with self._connect() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS tasks (
-                                task_id TEXT PRIMARY KEY,
-                                title TEXT DEFAULT '',
-                                content TEXT DEFAULT '',
-                                target_audience TEXT DEFAULT '管理层',
-                                scenario TEXT DEFAULT '',
-                                language TEXT DEFAULT 'zh',
-                                file_path TEXT,
-                                status TEXT DEFAULT 'pending',
-                                mode TEXT DEFAULT 'auto',
-                                progress INTEGER DEFAULT 0,
-                                current_step TEXT DEFAULT '初始化',
-                                current_stage TEXT DEFAULT '',
-                                message TEXT DEFAULT '',
-                                created_at TEXT,
-                                output_file TEXT,
-                                error TEXT,
-                                narrative TEXT,
-                                slides TEXT,
-                                updated_at TEXT
-                            )
-                        """)
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS pipeline_stages (
-                                task_id TEXT NOT NULL,
-                                stage TEXT NOT NULL,
-                                status TEXT DEFAULT 'pending',
-                                started_at TEXT,
-                                completed_at TEXT,
-                                result TEXT,
-                                error TEXT,
-                                PRIMARY KEY (task_id, stage)
-                            )
-                        """)
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS settings (
-                                user_id TEXT NOT NULL,
-                                key TEXT NOT NULL,
-                                value TEXT NOT NULL,
-                                updated_at TEXT,
-                                PRIMARY KEY (user_id, key)
-                            )
-                        """)
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS api_keys (
-                                user_id TEXT NOT NULL,
-                                provider TEXT NOT NULL,
-                                encrypted_key TEXT NOT NULL,
-                                created_at TEXT,
-                                PRIMARY KEY (user_id, provider)
-                            )
-                        """)
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS users (
-                                user_id TEXT PRIMARY KEY,
-                                username TEXT UNIQUE NOT NULL,
-                                password_hash TEXT NOT NULL,
-                                created_at TEXT
-                            )
-                        """)
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS supplemental_data (
-                                task_id TEXT NOT NULL,
-                                data_id TEXT PRIMARY KEY,
-                                stage TEXT NOT NULL,
-                                page_number INTEGER,
-                                text_data TEXT DEFAULT '',
-                                file_path TEXT DEFAULT '',
-                                micro_analysis TEXT,
-                                created_at TEXT
-                            )
-                        """)
-                        self._migrate(cur)
-                    conn.commit()
+                from alembic.config import Config
+                from alembic import command
+
+                cfg = Config(alembic_ini)
+                cfg.set_main_option("sqlalchemy.url", self.database_url)
+
+                # Existing deployment with no alembic_version table: stamp head
+                # so we skip DDL that already ran via the old _init_db().
+                self._auto_stamp_if_needed(cfg)
+                command.upgrade(cfg, "head")
                 return
             except psycopg2.OperationalError:
                 if attempt == retries - 1:
                     raise
+                _log.warning("DB connection attempt %d failed, retrying...", attempt + 1)
                 time.sleep(delay)
 
-    def _migrate(self, cur):
-        cursor = cur.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'tasks'"
-        )
-        existing_cols = {row["column_name"] for row in cur.fetchall()}
-        new_cols = {
-            "mode": "TEXT DEFAULT 'auto'",
-            "current_stage": "TEXT DEFAULT ''",
-            "scenario": "TEXT DEFAULT ''",
-        }
-        for col, col_type in new_cols.items():
-            if col not in existing_cols:
-                cur.execute(f"ALTER TABLE tasks ADD COLUMN {col} {col_type}")
+    def _auto_stamp_if_needed(self, cfg) -> None:
+        """If the DB has app tables but no alembic_version, stamp head.
+
+        This handles deployments that were initialized by the old inline _init_db()
+        before Alembic was introduced, so we skip re-running already-applied DDL.
+        """
+        from alembic import command
+        try:
+            conn = psycopg2.connect(
+                self.database_url,
+                cursor_factory=psycopg2.extras.RealDictCursor,
+            )
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name IN ('tasks', 'alembic_version')
+            """)
+            tables = {row["table_name"] for row in cur.fetchall()}
+            cur.close()
+            conn.close()
+            if "tasks" in tables and "alembic_version" not in tables:
+                command.stamp(cfg, "head")
+        except Exception:
+            pass
 
     # ── Users CRUD ──
 
@@ -284,6 +274,7 @@ class TaskStore:
             with conn.cursor() as cur:
                 cur.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = %s", values)
             conn.commit()
+        self._notify(task_id)
         return True
 
     # ── 任务 DELETE ──
@@ -368,6 +359,7 @@ class TaskStore:
         return True
 
     def save_stage_result(self, task_id: str, stage: str, result: Any) -> bool:
+        """无条件保存阶段结果，同时递增 generation（乐观锁版本号）。"""
         if isinstance(result, (dict, list)):
             result_json = json.dumps(result, ensure_ascii=False)
         elif isinstance(result, str):
@@ -378,11 +370,47 @@ class TaskStore:
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE pipeline_stages
-                    SET result = %s, status = 'completed', completed_at = %s
+                    SET result = %s, status = 'completed', completed_at = %s,
+                        generation = generation + 1
                     WHERE task_id = %s AND stage = %s
                 """, (result_json, self._now(), task_id, stage))
             conn.commit()
         return True
+
+    def check_and_save_stage_result(
+        self, task_id: str, stage: str, expected_generation: int, result: Any
+    ) -> tuple:
+        """
+        乐观锁保存：仅当 generation == expected_generation 时写入。
+
+        返回 (success: bool, current_generation: int)。
+        success=False 表示版本冲突，调用方应返回 HTTP 412。
+        """
+        if isinstance(result, (dict, list)):
+            result_json = json.dumps(result, ensure_ascii=False)
+        elif isinstance(result, str):
+            result_json = result
+        else:
+            result_json = json.dumps(result, ensure_ascii=False, default=str)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE pipeline_stages
+                    SET result = %s, status = 'completed', completed_at = %s,
+                        generation = generation + 1
+                    WHERE task_id = %s AND stage = %s AND generation = %s
+                """, (result_json, self._now(), task_id, stage, expected_generation))
+                rows_affected = cur.rowcount
+            conn.commit()
+
+        if rows_affected > 0:
+            return True, expected_generation + 1
+
+        # 版本冲突：读取当前 generation 返回给调用方
+        current = self.get_stage(task_id, stage)
+        current_gen = current.get("generation", 0) if current else 0
+        return False, current_gen
 
     def get_stage_result(self, task_id: str, stage: str) -> Any:
         stage = self.get_stage(task_id, stage)
@@ -492,22 +520,18 @@ class TaskStore:
         self, task_id: str, data_id: str, stage: str,
         page_number: Optional[int] = None,
         text_data: str = "", file_path: str = "",
-        micro_analysis: Optional[str] = None,
     ) -> bool:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO supplemental_data
-                        (task_id, data_id, stage, page_number, text_data,
-                         file_path, micro_analysis, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        (task_id, data_id, stage, page_number, text_data, file_path, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (data_id)
                     DO UPDATE SET task_id = EXCLUDED.task_id, stage = EXCLUDED.stage,
                                   page_number = EXCLUDED.page_number, text_data = EXCLUDED.text_data,
-                                  file_path = EXCLUDED.file_path, micro_analysis = EXCLUDED.micro_analysis,
-                                  created_at = EXCLUDED.created_at
-                """, (task_id, data_id, stage, page_number, text_data,
-                      file_path, micro_analysis, self._now()))
+                                  file_path = EXCLUDED.file_path, created_at = EXCLUDED.created_at
+                """, (task_id, data_id, stage, page_number, text_data, file_path, self._now()))
             conn.commit()
         return True
 

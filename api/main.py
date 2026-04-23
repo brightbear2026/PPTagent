@@ -8,10 +8,19 @@ import os
 import uuid
 import asyncio
 import json
-from datetime import datetime
+import logging
+import threading
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, asdict
+
+# 让 pipeline/agents 的 INFO 日志输出到 docker logs
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+logging.getLogger("uvicorn").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("fastapi").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
@@ -21,7 +30,7 @@ sys.path.insert(0, str(project_root))
 from dotenv import load_dotenv
 load_dotenv(project_root / ".env")
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Form, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -29,14 +38,11 @@ from pydantic import BaseModel
 from models import RawContent, Narrative, PresentationSpec
 from llm_client import GLMClient
 from pipeline.layer1_input import InputRouter
-from pipeline.data_analyzer import DataAnalyzer
-from pipeline.outline_generator import OutlineGenerator
-from pipeline.content_filler import ContentFiller
 from pipeline.layer4_visual import VisualDesigner
 from pipeline.layer5_chart import ChartGenerator
 from pipeline.layer6_output import PPTBuilder
 from storage import get_store
-from api.pipeline_controller import PipelineController
+from pipeline.orchestrator import Orchestrator as PipelineController
 from api.auth import router as auth_router
 
 # ============================================================
@@ -99,6 +105,41 @@ llm_client = None
 llm_api_key = os.getenv("GLM_API_KEY", "")
 llm_model = "glm-5.1"
 
+# ============================================================
+# 幂等性缓存（防止网络重试创建重复任务）
+# key → (task_id, expires_at)，最大1000条，超出时清理过期项
+# ============================================================
+
+_idempotency_cache: Dict[str, Tuple[str, datetime]] = {}
+_idempotency_lock = threading.Lock()
+
+
+def _check_idempotency(key: str) -> Optional[str]:
+    """返回已有 task_id（未过期），否则 None。"""
+    if not key:
+        return None
+    with _idempotency_lock:
+        entry = _idempotency_cache.get(key)
+        if entry:
+            task_id, expires_at = entry
+            if datetime.now() < expires_at:
+                return task_id
+            del _idempotency_cache[key]
+    return None
+
+
+def _register_idempotency(key: str, task_id: str, ttl_hours: int = 24) -> None:
+    """注册 key → task_id，TTL 24h；超过1000条时清理过期项。"""
+    if not key:
+        return
+    with _idempotency_lock:
+        _idempotency_cache[key] = (task_id, datetime.now() + timedelta(hours=ttl_hours))
+        if len(_idempotency_cache) > 1000:
+            now = datetime.now()
+            expired = [k for k, (_, exp) in _idempotency_cache.items() if now > exp]
+            for k in expired:
+                del _idempotency_cache[k]
+
 
 def get_llm_client():
     """获取LLM客户端（懒加载）"""
@@ -114,37 +155,51 @@ def get_llm_client():
 # SSE 进度推送
 # ============================================================
 
+def _task_snapshot(task: dict) -> dict:
+    return {
+        "task_id": task["task_id"],
+        "status": task["status"],
+        "progress": task["progress"],
+        "current_step": task["current_step"],
+        "message": task["message"],
+        "output_file": task.get("output_file"),
+        "error": task.get("error"),
+    }
+
+
 async def send_progress(task_id: str):
-    """SSE推送任务进度"""
+    """SSE推送任务进度（事件驱动，update_task 后立即推送，无固定轮询）"""
     store = get_store()
     task = store.get_task(task_id)
     if not task:
         return
 
     async def event_generator():
-        while True:
+        q = store.subscribe(task_id)
+        try:
+            # 立即推送当前状态
             task = store.get_task(task_id)
             if not task:
-                break
+                return
+            yield f"data: {json.dumps(_task_snapshot(task), ensure_ascii=False)}\n\n"
+            if task["status"] in ("completed", "failed", "checkpoint"):
+                return
 
-            # 发送当前状态
-            data = {
-                "task_id": task["task_id"],
-                "status": task["status"],
-                "progress": task["progress"],
-                "current_step": task["current_step"],
-                "message": task["message"],
-                "output_file": task.get("output_file"),
-                "error": task.get("error")
-            }
+            while True:
+                try:
+                    # 等待 update_task 信号，15s 超时做心跳防止连接断开
+                    await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    pass  # 心跳：重读一次状态
 
-            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-            # 任务完成或失败时结束
-            if task["status"] in ["completed", "failed"]:
-                break
-
-            await asyncio.sleep(0.5)
+                task = store.get_task(task_id)
+                if not task:
+                    break
+                yield f"data: {json.dumps(_task_snapshot(task), ensure_ascii=False)}\n\n"
+                if task["status"] in ("completed", "failed", "checkpoint"):
+                    break
+        finally:
+            store.unsubscribe(task_id)
 
     return event_generator()
 
@@ -211,8 +266,10 @@ async def get_model_config():
             if encrypted:
                 stage.has_api_key = True
 
+    config_mode = store.get_setting("default", "config_mode") or "advanced"
+
     return {
-        "config": masked.model_dump(),
+        "config": {**masked.model_dump(), "config_mode": config_mode},
         "available_providers": list({
             "zhipu": "智谱GLM",
             "deepseek": "DeepSeek",
@@ -250,24 +307,45 @@ async def update_model_config(body: Dict):
     else:
         pmc = PipelineModelConfig()
 
-    # 更新指定阶段
     updated_stages = []
-    for stage_name, stage_data in body.items():
-        try:
-            stage_config = StageModelConfig(**stage_data)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"阶段 {stage_name} 配置无效: {e}")
 
-        # 加密API Key后存储
-        if stage_config.api_key:
-            encrypted = encrypt_api_key(stage_config.api_key)
-            store.save_api_key("default", stage_config.provider, encrypted)
-            # 配置中只保留标记
-            stage_config.api_key = ""
-            stage_config.has_api_key = True
+    if body.get("config_mode") == "universal":
+        # ── 通用模式：1个配置应用到4个stage ──
+        universal = {
+            "provider": body.get("universal_provider", "deepseek"),
+            "model": body.get("universal_model", "deepseek-chat"),
+            "api_key": body.get("universal_api_key", ""),
+            "base_url": body.get("universal_base_url"),
+        }
+        for stage_name in ["analyze", "outline", "content", "build"]:
+            stage_config = StageModelConfig(**universal)
+            if stage_config.api_key:
+                encrypted = encrypt_api_key(stage_config.api_key)
+                store.save_api_key("default", stage_config.provider, encrypted)
+                stage_config.api_key = ""
+                stage_config.has_api_key = True
+            pmc.set_stage_config(stage_name, stage_config)
+            updated_stages.append(stage_name)
+        store.save_setting("default", "config_mode", "universal")
+    else:
+        # ── 分阶段模式（现有逻辑）──
+        for stage_name in ["analyze", "outline", "content", "build"]:
+            if stage_name in body and isinstance(body[stage_name], dict):
+                stage_data = body[stage_name]
+                try:
+                    stage_config = StageModelConfig(**stage_data)
+                except Exception as e:
+                    raise HTTPException(status_code=400, detail=f"阶段 {stage_name} 配置无效: {e}")
 
-        pmc.set_stage_config(stage_name, stage_config)
-        updated_stages.append(stage_name)
+                if stage_config.api_key:
+                    encrypted = encrypt_api_key(stage_config.api_key)
+                    store.save_api_key("default", stage_config.provider, encrypted)
+                    stage_config.api_key = ""
+                    stage_config.has_api_key = True
+
+                pmc.set_stage_config(stage_name, stage_config)
+                updated_stages.append(stage_name)
+        store.save_setting("default", "config_mode", "advanced")
 
     # 保存配置
     store.save_setting("default", "pipeline_model_config", pmc.model_dump_json())
@@ -313,14 +391,26 @@ async def get_config_legacy():
 
 @app.post("/api/generate")
 async def generate_ppt(
+    raw_request: Request,
     request: GenerateRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
 ):
     """
     启动PPT生成任务（异步）
 
-    返回task_id，客户端通过SSE监听进度
+    携带 Idempotency-Key 头时，重复请求返回已有任务而不重复创建。
+    返回task_id，客户端通过SSE监听进度。
     """
+    idempotency_key = raw_request.headers.get("Idempotency-Key", "").strip()
+    existing = _check_idempotency(idempotency_key)
+    if existing:
+        return {
+            "task_id": existing,
+            "status": "pending",
+            "message": "幂等请求，返回已有任务",
+            "status_url": f"/api/status/{existing}",
+        }
+
     store = get_store()
     task_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
@@ -334,6 +424,7 @@ async def generate_ppt(
         language=request.language,
         created_at=now,
     )
+    _register_idempotency(idempotency_key, task_id)
 
     # 后台执行生成流程
     background_tasks.add_task(generate_ppt_pipeline, task_id)
@@ -342,24 +433,36 @@ async def generate_ppt(
         "task_id": task_id,
         "status": "pending",
         "message": "任务已创建，正在后台处理",
-        "status_url": f"/api/status/{task_id}"
+        "status_url": f"/api/status/{task_id}",
     }
 
 
 @app.post("/api/generate/file")
 async def generate_ppt_from_file(
+    raw_request: Request,
     file: UploadFile = File(...),
     title: str = Form("未命名演示文稿"),
     target_audience: str = Form("管理层"),
     scenario: str = Form(""),
     language: str = Form(""),
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
     通过文件上传启动PPT生成任务
 
-    支持 .docx, .xlsx, .csv, .pptx, .txt, .md 格式
+    携带 Idempotency-Key 头时，重复请求返回已有任务而不重复创建。
+    支持 .docx, .xlsx, .csv, .pptx, .txt, .md 格式。
     """
+    idempotency_key = raw_request.headers.get("Idempotency-Key", "").strip()
+    existing = _check_idempotency(idempotency_key)
+    if existing:
+        return {
+            "task_id": existing,
+            "status": "pending",
+            "message": "幂等请求，返回已有任务",
+            "status_url": f"/api/status/{existing}",
+        }
+
     # 验证文件大小（50MB）
     MAX_SIZE = 50 * 1024 * 1024
     content = await file.read()
@@ -398,6 +501,8 @@ async def generate_ppt_from_file(
         created_at=now,
     )
 
+    _register_idempotency(idempotency_key, task_id)
+
     # 后台执行
     background_tasks.add_task(generate_ppt_pipeline, task_id)
 
@@ -405,7 +510,7 @@ async def generate_ppt_from_file(
         "task_id": task_id,
         "status": "pending",
         "message": f"文件已上传，正在处理: {file.filename}",
-        "status_url": f"/api/status/{task_id}"
+        "status_url": f"/api/status/{task_id}",
     }
 
 
@@ -514,21 +619,25 @@ async def get_pipeline_stages(task_id: str):
 
 
 @app.get("/api/task/{task_id}/stage/{stage}")
-async def get_pipeline_stage(task_id: str, stage: str):
-    """获取单个阶段详情"""
+async def get_pipeline_stage(task_id: str, stage: str, response: Response):
+    """获取单个阶段详情（响应头含 ETag: "v{generation}"，供乐观锁使用）"""
     store = get_store()
     stage_data = store.get_stage(task_id, stage)
     if not stage_data:
         raise HTTPException(status_code=404, detail="阶段不存在")
+    generation = stage_data.get("generation", 0)
+    response.headers["ETag"] = f'"v{generation}"'
     return stage_data
 
 
 @app.put("/api/task/{task_id}/stage/{stage}")
-async def update_pipeline_stage(task_id: str, stage: str, body: Dict = None):
+async def update_pipeline_stage(task_id: str, stage: str, request: Request, body: Dict = None):
     """
     修改阶段结果（用户编辑后保存）
 
-    保存后会自动重置该阶段及后续阶段的状态
+    支持乐观锁：携带 If-Match: "v{generation}" 头时做条件写入，版本冲突返回 412。
+    不携带 If-Match 时直接覆盖（向后兼容）。
+    保存后会自动重置该阶段后续阶段的状态。
     """
     store = get_store()
     if not body:
@@ -538,10 +647,26 @@ async def update_pipeline_stage(task_id: str, stage: str, body: Dict = None):
     if not stage_data:
         raise HTTPException(status_code=404, detail="阶段不存在")
 
-    # 保存用户编辑的结果
-    store.save_stage_result(task_id, stage, body)
+    # 乐观锁：If-Match 头存在时做条件写入
+    if_match = request.headers.get("If-Match", "").strip()
+    if if_match:
+        gen_str = if_match.strip('"').lstrip("v")
+        try:
+            expected_gen = int(gen_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail='If-Match 格式错误，应为 "v{number}"')
 
-    # 重置后续阶段（因为输入变了，需要重跑）
+        success, current_gen = store.check_and_save_stage_result(task_id, stage, expected_gen, body)
+        if not success:
+            raise HTTPException(
+                status_code=412,
+                detail=f"资源已被修改（当前 generation={current_gen}），请刷新后重试",
+                headers={"ETag": f'"v{current_gen}"'},
+            )
+    else:
+        store.save_stage_result(task_id, stage, body)
+
+    # 重置后续阶段（输入已变，需要重跑）
     from storage import PIPELINE_STAGES
     idx = PIPELINE_STAGES.index(stage) if stage in PIPELINE_STAGES else -1
     if idx >= 0 and idx < len(PIPELINE_STAGES) - 1:
@@ -648,17 +773,6 @@ async def add_supplemental_data(task_id: str, body: SupplementRequest):
 
     data_id = str(uuid.uuid4())
 
-    # 微型分析（如果有文本数据）
-    micro_analysis_json = None
-    if body.text_data:
-        try:
-            from pipeline.data_analyzer import DataAnalyzer
-            analyzer = DataAnalyzer()
-            micro = analyzer.micro_analyze(text_data=body.text_data)
-            micro_analysis_json = json.dumps(micro.to_dict(), ensure_ascii=False)
-        except Exception:
-            pass
-
     store.save_supplemental_data(
         task_id=task_id,
         data_id=data_id,
@@ -666,7 +780,6 @@ async def add_supplemental_data(task_id: str, body: SupplementRequest):
         page_number=body.page_number,
         text_data=body.text_data,
         file_path=body.file_path,
-        micro_analysis=micro_analysis_json,
     )
 
     return {
@@ -758,8 +871,9 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup():
-    """应用启动时初始化存储"""
-    get_store()
+    """应用启动时初始化存储，并注入事件循环引用（SSE事件驱动所需）"""
+    store = get_store()
+    store.set_event_loop(asyncio.get_running_loop())
     print("📦 存储层已初始化 (PostgreSQL)")
 
 

@@ -122,6 +122,19 @@ class PPTBuilder:
         # 计算布局
         layout = self.layout_engine.calculate_layout(spec)
 
+        # 布局验证 + 自动修正（预防性：在shape创建前修正坐标）
+        try:
+            from .layout_verifier import LayoutVerifier
+            verifier = LayoutVerifier()
+            layout, v_report = verifier.verify_and_fix(spec, layout, theme)
+            if v_report.has_warnings:
+                warn_count = len(v_report.warnings)
+                err_count = sum(1 for w in v_report.warnings if w.severity == "error")
+                if err_count > 0:
+                    print(f"[build] 布局验证: {warn_count}问题({err_count}个错误)已自动修正")
+        except Exception as e:
+            print(f"[build] 布局验证跳过: {e}")
+
         st = spec.slide_type.value if hasattr(spec.slide_type, "value") else str(spec.slide_type)
 
         if st == "title":
@@ -617,8 +630,28 @@ class PPTBuilder:
 
     def _render_visual_block(self, slide, spec: SlideSpec, layout, theme: VisualTheme, vb: VisualBlock) -> bool:
         """Dispatch到对应的可视化块渲染器，返回True表示渲染成功。
+        优先通过 SkillRegistry 查找 Skill 渲染，fallback 用原有 _VB_DISPATCH 方法。
         优先使用 layout.visual_block_areas（逐 slot），fallback 用 body_areas[0]。
         """
+        # 准备渲染区域
+        vb_areas = getattr(layout, 'visual_block_areas', [])
+        if vb_areas and len(vb_areas) >= len(vb.items):
+            render_rect = [self._clamp_rect(r) for r in vb_areas]
+        else:
+            body_rect = layout.body_areas[0] if layout.body_areas else self._emergency_body_rect(spec, layout)
+            render_rect = self._clamp_rect(body_rect)
+
+        # 优先使用 SkillRegistry
+        try:
+            from pipeline.skills import SkillRegistry
+            from pipeline.skills.visual_blocks import KpiCardsSkill  # 触发注册
+            skill = SkillRegistry.get().find("visual_block", vb.block_type.value)
+            if skill is not None:
+                return skill.render(slide, vb, render_rect, theme)
+        except Exception as e:
+            print(f"   Skill渲染失败({vb.block_type.value}): {e}，fallback到原方法")
+
+        # Fallback: 原有 _VB_DISPATCH 方法
         method_name = self._VB_DISPATCH.get(vb.block_type.value)
         if not method_name:
             return False
@@ -626,15 +659,7 @@ class PPTBuilder:
         if not method:
             return False
         try:
-            vb_areas = getattr(layout, 'visual_block_areas', [])
-            if vb_areas and len(vb_areas) >= len(vb.items):
-                # slot 模式：每个 item 有独立坐标
-                clamped = [self._clamp_rect(r) for r in vb_areas]
-                method(slide, vb, clamped, theme)
-            else:
-                # 单区域模式：在一个大 body rect 内自行分割
-                body_rect = layout.body_areas[0] if layout.body_areas else self._emergency_body_rect(spec, layout)
-                method(slide, vb, self._clamp_rect(body_rect), theme)
+            method(slide, vb, render_rect, theme)
             return True
         except Exception as e:
             print(f"   ⚠️  visual_block渲染失败({vb.block_type.value}): {e}，降级到文本模式")
@@ -1372,11 +1397,42 @@ class PPTBuilder:
                 p.alignment = PP_ALIGN.CENTER
 
     def _add_chart(self, slide, chart_spec: ChartSpec, rect: Rect, theme: VisualTheme):
-        """使用python-pptx原生图表对象渲染图表 + 智能标注"""
-        if not chart_spec.categories or not chart_spec.series:
+        """图表渲染入口：优先 ChartRenderer → SkillRegistry → 原有逻辑"""
+        has_data = any(s.values for s in chart_spec.series)
+        if not chart_spec.categories or not chart_spec.series or not has_data:
             return
         rect = self._clamp_rect(rect)
 
+        # 优先使用 ChartRenderer 分层渲染
+        try:
+            from pipeline.layer6_output.chart_renderer import ChartRenderer
+            renderer = ChartRenderer()
+            ok = renderer.render(
+                slide, chart_spec, rect, theme,
+                native_renderer=self._add_chart_native,
+            )
+            if ok:
+                return
+        except Exception as e:
+            print(f"   ChartRenderer失败({chart_spec.chart_type}): {e}，fallback")
+
+        # Fallback: 优先使用 SkillRegistry
+        try:
+            from pipeline.skills import SkillRegistry
+            from pipeline.skills.charts import ColumnChartSkill  # 触发注册
+            chart_type_name = chart_spec.chart_type.value if hasattr(chart_spec.chart_type, 'value') else str(chart_spec.chart_type)
+            skill = SkillRegistry.get().find("chart", chart_type_name)
+            if skill is not None:
+                skill.render(slide, chart_spec, rect, theme)
+                return
+        except Exception as e:
+            print(f"   Chart Skill渲染失败({chart_spec.chart_type}): {e}，fallback到原方法")
+
+        # 最终 Fallback: 原有逻辑
+        self._add_chart_native(slide, chart_spec, rect, theme)
+
+    def _add_chart_native(self, slide, chart_spec: ChartSpec, rect: Rect, theme: VisualTheme):
+        """python-pptx 原生图表渲染（NATIVE 类型或 fallback）"""
         # 瀑布图：用堆叠柱状图模拟
         if chart_spec.chart_type == ChartType.WATERFALL:
             self._add_waterfall_chart(slide, chart_spec, rect, theme)

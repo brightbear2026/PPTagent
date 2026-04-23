@@ -19,6 +19,8 @@ class LayoutSlot:
     y: float
     w: float
     h: float
+    max_chars: int = 0          # 该槽位最大字符数（0=不限）
+    overflow: str = "shrink"    # 溢出策略: "shrink" | "truncate" | "split"
 
     def to_rect(self, content_left: int, content_top: int,
                 content_width: int, content_height: int) -> Rect:
@@ -32,6 +34,16 @@ class LayoutSlot:
 
 
 @dataclass
+class LayoutConstraints:
+    """布局级约束"""
+    max_title_chars: int = 60       # 标题最大字符数
+    max_body_chars: int = 400       # 正文最大字符数（每个body slot）
+    max_fill_ratio: float = 0.65    # 最大填充率
+    min_fill_ratio: float = 0.10    # 最小填充率
+    overflow_strategy: str = "shrink"  # 全局溢出策略
+
+
+@dataclass
 class LayoutSkeleton:
     """一个完整的布局骨架"""
     skeleton_id: str
@@ -39,6 +51,7 @@ class LayoutSkeleton:
     category: str  # "core" or "extended"
     content_pattern: str
     slots: Dict[str, LayoutSlot] = field(default_factory=dict)
+    constraints: LayoutConstraints = field(default_factory=LayoutConstraints)
 
 
 class LayoutSkeletonRegistry:
@@ -78,7 +91,19 @@ class LayoutSkeletonRegistry:
                     y=slot_def["y"],
                     w=slot_def["w"],
                     h=slot_def["h"],
+                    max_chars=slot_def.get("max_chars", 0),
+                    overflow=slot_def.get("overflow", "shrink"),
                 )
+
+            # 解析约束
+            constraints_data = layout_def.get("constraints", {})
+            constraints = LayoutConstraints(
+                max_title_chars=constraints_data.get("max_title_chars", 60),
+                max_body_chars=constraints_data.get("max_body_chars", 400),
+                max_fill_ratio=constraints_data.get("max_fill_ratio", 0.65),
+                min_fill_ratio=constraints_data.get("min_fill_ratio", 0.10),
+                overflow_strategy=constraints_data.get("overflow_strategy", "shrink"),
+            )
 
             self._skeletons[skeleton_id] = LayoutSkeleton(
                 skeleton_id=skeleton_id,
@@ -86,6 +111,7 @@ class LayoutSkeletonRegistry:
                 category=layout_def.get("category", "core"),
                 content_pattern=layout_def.get("content_pattern", ""),
                 slots=slots,
+                constraints=constraints,
             )
 
     def get(self, skeleton_id: str) -> Optional[LayoutSkeleton]:

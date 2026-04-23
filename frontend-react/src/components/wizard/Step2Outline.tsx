@@ -38,11 +38,12 @@ const SLIDE_TYPE_COLORS: Record<string, string> = {
 interface Step2Props {
   taskId: string;
   outline: OutlineResult;
+  generation?: number;
   onConfirm: () => void;
   onBack?: () => void;
 }
 
-const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, onConfirm, onBack }) => {
+const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onConfirm, onBack }) => {
   const [items, setItems] = useState<OutlineItem[]>(outline.items);
   const [gapSuggestions] = useState<string[]>(outline.data_gap_suggestions || []);
   const [supplementText, setSupplementText] = useState('');
@@ -109,7 +110,7 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, onConfirm, onBack
         narrative_logic: outline.narrative_logic,
         items: items,
         data_gap_suggestions: gapSuggestions,
-      });
+      }, generation);
       await onConfirm();
       setConfirmed(true);
       message.success('大纲已确认，正在生成内容...');

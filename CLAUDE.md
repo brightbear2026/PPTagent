@@ -224,6 +224,13 @@ PPTagent/
     layer4_visual/             # Visual design (layout templates + themes)
     layer5_chart/              # Chart specification generation
     layer6_output/             # Layout engine + PPT builder
+    skills/                    # Rendering Skills (Prompt + DesignTokens + Render)
+      __init__.py              # SkillRegistry (singleton dict-based registry)
+      base.py                  # RenderingSkill ABC + SkillDescriptor
+      _utils.py                # Shared rendering utils (color, font, textbox)
+      visual_blocks/           # 6 VB Skills (kpi_cards, step_cards, etc.)
+      charts/                  # 8 Chart Skills (template method pattern, 1 file)
+      diagrams/                # 4 Diagram Skills (process_flow, architecture, etc.)
   models/                      # Data models
     slide_spec.py              # SlideSpec, PresentationSpec, etc.
     model_config.py            # StageModelConfig, PipelineModelConfig
@@ -243,6 +250,24 @@ PPTagent/
 ```
 
 ## Key Technical Decisions
+
+### Skill Architecture
+**Skill = Prompt 指导 + 设计参数 + 渲染规则**（三位一体的设计知识封装单元）
+
+Each Skill implements `RenderingSkill` ABC with three methods:
+- `prompt_fragment()`: Design guidance injected into LLM prompts for content generation
+- `design_tokens()`: Design parameters (colors from theme, font sizes, spacing) — no hardcoded values
+- `render()`: python-pptx rendering logic with quality improvements
+
+`SkillRegistry` provides centralized registration and lookup. `ppt_builder.py` and `diagram_renderer.py` dispatch through the registry first, falling back to original methods.
+
+`content_filler.py` dynamically assembles LLM prompts from SkillRegistry — only including guidance for types present in the current batch (attention focus).
+
+**Adding a new visual type** (e.g., radar chart):
+1. Create `pipeline/skills/charts/radar.py` with `RadarChartSkill`
+2. Register it in `charts/__init__.py`
+3. Add enum value to `slide_spec.py`
+4. Done — prompt, design tokens, and rendering all self-contained
 
 ### LLM Integration
 - **Multi-provider domestic models**: Zhipu GLM (extraction), DeepSeek (reasoning), Tongyi Qwen (data analysis)
@@ -331,24 +356,41 @@ docker-compose down
 
 ## Development Workflow
 
-### Running Locally (without Docker)
-```bash
-# Start backend API
-cd api && uvicorn main:app --reload
+### IMPORTANT: Docker-First Development (MUST follow)
 
-# Start frontend (separate terminal)
-cd frontend && streamlit run app.py
+**All services MUST run in Docker containers. Never run backend/frontend locally.**
+
+- Backend (FastAPI), Frontend (React), and Database (PostgreSQL) all run in Docker
+- Code changes require rebuilding Docker images: `docker-compose build [service]`
+- New Python dependencies must be added to `requirements.txt` and containers rebuilt
+- Database runs in its own container (ppt-agent-db-dev)
+
+```bash
+# Build and start all services (after code changes)
+docker-compose -f docker-compose.dev.yml up --build
+
+# Rebuild only backend (after adding dependencies or code changes)
+docker-compose -f docker-compose.dev.yml up --build -d backend
+
+# View logs
+docker-compose logs -f backend
+
+# Stop all services
+docker-compose -f docker-compose.dev.yml down
+
+# Execute commands inside running container
+docker-compose exec backend python3 -c "..."
 ```
 
 ### Key Development Principles
-1. **Quality over speed**: 3-10 minute generation time is acceptable, no shortcuts
-2. **4 mandatory checkpoints**: Every generation pauses 4 times for user review
-3. **Incremental SlideSpec**: Each layer fills its designated fields only
-4. **Dirty marking**: Changes cascade to dependent stages via `reset_stages_from()`
-5. **Single-pass rendering**: Streamlit uses `st.rerun()` instead of while loops
-6. **Backend-first**: All logic in API; frontend is a thin shell
-7. **Multi-provider LLM**: Each stage uses the best model for its task
-8. **Encrypted secrets**: API keys never stored in plaintext
+1. **Docker-first**: All services run in Docker, never locally
+2. **Quality over speed**: 3-10 minute generation time is acceptable, no shortcuts
+3. **2 mandatory checkpoints**: outline and content are user review points
+4. **Incremental SlideSpec**: Each layer fills its designated fields only
+5. **Backend-first**: All logic in API; frontend is a thin shell
+6. **Multi-provider LLM**: Each stage uses the best model for its task
+7. **Encrypted secrets**: API keys never stored in plaintext
+8. **New dependencies**: Add to requirements.txt → rebuild Docker image
 
 ### Brand Customization
 Support enterprise brand packages (logo + primary/secondary colors + fonts) that override default visual themes. Logo placement is predefined in layout skeletons.

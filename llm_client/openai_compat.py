@@ -5,9 +5,9 @@ OpenAI兼容适配器
 
 import os
 import re
-from typing import Optional
+from typing import Optional, List
 
-from .base import LLMClient, LLMResponse
+from .base import LLMClient, LLMResponse, ChatMessage, ChatResponse, ToolCall, ToolDefinition
 
 try:
     from openai import OpenAI
@@ -81,6 +81,7 @@ class OpenAICompatClient(LLMClient):
             model=resolved_model,
             max_retries=max_retries,
             timeout=timeout,
+            provider=provider or "openai_compat",
         )
 
         self.base_url = resolved_url
@@ -164,6 +165,129 @@ class OpenAICompatClient(LLMClient):
 
         return LLMResponse(
             content=content,
+            usage=data.get("usage", {}),
+            model=self.model,
+            success=True,
+        )
+
+    def _call_chat_api(
+        self,
+        messages: List[ChatMessage],
+        tools: Optional[List[ToolDefinition]],
+        temperature: float,
+        max_tokens: int,
+    ) -> ChatResponse:
+        """OpenAI兼容的多轮对话+工具调用"""
+        msg_dicts = [m.to_dict() for m in messages]
+
+        tools_param = None
+        if tools:
+            tools_param = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                }
+                for t in tools
+            ]
+
+        if self._client:
+            kwargs = dict(
+                model=self.model,
+                messages=msg_dicts,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            if tools_param:
+                kwargs["tools"] = tools_param
+
+            response = self._client.chat.completions.create(**kwargs)
+
+            msg = response.choices[0].message
+            finish_reason = response.choices[0].finish_reason or "stop"
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+
+            content = msg.content or ""
+            if "<think" in content:
+                content = re.sub(r"<think\b[^>]*>.*?</think\s*>", "", content, flags=re.DOTALL).strip()
+
+            tool_calls = None
+            if msg.tool_calls:
+                tool_calls = [
+                    ToolCall(
+                        call_id=tc.id,
+                        function_name=tc.function.name,
+                        arguments=tc.function.arguments,
+                    )
+                    for tc in msg.tool_calls
+                ]
+                finish_reason = "tool_calls"
+
+            return ChatResponse(
+                content=content or None,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+                usage=usage,
+                model=self.model,
+                success=True,
+            )
+
+        # HTTP fallback
+        import requests
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict = {
+            "model": self.model,
+            "messages": msg_dicts,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools_param:
+            payload["tools"] = tools_param
+
+        base = self.base_url or "https://api.openai.com/v1"
+        resp = requests.post(
+            f"{base}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        msg_data = data["choices"][0]["message"]
+        finish_reason = data["choices"][0].get("finish_reason", "stop")
+
+        content = msg_data.get("content") or ""
+        if "<think" in content:
+            content = re.sub(r"<think\b[^>]*>.*?</think\s*>", "", content, flags=re.DOTALL).strip()
+
+        tool_calls = None
+        if msg_data.get("tool_calls"):
+            tool_calls = [
+                ToolCall(
+                    call_id=tc["id"],
+                    function_name=tc["function"]["name"],
+                    arguments=tc["function"]["arguments"],
+                )
+                for tc in msg_data["tool_calls"]
+            ]
+            finish_reason = "tool_calls"
+
+        return ChatResponse(
+            content=content or None,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
             usage=data.get("usage", {}),
             model=self.model,
             success=True,

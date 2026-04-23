@@ -25,3 +25,15 @@ psycopg2-binary>=2.9.0
 
 # OpenAI兼容客户端
 openai>=1.0.0
+
+# 重试 + 指数退避
+tenacity>=8.2.0
+
+# Schema 版本管理
+alembic>=1.13.0
+SQLAlchemy>=2.0.0
+
+# Layer 6: 图表渲染 + 文本测量
+plotly>=5.18.0
+kaleido>=0.2.1
+Pillow>=10.0.0

@@ -3,10 +3,11 @@ GLM-5 Plus API 客户端
 智谱AI的API封装，继承LLMClient抽象基类
 """
 
+import json
 import os
-from typing import Optional
+from typing import Optional, List
 
-from .base import LLMClient, LLMResponse
+from .base import LLMClient, LLMResponse, ChatMessage, ChatResponse, ToolCall, ToolDefinition
 
 try:
     from zhipuai import ZhipuAI
@@ -28,7 +29,7 @@ class GLMClient(LLMClient):
         api_key: Optional[str] = None,
         model: str = "glm-5.1",
         max_retries: int = 5,
-        timeout: int = 120,
+        timeout: int = 60,
     ):
         resolved_key = api_key or os.getenv("GLM_API_KEY")
         if not resolved_key:
@@ -39,6 +40,7 @@ class GLMClient(LLMClient):
             model=model,
             max_retries=max_retries,
             timeout=timeout,
+            provider="zhipu",
         )
 
         # 初始化SDK客户端
@@ -104,6 +106,122 @@ class GLMClient(LLMClient):
 
             return LLMResponse(
                 content=data["choices"][0]["message"]["content"],
+                usage=data.get("usage", {}),
+                model=self.model,
+                success=True,
+            )
+
+
+    def _call_chat_api(
+        self,
+        messages: List[ChatMessage],
+        tools: Optional[List[ToolDefinition]],
+        temperature: float,
+        max_tokens: int,
+    ) -> ChatResponse:
+        """智谱GLM多轮对话+工具调用"""
+        msg_dicts = [m.to_dict() for m in messages]
+
+        tools_param = None
+        if tools:
+            tools_param = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                }
+                for t in tools
+            ]
+
+        if USE_SDK and self._sdk_client:
+            kwargs = dict(
+                model=self.model,
+                messages=msg_dicts,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            if tools_param:
+                kwargs["tools"] = tools_param
+
+            response = self._sdk_client.chat.completions.create(**kwargs)
+
+            msg = response.choices[0].message
+            finish_reason = response.choices[0].finish_reason or "stop"
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+
+            tool_calls = None
+            if msg.tool_calls:
+                tool_calls = [
+                    ToolCall(
+                        call_id=tc.id,
+                        function_name=tc.function.name,
+                        arguments=tc.function.arguments,
+                    )
+                    for tc in msg.tool_calls
+                ]
+                finish_reason = "tool_calls"
+
+            return ChatResponse(
+                content=msg.content,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+                usage=usage,
+                model=self.model,
+                success=True,
+            )
+
+        else:
+            # HTTP fallback
+            import requests
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload: dict = {
+                "model": self.model,
+                "messages": msg_dicts,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if tools_param:
+                payload["tools"] = tools_param
+
+            resp = requests.post(
+                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            msg_data = data["choices"][0]["message"]
+            finish_reason = data["choices"][0].get("finish_reason", "stop")
+
+            tool_calls = None
+            if msg_data.get("tool_calls"):
+                tool_calls = [
+                    ToolCall(
+                        call_id=tc["id"],
+                        function_name=tc["function"]["name"],
+                        arguments=tc["function"]["arguments"],
+                    )
+                    for tc in msg_data["tool_calls"]
+                ]
+                finish_reason = "tool_calls"
+
+            return ChatResponse(
+                content=msg_data.get("content"),
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
                 usage=data.get("usage", {}),
                 model=self.model,
                 success=True,

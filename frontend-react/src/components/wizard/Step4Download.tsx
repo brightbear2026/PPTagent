@@ -4,23 +4,24 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Typography, Card, Space } from 'antd';
+import { Button, Typography, Card, Space, Alert } from 'antd';
 import {
   CheckCircleOutlined, DownloadOutlined, PlusOutlined, HistoryOutlined,
   FilePptOutlined,
 } from '@ant-design/icons';
 import { getDownloadUrl } from '../../api/client';
-import type { TaskInfo } from '../../types';
+import type { TaskInfo, SkippedPage } from '../../types';
 
 const { Paragraph } = Typography;
 
 interface Step4Props {
   taskId: string;
   taskInfo: TaskInfo | null;
+  skippedPages?: SkippedPage[];
   onNew: () => void;
 }
 
-const Step4Download: React.FC<Step4Props> = ({ taskId, taskInfo, onNew }) => {
+const Step4Download: React.FC<Step4Props> = ({ taskId, taskInfo, skippedPages = [], onNew }) => {
   const navigate = useNavigate();
   const downloadUrl = getDownloadUrl(taskId);
 
@@ -66,6 +67,22 @@ const Step4Download: React.FC<Step4Props> = ({ taskId, taskInfo, onNew }) => {
               <div style={{ fontSize: 12, color: '#8B9DAF' }}>PPTX格式</div>
             </div>
           </div>
+        )}
+
+        {/* Skipped pages warning */}
+        {skippedPages.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 20, textAlign: 'left' }}
+            message={`${skippedPages.length} 页内容生成失败，已跳过`}
+            description={
+              <span>
+                跳过页码：{skippedPages.map(p => p.page_number).join('、')}。
+                可在历史记录中重新生成这些页面。
+              </span>
+            }
+          />
         )}
 
         {/* Download button */}

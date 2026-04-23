@@ -72,6 +72,10 @@ export async function checkHealth() {
 
 // ── Generate ──
 
+function newIdempotencyKey(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export async function generateFromText(params: {
   title: string;
   content: string;
@@ -79,7 +83,9 @@ export async function generateFromText(params: {
   scenario?: string;
   language: string;
 }) {
-  const { data } = await http.post('/generate', params);
+  const { data } = await http.post('/generate', params, {
+    headers: { 'Idempotency-Key': newIdempotencyKey() },
+  });
   return data as { task_id: string; status: string; message: string };
 }
 
@@ -96,7 +102,10 @@ export async function generateFromFile(file: File, params: {
   if (params.scenario) form.append('scenario', params.scenario);
   form.append('language', params.language);
   const { data } = await http.post('/generate/file', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      'Idempotency-Key': newIdempotencyKey(),
+    },
     timeout: 120_000,
   });
   return data as { task_id: string; status: string; message: string };
@@ -135,8 +144,17 @@ export async function resumePipeline(taskId: string, fromStage?: string) {
 
 // ── Edit Stage ──
 
-export async function updateStage(taskId: string, stage: string, result: any) {
-  const { data } = await http.put(`/task/${taskId}/stage/${stage}`, result);
+export async function updateStage(
+  taskId: string,
+  stage: string,
+  result: any,
+  generation?: number,
+) {
+  const headers: Record<string, string> = {};
+  if (generation !== undefined) {
+    headers['If-Match'] = `"v${generation}"`;
+  }
+  const { data } = await http.put(`/task/${taskId}/stage/${stage}`, result, { headers });
   return data;
 }
 

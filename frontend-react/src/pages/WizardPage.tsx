@@ -17,7 +17,7 @@ import Step3Content from '../components/wizard/Step3Content';
 import Step4Download from '../components/wizard/Step4Download';
 import { useSSE } from '../hooks/useSSE';
 import { getTaskStatus, getStageResult, confirmCheckpoint, resumePipeline } from '../api/client';
-import type { WizardStep, TaskInfo, OutlineResult, ContentResult } from '../types';
+import type { WizardStep, TaskInfo, OutlineResult, ContentResult, SkippedPage } from '../types';
 
 const stepItems = [
   { title: '上传输入', icon: <UploadOutlined /> },
@@ -38,9 +38,12 @@ const WizardPage: React.FC = () => {
   );
   const [taskInfo, setTaskInfo] = useState<TaskInfo | null>(null);
   const [outline, setOutline] = useState<OutlineResult | null>(null);
+  const [outlineGeneration, setOutlineGeneration] = useState<number>(0);
   const [content, setContent] = useState<ContentResult | null>(null);
+  const [contentGeneration, setContentGeneration] = useState<number>(0);
   const [buildFailed, setBuildFailed] = useState(false);
   const [failedError, setFailedError] = useState<string | null>(null);
+  const [skippedPages, setSkippedPages] = useState<SkippedPage[]>([]);
 
   const sse = useSSE();
 
@@ -78,13 +81,19 @@ const WizardPage: React.FC = () => {
       if (step >= 2) {
         try {
           const stageData = await getStageResult(tid, 'outline');
-          if (stageData?.result) setOutline(stageData.result);
+          if (stageData?.result) {
+            setOutline(stageData.result);
+            setOutlineGeneration(stageData.generation ?? 0);
+          }
         } catch (e) { console.warn('恢复大纲数据失败:', e); }
       }
       if (step >= 3) {
         try {
           const stageData = await getStageResult(tid, 'content');
-          if (stageData?.result) setContent(stageData.result);
+          if (stageData?.result) {
+            setContent(stageData.result);
+            setContentGeneration(stageData.generation ?? 0);
+          }
         } catch (e) { console.warn('恢复内容数据失败:', e); }
       }
     } catch (e) { console.warn('恢复任务数据失败:', e); }
@@ -96,7 +105,10 @@ const WizardPage: React.FC = () => {
     if (!id) return;
     try {
       const stageData = await getStageResult(id, 'outline');
-      if (stageData?.result) setOutline(stageData.result);
+      if (stageData?.result) {
+        setOutline(stageData.result);
+        setOutlineGeneration(stageData.generation ?? 0);
+      }
     } catch (e) { console.warn('获取大纲失败:', e); }
   }, []);
 
@@ -106,7 +118,10 @@ const WizardPage: React.FC = () => {
     if (!id) return;
     try {
       const stageData = await getStageResult(id, 'content');
-      if (stageData?.result) setContent(stageData.result);
+      if (stageData?.result) {
+        setContent(stageData.result);
+        setContentGeneration(stageData.generation ?? 0);
+      }
     } catch (e) { console.warn('获取内容失败:', e); }
   }, []);
 
@@ -131,6 +146,14 @@ const WizardPage: React.FC = () => {
     } else if (status === 'completed') {
       setFailedError(null);
       setCurrent(4);
+      // Fetch design stage to surface any skipped-page warnings
+      const id = taskIdRef.current;
+      if (id) {
+        getStageResult(id, 'design').then(stageData => {
+          const pages: SkippedPage[] = stageData?.result?.skipped_pages ?? [];
+          if (pages.length > 0) setSkippedPages(pages);
+        }).catch(() => {});
+      }
     } else if (status === 'failed') {
       const errMsg = sse.latest.error || '未知错误';
       setFailedError(errMsg);
@@ -195,6 +218,7 @@ const WizardPage: React.FC = () => {
     setOutline(null);
     setContent(null);
     setTaskInfo(null);
+    setSkippedPages([]);
     setCurrent(1);
     setBuildFailed(false);
     setFailedError(null);
@@ -253,13 +277,13 @@ const WizardPage: React.FC = () => {
             onStart={handleStart}
             loading={!!taskId && !sse.isFinished && !failedError}
             progress={sse.progress}
-            stepMessage={sse.latest?.current_step}
           />
         )}
         {current === 2 && taskId && outline && (
           <Step2Outline
             taskId={taskId}
             outline={outline}
+            generation={outlineGeneration}
             onConfirm={handleOutlineConfirm}
             onBack={handleBackToUpload}
           />
@@ -269,6 +293,7 @@ const WizardPage: React.FC = () => {
             taskId={taskId}
             content={content}
             outline={outline}
+            generation={contentGeneration}
             onConfirm={handleContentConfirm}
             onBack={handleBackToOutline}
             buildFailed={buildFailed}
@@ -278,6 +303,7 @@ const WizardPage: React.FC = () => {
           <Step4Download
             taskId={taskId}
             taskInfo={taskInfo}
+            skippedPages={skippedPages}
             onNew={handleNew}
           />
         )}
