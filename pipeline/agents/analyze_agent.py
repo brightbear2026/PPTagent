@@ -434,20 +434,27 @@ class AnalyzeAgent(ReActAgent):
                 if len(vals) >= 2:
                     change = vals[-1] - vals[0]
                     pct = change / vals[0] * 100 if vals[0] != 0 else 0
-                    metrics.append(DerivedMetric(
-                        metric_type=MetricType.GROWTH_RATE,
-                        name=f"{header}增长率",
-                        value=round(pct, 2),
-                        formatted_value=f"{pct:+.1f}%",
-                        source_table=table.source_sheet,
-                        source_column=header,
-                    ).to_dict())
+                    metrics.append({
+                        "metric_type": MetricType.YOY_GROWTH.value,
+                        "name": f"{header}增长率",
+                        "value": round(pct, 2),
+                        "formatted_value": f"{pct:+.1f}%",
+                        "source_table": table.source_sheet,
+                        "source_column": header,
+                        "context": f"首行{vals[0]:.2f} → 末行{vals[-1]:.2f}",
+                    })
             except (ValueError, ZeroDivisionError):
                 pass
 
-        enriched = EnrichedTableData(original=table, summary=f"{table.source_sheet}: {len(rows)}行数据")
-        return metrics, {"original": {"headers": headers, "rows": rows, "source_sheet": table.source_sheet},
-                         "summary": enriched.summary}
+        summary_dict = {
+            "sheet": table.source_sheet,
+            "rows": len(rows),
+            "columns": len(headers),
+        }
+        return metrics, {
+            "original": {"headers": headers, "rows": rows, "source_sheet": table.source_sheet},
+            "summary": summary_dict,
+        }
 
     @staticmethod
     def _rebuild_raw_content(raw: Dict):
