@@ -120,7 +120,9 @@ class VisualBlock:
     @classmethod
     def from_dict(cls, data: dict) -> VisualBlock:
         try:
-            bt = VisualBlockType(data.get("block_type", "bullet_list"))
+            # LLM may output "type" while internal format uses "block_type"
+            raw_type = data.get("block_type") or data.get("type", "bullet_list")
+            bt = VisualBlockType(raw_type)
         except ValueError:
             bt = VisualBlockType.BULLET_LIST
         items = [

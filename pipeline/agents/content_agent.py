@@ -315,6 +315,21 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _extract_kw(text: str) -> List[str]:
+        """English word tokens + Chinese bigrams — works without jieba."""
+        import re
+        words: List[str] = []
+        for segment in re.split(r'[\s\W]+', text.lower()):
+            if not segment or len(segment) < 2:
+                continue
+            if all('一' <= c <= '鿿' for c in segment):
+                # Chinese: emit overlapping bigrams for fuzzy matching
+                words.extend(segment[i:i + 2] for i in range(len(segment) - 1))
+            else:
+                words.append(segment)
+        return words
+
+    @staticmethod
     def _find_best_section(slide: Dict, source_pages: List[Dict]) -> str:
         """关键词匹配原文章节，top-2 动态阈值：最相关必返回，次相关需达最高分60%。"""
         if not source_pages:
@@ -324,14 +339,13 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         section = slide.get("section", "")
         hint = slide.get("supporting_hint", "")
 
-        # Fast-path: if supporting_hint exactly matches a section title, use it directly
+        # Fast-path: supporting_hint 精确匹配章节标题
         if hint:
             for sp in source_pages:
                 if (sp.get("title") or "").strip() == hint.strip():
-                    content = sp.get("content", "")[:1500]
-                    return content
+                    return sp.get("content", "")[:1500]
 
-        kw_list = [w for w in f"{title} {section} {takeaway} {hint}".lower().split() if len(w) > 1]
+        kw_list = ContentAgent._extract_kw(f"{title} {section} {takeaway} {hint}")
         if not kw_list:
             return ""
 
@@ -364,7 +378,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         title = slide.get("title", "")
         takeaway = slide.get("takeaway_message", slide.get("takeaway", ""))
         data_source = slide.get("data_source", "")
-        kw_list = [w for w in f"{title} {takeaway} {data_source}".lower().split() if len(w) > 1]
+        kw_list = ContentAgent._extract_kw(f"{title} {takeaway} {data_source}")
 
         scored = []
         for i, t in enumerate(tables):
