@@ -1,18 +1,16 @@
 # PPT Agent
 
-专业PPT自动生成系统，对标四大咨询公司（麦肯锡、BCG、贝恩、德勤）的演示文稿质量。输入文本或文档，自动生成包含叙事结构、数据图表和专业视觉设计的 .pptx 文件。
+输入文本或文档，自动生成咨询级 `.pptx` 演示文稿。系统对标四大咨询公司的信息密度和视觉规范，强调透明可控：每个关键决策节点暂停，用户审阅确认后再继续。
 
-## 特性
+## 效果预览
 
-- **多格式输入** — 支持 TXT、DOCX、XLSX/CSV、PPTX、Markdown
-- **6层智能流水线** — 内容提取 → 叙事编排 → 结构规划 → 视觉设计 → 图表生成 → PPT构建
-- **4个确认检查点** — 数据解析、内容提取、叙事结构、页面结构，每步人工确认
-- **多模型协作** — 智谱GLM（提取）+ DeepSeek-R1（推理）+ 通义Qwen-Max（图表）
-- **真实数据驱动** — 图表数据来自原始表格，LLM不编造数字
-- **原生图表** — python-pptx 原生图表对象，矢量可编辑
-- **加密存储** — API Key 使用 Fernet + PBKDF2 加密，支持多用户隔离
-- **16:9专业版式** — 12种内容布局模板，5套视觉主题
-- **Docker部署** — 一键启动前后端服务
+**输入** → 一篇业务报告、数据分析、会议纪要（TXT / DOCX / XLSX / Markdown）
+
+**输出** → 结构完整的 `.pptx` 文件，包含：
+- 叙事驱动的大纲（SCR / SCQA / STAR 等框架）
+- 数据驱动的图表（柱状图、折线图、饼图等，数据来自原始表格）
+- 专业布局（16种模板）和视觉主题（4套配色）
+- 流程图、架构图、关系图等概念图示
 
 ## 技术栈
 
@@ -20,201 +18,210 @@
 |---|---|
 | 后端 | FastAPI + Uvicorn |
 | 前端 | React 18 + TypeScript + Vite + Ant Design |
-| LLM | 智谱GLM-4 + DeepSeek-R1 + 阿里通义Qwen-Max |
-| PPT生成 | python-pptx（原生图表对象） |
-| 存储 | SQLite + 文件系统 |
+| 数据库 | PostgreSQL（Alembic 管理迁移） |
+| LLM | 任意 OpenAI 兼容接口（SiliconFlow / DeepSeek / 通义 / 智谱等） |
+| PPT 生成 | python-pptx（原生矢量图表对象） |
 | 加密 | Fernet + PBKDF2HMAC |
 | 部署 | Docker + docker-compose |
 
-## 快速开始
+## 架构
 
-### 环境要求
-
-- Python 3.9+
-- Node.js 18+
-- 至少一个 LLM API Key（智谱AI / DeepSeek / 阿里通义）
-
-### 本地运行
-
-```bash
-# 1. 安装后端依赖
-pip3 install -r requirements.txt
-
-# 2. 生成加密主密钥
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-
-# 3. 设置环境变量
-export MASTER_ENCRYPTION_KEY='your-generated-key'
-
-# 4. 启动后端
-cd api && python3 -m uvicorn main:app --reload --port 8000
-# -> http://localhost:8000
-
-# 5. 启动前端（新终端）
-cd frontend-react && npm install && npm run dev
-# -> http://localhost:3000
-```
-
-### Docker 部署
-
-```bash
-# 构建并启动
-docker-compose up -d --build
-
-# 查看日志
-docker-compose logs -f
-
-# 停止
-docker-compose down
-```
-
-访问地址：
-- 前端：http://localhost:3000
-- 后端API：http://localhost:8000
-- API文档：http://localhost:8000/docs
-
-## 系统架构
+### Agent 流水线
 
 ```
 用户输入（文本/文件）
-    |
-    v
-+-------------------------------------------------+
-|             6-Layer Pipeline                     |
-|                                                  |
-|  Layer 1  输入解析   DOCX/XLSX/CSV/PPTX/TXT/MD  |
-|     v                                            |
-|  [Checkpoint 1: 数据解析确认]                     |
-|     v                                            |
-|  Layer 2  内容提取   GLM提取事实/数据/观点/结论    |
-|     v                                            |
-|  [Checkpoint 2: 内容提取确认]                     |
-|     v                                            |
-|  Layer 2  叙事编排   DeepSeek-R1编排论证结构        |
-|     v                                            |
-|  [Checkpoint 3: 叙事结构确认]                     |
-|     v                                            |
-|  Layer 3  结构规划   DeepSeek-R1生成页面骨架+Takeaway |
-|     v                                            |
-|  [Checkpoint 4: 页面结构确认]                     |
-|     v                                            |
-|  Layer 4  视觉设计   规则引擎匹配布局+主题         |
-|     v                                            |
-|  Layer 5  图表生成   Qwen-Max生成图表规格+So-What   |
-|     v                                            |
-|  Layer 6  PPT构建    坐标计算+python-pptx渲染      |
-|                                                  |
-+-------------------------------------------------+
-    |
-    v
-  output/*.pptx
+       │
+       ▼
+  ParseAgent          ── 解析文档结构，识别章节/表格/图片
+       │
+       ▼
+  AnalyzeAgent        ── 分析受众与场景，生成叙事策略
+       │
+       ▼
+  OutlineAgent        ── 生成 PPT 大纲（页数/类型/核心观点）
+       │
+  ◆ 检查点 1：用户审阅大纲，可编辑后确认
+       │
+       ▼
+  ContentAgent        ── per-slide 并行生成每页内容 + 图表数据
+       │
+  ◆ 检查点 2：用户审阅内容，可编辑后确认
+       │
+       ▼
+  DesignAgent         ── 规则引擎分配布局模板和视觉主题
+       │
+       ▼
+  RenderAgent         ── python-pptx 渲染输出 .pptx
 ```
 
-### 多模型协作（全部国内模型）
+每个 Agent 独立运行，结果持久化到 PostgreSQL，支持从任意检查点回退重跑。
 
-| 能力域 | Provider | 模型 | 阶段 |
-|---|---|---|---|
-| 中文理解/信息抽取 | 智谱 | GLM-4-Plus | 内容提取 |
-| 叙事推理/结构规划 | DeepSeek | DeepSeek-R1 | 叙事编排、结构规划 |
-| 数据分析/图表叙事 | 阿里通义 | Qwen-Max | 图表生成 |
+### 2 个必经检查点
 
-每个阶段可独立配置模型，支持全局默认 + 阶段级覆盖。DeepSeek 和通义均使用 OpenAI 兼容协议，一个 adapter 覆盖。
-
-### 4个确认检查点
-
-所有生成任务在 4 个关键节点暂停，用户审阅确认后才继续：
-
-| 检查点 | 用户审阅内容 | 可编辑 |
+| 检查点 | 审阅内容 | 可操作 |
 |---|---|---|
-| 数据解析确认 | 源类型、语言、表格预览 | Sheet选择、表头行、语言 |
-| 内容提取确认 | 按类型分组的结构化元素 | 删除/修改/添加元素 |
-| 叙事结构确认 | 核心论点、各段角色、过渡逻辑 | 修改论点、调整顺序 |
-| 页面结构确认 | 每页Takeaway和类型 | 修改Takeaway、合并/拆分页面 |
+| **大纲确认** | 全部页面的标题、类型、核心观点、视觉类型 | 编辑任意字段、调整页序、删除页面 |
+| **内容确认** | 每页的文本块、图表数据、图示规格 | 编辑文本、修改图表数据、切换图示类型 |
+
+确认后自动推进，无法跳过（这是产品设计，不是限制）。
+
+### LLM 配置
+
+系统使用 OpenAI 兼容协议，可对接任意支持该协议的模型服务：
+
+- **国内推荐**：SiliconFlow（GLM / Kimi / Qwen 均可）、DeepSeek、阿里云百炼
+- **海外**：OpenAI、Anthropic（通过兼容层）
+- **自部署**：Ollama、vLLM
+
+每个流水线阶段（analyze / outline / content / design）可独立配置不同模型，在系统设置界面配置，API Key 加密存储。
+
+## 快速开始
+
+### 前置要求
+
+- Docker & docker-compose
+- 至少一个 OpenAI 兼容的 LLM API Key
+
+### 1. 克隆并配置
+
+```bash
+git clone https://github.com/brightbear2026/PPTagent.git
+cd PPTagent
+
+# 复制环境变量模板
+cp .env.example .env
+```
+
+编辑 `.env`：
+
+```env
+# 生成加密主密钥（运行一次，保存好）
+# python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+MASTER_ENCRYPTION_KEY=your-generated-fernet-key
+
+# PostgreSQL 密码（开发环境可保持默认）
+POSTGRES_PASSWORD=pptagent_local
+```
+
+### 2. 启动服务
+
+```bash
+# 开发模式（支持热重载）
+docker-compose -f docker-compose.dev.yml up --build
+
+# 生产模式
+docker-compose up -d --build
+```
+
+| 服务 | 地址 |
+|---|---|
+| 前端 | http://localhost:3000 |
+| 后端 API | http://localhost:8000 |
+| API 文档 | http://localhost:8000/docs |
+
+### 3. 配置 LLM
+
+打开 http://localhost:3000 → 右上角 **系统设置** → 填入 API Key 和模型名称。
+
+例如使用 SiliconFlow：
+- Base URL: `https://api.siliconflow.cn/v1`
+- Model: `Pro/moonshotai/Kimi-K2-Instruct` 或 `Pro/zai-org/GLM-5.1`
+- API Key: 你的 SiliconFlow key
+
+### 4. 开始生成
+
+回到首页 → 填写标题和材料 → 点击「开始生成」。
 
 ## 项目结构
 
 ```
 PPTagent/
-  api/                         # FastAPI 后端
-    main.py                    # API 端点 + 流水线调度
-    pipeline_controller.py     # Pipeline 阶段控制器（4个检查点）
-    auth.py                    # JWT 认证
-  pipeline/                    # 核心 6 层流水线
-    layer1_input/              # 输入解析
-    layer2_content/            # 内容提取 + 叙事编排
-    layer3_structure/          # 结构规划
-    layer4_visual/             # 视觉设计
-    layer5_chart/              # 图表生成
-    layer6_output/             # 布局引擎 + PPT构建
-  models/                      # 数据模型
-    slide_spec.py              # SlideSpec 核心模型
-    model_config.py            # 多模型配置
-  llm_client/                  # 多 Provider LLM 客户端
-    base.py                    # 抽象基类
-    zhipu.py                   # 智谱 GLM（专有SDK）
-    openai_compat.py           # OpenAI 兼容适配器（DeepSeek、通义等）
-    factory.py                 # Provider 工厂
-  storage/                     # 持久化层
-    task_store.py              # SQLite 存储
-    encryption.py              # API Key 加密
-  templates/                   # 布局骨架 + 视觉主题
-  frontend-react/              # React 前端
-    src/
-      components/wizard/       # 向导式步骤组件
-      pages/                   # 页面路由
-      api/                     # 后端 API 客户端
-      hooks/                   # SSE 等自定义 hooks
-  output/                      # 生成的 PPT 文件
+├── api/
+│   └── main.py                   # FastAPI 端点 + 任务调度
+├── pipeline/
+│   ├── agents/                   # 6个专用 Agent
+│   │   ├── parse_agent.py
+│   │   ├── analyze_agent.py
+│   │   ├── outline_agent.py
+│   │   ├── content_agent.py      # per-slide 并发生成
+│   │   ├── design_agent.py
+│   │   └── render_agent.py
+│   ├── layer1_input/             # 多格式文档解析
+│   ├── layer5_chart/             # 图表规格生成
+│   ├── layer6_output/            # PPT 渲染引擎
+│   │   ├── ppt_builder.py
+│   │   ├── chart_renderer.py     # 分层图表渲染
+│   │   └── diagram_renderer.py
+│   ├── orchestrator.py           # Agent 编排 + 检查点管理
+│   └── skills/                   # 渲染技能注册表
+│       ├── charts/               # 8种图表技能
+│       ├── diagrams/             # 4种图示技能
+│       └── visual_blocks/        # 6种视觉块技能
+├── models/
+│   ├── slide_spec.py             # SlideSpec 核心数据模型
+│   └── model_config.py           # 多阶段模型配置
+├── llm_client/
+│   ├── base.py                   # 抽象基类（tenacity 重试）
+│   ├── openai_compat.py          # OpenAI 兼容适配器
+│   ├── glm_client.py             # 智谱 GLM 专有 SDK 适配
+│   └── provider_gate.py          # 并发控制（Semaphore + 限流）
+├── storage/
+│   ├── task_store.py             # PostgreSQL 存储层
+│   └── encryption.py             # Fernet + PBKDF2 加密
+├── migrations/                   # Alembic 数据库迁移
+├── frontend-react/               # React 18 向导式前端
+│   └── src/
+│       ├── components/wizard/    # Step1-Step4 向导组件
+│       ├── pages/WizardPage.tsx  # 主流程控制
+│       └── hooks/useSSE.ts       # 实时进度订阅
+├── templates/                    # 布局骨架 + 视觉主题
+├── docker-compose.yml
+├── docker-compose.dev.yml
+└── .env.example
 ```
-
-## API 概览
-
-### 基础端点
-
-| 方法 | 端点 | 说明 |
-|---|---|---|
-| POST | `/api/generate` | 纯文本生成PPT |
-| POST | `/api/generate/file` | 上传文件生成PPT |
-| GET | `/api/status/{id}` | SSE实时进度 |
-| GET | `/api/status/{id}/json` | JSON一次性状态 |
-| GET | `/api/download/{id}` | 下载PPT文件 |
-| GET | `/api/history` | 生成历史记录 |
-| DELETE | `/api/task/{id}` | 删除任务 |
-
-### Pipeline 阶段端点
-
-| 方法 | 端点 | 说明 |
-|---|---|---|
-| GET | `/api/task/{id}/stages` | 获取所有阶段状态 |
-| PUT | `/api/task/{id}/stage/{stage}` | 修改阶段结果 |
-| POST | `/api/task/{id}/continue` | 确认检查点后继续 |
-| POST | `/api/task/{id}/resume` | 从指定阶段重跑 |
-
-### 模型配置端点
-
-| 方法 | 端点 | 说明 |
-|---|---|---|
-| GET | `/api/config/models` | 获取各阶段模型配置 |
-| PUT | `/api/config/models` | 更新模型配置 |
-
-详细API文档见 [API_GUIDE.md](API_GUIDE.md)
 
 ## 支持的输入格式
 
 | 格式 | 扩展名 | 提取内容 |
 |---|---|---|
-| 纯文本 | `.txt` | 全文文本 + 语言检测 |
-| Markdown | `.md` | 标题层级 + 列表 + 表格 + 代码块 |
-| Word | `.docx` | 段落文本 + 表格 + 图片 |
-| Excel | `.xlsx` | 多Sheet表格数据 |
+| 纯文本 | `.txt` | 全文 + 章节结构自动识别 |
+| Markdown | `.md` | 标题层级、列表、表格、代码块 |
+| Word | `.docx` | 段落、表格、嵌入图片 |
+| Excel | `.xlsx` | 多 Sheet 表格数据 |
 | CSV | `.csv` | 单表数据（自动编码检测） |
 | PowerPoint | `.pptx` | 逐页文本 + 表格 |
 
-## 相关文档
+## API 概览
 
-- [CLAUDE.md](CLAUDE.md) — 项目架构设计和技术决策
-- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) — 开发规范
-- [API_GUIDE.md](API_GUIDE.md) — API 端点详细文档
+| 方法 | 端点 | 说明 |
+|---|---|---|
+| POST | `/api/generate` | 文本输入启动任务 |
+| POST | `/api/generate/file` | 文件上传启动任务 |
+| GET | `/api/status/{id}` | SSE 实时进度流 |
+| GET | `/api/task/{id}/stage/{stage}` | 获取阶段结果（含编辑） |
+| PUT | `/api/task/{id}/stage/{stage}` | 保存编辑后的阶段结果 |
+| POST | `/api/task/{id}/confirm` | 确认检查点，推进流水线 |
+| POST | `/api/task/{id}/resume` | 从指定阶段回退重跑 |
+| GET | `/api/download/{id}` | 下载生成的 PPT |
+| GET/PUT | `/api/settings` | 系统配置（模型/API Key） |
+
+详细文档：http://localhost:8000/docs
+
+## 开发
+
+```bash
+# 仅重建后端
+docker-compose -f docker-compose.dev.yml up --build -d backend
+
+# 查看后端日志
+docker-compose logs -f backend
+
+# 运行测试（在容器外，需本地 PostgreSQL）
+python3 -m pytest tests/
+
+# 数据库迁移
+docker-compose exec backend alembic upgrade head
+```
 
 ## License
 
