@@ -1274,3 +1274,82 @@ class ContentResult:
             failed_pages=data.get("failed_pages", []),
             slides=[SlideContent.from_dict(s) for s in data.get("slides", [])],
         )
+
+
+# ============================================================
+# ArgumentTree 模型（PlanAgent 输出）
+# ============================================================
+
+@dataclass
+class SCQA:
+    """金字塔原理中的情境-冲突-问题-答案结构"""
+    situation: str = ""     # 现状背景
+    complication: str = ""  # 挑战/冲突
+    question: str = ""      # 核心疑问
+    answer: str = ""        # 顶层结论 = root.claim
+
+    def to_dict(self) -> dict:
+        return {
+            "situation": self.situation,
+            "complication": self.complication,
+            "question": self.question,
+            "answer": self.answer,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SCQA":
+        return cls(
+            situation=d.get("situation", ""),
+            complication=d.get("complication", ""),
+            question=d.get("question", ""),
+            answer=d.get("answer", ""),
+        )
+
+
+@dataclass
+class Evidence:
+    """论点的证据单元，来源可追溯到文档 chunk"""
+    id: str = ""            # ev_{hash8}
+    kind: str = "stat"      # stat / quote / case / chart / expert / doc
+    content: str = ""       # 一句话事实陈述
+    source_chunk_id: str = ""  # 对应 analyze_agent 生成的 chunk.id
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "kind": self.kind,
+                "content": self.content, "source_chunk_id": self.source_chunk_id}
+
+
+@dataclass
+class ClaimNode:
+    """论证树中的一个节点（论点）"""
+    id: str = ""                    # cl_{hash8}
+    claim: str = ""                 # action title，完整句子，含动词
+    question_answered: str = ""     # 回答父节点的哪个 why/how
+    logic_type: str = "root"        # root / deductive / inductive
+    slide_role: str = "key_message" # cover/opener/key_message/evidence/section/summary/cta
+    evidences: list = field(default_factory=list)   # list[Evidence]
+    children: list = field(default_factory=list)    # list[ClaimNode]
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "claim": self.claim,
+            "question_answered": self.question_answered,
+            "logic_type": self.logic_type, "slide_role": self.slide_role,
+            "evidences": [e.to_dict() if hasattr(e, "to_dict") else e for e in self.evidences],
+            "children": [c.to_dict() if hasattr(c, "to_dict") else c for c in self.children],
+        }
+
+
+@dataclass
+class ArgumentTree:
+    """完整的金字塔论证结构"""
+    scqa: SCQA = field(default_factory=SCQA)
+    root: ClaimNode = field(default_factory=ClaimNode)
+    narrative_arc: str = "scqa"     # scqa / scr / problem_solution / explanation
+
+    def to_dict(self) -> dict:
+        return {
+            "scqa": self.scqa.to_dict(),
+            "root": self.root.to_dict() if hasattr(self.root, "to_dict") else self.root,
+            "narrative_arc": self.narrative_arc,
+        }

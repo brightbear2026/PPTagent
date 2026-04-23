@@ -185,14 +185,14 @@ class Orchestrator:
         agent = ContentAgent(llm)
 
         # 只生成目标页
-        outline_slides = outline.get("slides", [])
+        outline_slides = outline.get("items", outline.get("slides", []))
         target = next((s for s in outline_slides if s["page_number"] == page_number), None)
         if not target:
             raise RuntimeError(f"大纲中找不到第{page_number}页")
 
         # 临时替换大纲只含该页，重跑填充
         single_context = dict(context)
-        single_context["outline"] = {"slides": [target]}
+        single_context["outline"] = {"items": [target]}
         new_slides = await asyncio.to_thread(agent.run, single_context)
 
         # 合并到 content result
@@ -277,9 +277,9 @@ class Orchestrator:
             return agent.run(context)
 
         elif stage == "outline":
-            from pipeline.agents.outline_agent import OutlineAgent
+            from pipeline.agents.plan_agent import PlanAgent
             llm = self._get_llm(stage)
-            agent = OutlineAgent(llm)
+            agent = PlanAgent(llm)
             return agent.run(context)
 
         elif stage == "content":

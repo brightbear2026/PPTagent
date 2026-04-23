@@ -323,6 +323,14 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         takeaway = slide.get("takeaway_message", slide.get("takeaway", ""))
         section = slide.get("section", "")
         hint = slide.get("supporting_hint", "")
+
+        # Fast-path: if supporting_hint exactly matches a section title, use it directly
+        if hint:
+            for sp in source_pages:
+                if (sp.get("title") or "").strip() == hint.strip():
+                    content = sp.get("content", "")[:1500]
+                    return content
+
         kw_list = [w for w in f"{title} {section} {takeaway} {hint}".lower().split() if len(w) > 1]
         if not kw_list:
             return ""

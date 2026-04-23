@@ -1,0 +1,488 @@
+"""
+PlanAgent — 替代 OutlineAgent，使用金字塔原理生成论证型大纲。
+
+设计原则：
+- PPT是论证序列，不是文档章节目录
+- 每张幻灯片传递一个明确的CLAIM（论点），包含动词的完整句子
+- 叙事框架由用户选择的 scenario 决定（SCQA/SCR/AIDA等）
+- 生成的 items 格式与旧 OutlineAgent 完全兼容，ContentAgent 无需改动
+
+输出格式（与 OutlineResult 兼容）：
+{
+  "narrative_logic": "框架描述",
+  "scqa": {...},
+  "items": [OutlineItem dicts...],
+  "data_gap_suggestions": []
+}
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import re
+from typing import Any, Dict, List, Optional
+
+from llm_client.base import ChatMessage
+
+logger = logging.getLogger(__name__)
+
+# 场景 → 叙事框架映射（硬编码，用户选择直接生效）
+SCENARIO_FRAMEWORK_MAP: Dict[str, tuple] = {
+    "季度汇报":  ("scr",              "SCR框架：情境（Situation）→ 行动/挑战（Complication）→ 结论/结果（Resolution）"),
+    "战略提案":  ("scqa",             "SCQA框架：情境（S）→ 挑战（C）→ 核心问题（Q）→ 顶层答案/结论（A）"),
+    "竞标pitch": ("aida",             "AIDA框架：吸引注意（痛点）→ 激发兴趣（方案价值）→ 激发欲望（利益证据）→ 行动号召（CTA）"),
+    "内部分析":  ("issue_tree",       "Issue Tree框架：核心问题 → MECE分解 → 每个叶节点 = 一个发现/结论"),
+    "培训材料":  ("explanation",      "解释型框架：目标→现状→差距→方案→评估（ADDIE变体）"),
+    "项目汇报":  ("scr",              "STAR框架：情境（Situation）→ 任务（Task）→ 行动（Action）→ 结果（Result）"),
+    "产品发布":  ("problem_solution", "问题-方案框架：痛点树（问题）→ 解决方案树（方案+利益）"),
+}
+
+SLIDE_ROLE_TO_NARRATIVE_ARC = {
+    "cover":       "opening",
+    "opener":      "opening",
+    "section":     "context",
+    "key_message": "solution",
+    "evidence":    "evidence",
+    "summary":     "recommendation",
+    "cta":         "closing",
+}
+
+SLIDE_ROLE_TO_TYPE = {
+    "cover":       "title",
+    "opener":      "content",
+    "section":     "content",
+    "key_message": "content",
+    "evidence":    "data",
+    "summary":     "summary",
+    "cta":         "content",
+}
+
+
+class PlanAgent:
+    """
+    论证型大纲生成 Agent。
+
+    直接调用 LLM（无 ReAct 工具循环），使用：
+    1. 金字塔原理系统 prompt
+    2. 用户选择的场景 → 叙事框架
+    3. 文档 chunks 作为证据基础
+    4. 内置 rule-based 验证 + 最多1次 LLM 修复
+    """
+
+    MAX_TOKENS = 6000
+    TEMPERATURE = 0.5
+    MAX_VERIFY_RETRIES = 1
+
+    def __init__(self, llm_client):
+        self.llm = llm_client
+
+    # ------------------------------------------------------------------
+    # 入口
+    # ------------------------------------------------------------------
+
+    def run(self, context: Dict[str, Any]) -> Dict:
+        report = context.get("report_progress", lambda p, m: None)
+
+        task = context.get("task", {})
+        analysis = context.get("analysis", {})
+        raw = context.get("raw_content", {})
+
+        scenario = task.get("scenario", "")
+        target_audience = task.get("target_audience", "管理层")
+        title = task.get("title", "")
+        language = task.get("language", "zh")
+
+        chunks = analysis.get("chunks", [])
+        # 如果 analyze 阶段没有 chunks（旧版本），从 raw_content 现场构建
+        if not chunks:
+            chunks = self._build_chunks_from_raw(raw)
+
+        report(32, "正在构建论证框架...")
+        result = self._generate_plan(
+            title=title,
+            scenario=scenario,
+            target_audience=target_audience,
+            language=language,
+            analysis=analysis,
+            chunks=chunks,
+            raw=raw,
+        )
+
+        report(47, f"大纲生成完成：共{len(result.get('items', []))}页")
+        return result
+
+    # ------------------------------------------------------------------
+    # 核心生成逻辑
+    # ------------------------------------------------------------------
+
+    def _generate_plan(
+        self,
+        title: str,
+        scenario: str,
+        target_audience: str,
+        language: str,
+        analysis: Dict,
+        chunks: List[Dict],
+        raw: Dict,
+    ) -> Dict:
+        framework_arc, framework_desc = SCENARIO_FRAMEWORK_MAP.get(
+            scenario, ("", "根据文档内容自主选择最合适的叙事框架（SCR/SCQA/Problem-Solution）")
+        )
+
+        system_msg = self._build_system_prompt(framework_desc, framework_arc)
+        user_msg = self._build_user_prompt(
+            title=title,
+            scenario=scenario,
+            target_audience=target_audience,
+            language=language,
+            analysis=analysis,
+            chunks=chunks,
+            raw=raw,
+            framework_arc=framework_arc,
+        )
+
+        messages = [
+            ChatMessage(role="system", content=system_msg),
+            ChatMessage(role="user", content=user_msg),
+        ]
+
+        response = self.llm.chat(
+            messages=messages,
+            temperature=self.TEMPERATURE,
+            max_tokens=self.MAX_TOKENS,
+        )
+
+        if not response.success:
+            raise RuntimeError(f"LLM调用失败: {response.error}")
+
+        raw_output = response.content or ""
+        plan_data = self._parse_plan_json(raw_output)
+
+        # Rule-based verify + one-shot fix
+        issues = self._verify_plan(plan_data, chunks)
+        if issues and self.MAX_VERIFY_RETRIES > 0:
+            logger.warning("[PlanAgent] 验证发现问题，尝试LLM修复: %s", issues)
+            plan_data = self._fix_plan(messages, plan_data, issues, chunks)
+
+        return self._to_outline_result(plan_data, scenario, framework_desc)
+
+    # ------------------------------------------------------------------
+    # Prompt 构建
+    # ------------------------------------------------------------------
+
+    def _build_system_prompt(self, framework_desc: str, framework_arc: str) -> str:
+        arc_constraint = ""
+        if framework_arc:
+            arc_constraint = f'\n- narrative_arc 字段使用: "{framework_arc}"（用户已选定场景，不可更改）'
+
+        return f"""你是一位麦肯锡/BCG风格的咨询报告编辑，使用金字塔原理组织演示文稿。
+
+## 叙事框架
+{framework_desc}{arc_constraint}
+
+## 核心原则
+1. PPT是论证，不是文档目录。每张 content/data/diagram 页传递一个受众必须接受的 CLAIM。
+2. takeaway_message 必须是**完整句子**（含动词，有 so-what），≤60字。
+   ✓ 正确："东区收入增速连续三季度领先，建议加大资源投入"
+   ✗ 错误："东区收入分析" / "方案比较"
+3. 幻灯片顺序遵循叙事逻辑，不是文档章节顺序。相关论点聚合，不是一章节一页。
+4. supporting_hint 填写原文中具体章节名称，让内容生成阶段能找到支撑材料。
+5. 兄弟幻灯片 MECE（不重叠、无遗漏）；总页数 8-20 页（不含封面/目录/结尾固定页）。
+
+## 禁止事项
+- 用文档章节标题直接作为 takeaway_message
+- 一个文档章节对应一张幻灯片（章节映射）
+- takeaway_message 是名词短语而非完整句子
+- 生成超过25张幻灯片
+
+## 输出格式
+严格 JSON，放在 ```json ... ``` 代码块中：
+
+```json
+{{
+  "scqa": {{
+    "situation": "现状背景（1-2句）",
+    "complication": "核心挑战/冲突（1-2句）",
+    "question": "演示文稿要回答的核心问题（1句）",
+    "answer": "顶层结论，即整个演示文稿的核心答案（完整句子）"
+  }},
+  "root_claim": "顶层结论（与 scqa.answer 一致）",
+  "slides": [
+    {{
+      "page_number": 1,
+      "slide_type": "title",
+      "title": "演示文稿标题",
+      "takeaway_message": "",
+      "supporting_hint": "",
+      "data_source": "",
+      "primary_visual": "text_only",
+      "narrative_arc": "opening",
+      "section": ""
+    }},
+    {{
+      "page_number": 2,
+      "slide_type": "content",
+      "title": "SCQA开篇：[核心问题]",
+      "takeaway_message": "顶层结论（完整句子）",
+      "supporting_hint": "引言/背景",
+      "data_source": "",
+      "primary_visual": "visual_block",
+      "narrative_arc": "opening",
+      "section": "开篇"
+    }}
+  ]
+}}
+```
+
+slide_type 取值：title / content / data / diagram / summary
+primary_visual 取值：text_only / chart / diagram / visual_block
+narrative_arc 取值：opening / context / evidence / solution / recommendation / closing"""
+
+    def _build_user_prompt(
+        self,
+        title: str,
+        scenario: str,
+        target_audience: str,
+        language: str,
+        analysis: Dict,
+        chunks: List[Dict],
+        raw: Dict,
+        framework_arc: str,
+    ) -> str:
+        strategy = analysis.get("strategy", {})
+        doc_summary = strategy.get("document_summary", "")
+        core_themes = strategy.get("core_themes", [])
+        key_messages = strategy.get("key_messages", [])
+        page_range = strategy.get("recommended_page_range", "12-18页")
+
+        # 章节结构（source_pages 摘要）
+        source_pages = raw.get("source_pages", [])
+        section_lines = []
+        for i, sp in enumerate(source_pages[:20]):
+            sec_title = sp.get("title", "")
+            content = sp.get("content", "")
+            excerpt = content[:120].replace("\n", " ").strip()
+            excerpt_str = f"：{excerpt}…" if excerpt else ""
+            section_lines.append(f"  [{i+1}] {sec_title}（{len(content)}字）{excerpt_str}")
+        sections_text = "\n".join(section_lines) if section_lines else "（无结构化章节）"
+
+        # 表格清单
+        tables = raw.get("_tables", [])
+        table_lines = [
+            f"  表格{i+1}: {t.get('source_sheet', '表格')}（{len(t.get('rows', []))}行）"
+            f" 字段: {', '.join(str(h) for h in t.get('headers', [])[:5])}"
+            for i, t in enumerate(tables[:6])
+        ]
+        tables_text = "\n".join(table_lines) if table_lines else "（无数据表格）"
+
+        # Chunk ID 参考列表（供 supporting_hint 精确对应）
+        chunk_ref_lines = [
+            f"  [{c['id']}] [{c['section']}] {c['text'][:100]}…"
+            for c in chunks[:30]
+        ]
+        chunks_text = "\n".join(chunk_ref_lines) if chunk_ref_lines else "（无 chunk 数据）"
+
+        arc_note = f"\n**指定叙事框架**: {framework_arc}（narrative_arc 字段必须使用此值）" if framework_arc else ""
+
+        return f"""请为以下材料生成PPT大纲。
+
+## 任务信息
+- **PPT标题**: {title}
+- **目标受众**: {target_audience}
+- **汇报场景**: {scenario or "通用汇报"}{arc_note}
+- **推荐页数**: {page_range}
+- **语言**: {"中文" if language == "zh" else "English"}
+
+## 文档分析结论
+**文档摘要**: {doc_summary}
+
+**核心主题**:
+{chr(10).join(f"  - {t}" for t in core_themes)}
+
+**关键信息（这些必须在幻灯片中体现）**:
+{chr(10).join(f"  - {m}" for m in key_messages)}
+
+## 文档章节结构（共{len(source_pages)}个章节）
+{sections_text}
+
+## 数据表格（共{len(tables)}个）
+{tables_text}
+
+## 文档 Chunk 参考（supporting_hint 从这里选取章节名）
+{chunks_text}
+
+---
+请严格按照系统提示中的 JSON 格式输出大纲。记住：
+- 每个 content/data 页的 takeaway_message 必须是含动词的完整句子
+- 幻灯片顺序是论证逻辑，不是文档章节顺序
+- supporting_hint 填写上方章节列表中的具体章节名"""
+
+    # ------------------------------------------------------------------
+    # JSON 解析
+    # ------------------------------------------------------------------
+
+    def _parse_plan_json(self, text: str) -> Dict:
+        patterns = [
+            r'```json\s*(\{[\s\S]*?\})\s*```',
+            r'```\s*(\{[\s\S]*?\})\s*```',
+            r'(\{[\s\S]*"slides"[\s\S]*\})',
+            r'(\{[\s\S]*"scqa"[\s\S]*\})',
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, re.DOTALL):
+                try:
+                    data = json.loads(match.group(1))
+                    if isinstance(data, dict) and ("slides" in data or "scqa" in data):
+                        return data
+                except Exception:
+                    continue
+
+        logger.error("[PlanAgent] 无法从LLM输出解析JSON，使用兜底大纲")
+        return self._fallback_plan()
+
+    # ------------------------------------------------------------------
+    # 验证
+    # ------------------------------------------------------------------
+
+    def _verify_plan(self, plan: Dict, chunks: List[Dict]) -> List[str]:
+        issues = []
+        slides = plan.get("slides", [])
+
+        if len(slides) < 4:
+            issues.append(f"幻灯片数量过少（{len(slides)}页），至少需要4页")
+
+        content_slides = [s for s in slides if s.get("slide_type") not in ("title", "section_divider")]
+        for s in content_slides:
+            tm = s.get("takeaway_message", "")
+            if tm and not re.search(r'[一-龥a-zA-Z]{2}', tm):
+                issues.append(f"takeaway_message 过短或无内容: P{s.get('page_number')}")
+            # Check for noun-phrase pattern: Chinese takeaway with no verb indicators
+            if tm and len(tm) < 8 and s.get("slide_type") in ("content", "data", "diagram"):
+                issues.append(f"P{s.get('page_number')} takeaway_message 可能是名词短语，应为完整句子: {tm!r}")
+
+        scqa = plan.get("scqa", {})
+        if not scqa.get("answer"):
+            issues.append("scqa.answer（顶层结论）为空")
+
+        return issues
+
+    # ------------------------------------------------------------------
+    # 一次修复
+    # ------------------------------------------------------------------
+
+    def _fix_plan(
+        self,
+        original_messages: List[ChatMessage],
+        plan: Dict,
+        issues: List[str],
+        chunks: List[Dict],
+    ) -> Dict:
+        fix_messages = list(original_messages)
+        fix_messages.append(ChatMessage(
+            role="assistant",
+            content=f"```json\n{json.dumps(plan, ensure_ascii=False, indent=2)}\n```",
+        ))
+        issue_text = "\n".join(f"- {i}" for i in issues)
+        fix_messages.append(ChatMessage(
+            role="user",
+            content=(
+                f"输出存在以下问题，请修正后重新输出完整 JSON：\n{issue_text}\n\n"
+                "特别注意：content/data 页的 takeaway_message 必须是含动词的完整句子，"
+                "而不是名词短语（例如：不能写【数据分析】，应写【数据显示用户增速连续三季度加快】）。"
+            ),
+        ))
+
+        response = self.llm.chat(
+            messages=fix_messages,
+            temperature=self.TEMPERATURE,
+            max_tokens=self.MAX_TOKENS,
+        )
+        if response.success and response.content:
+            fixed = self._parse_plan_json(response.content)
+            if fixed.get("slides"):
+                return fixed
+        return plan
+
+    # ------------------------------------------------------------------
+    # 转换为 OutlineResult 兼容格式
+    # ------------------------------------------------------------------
+
+    def _to_outline_result(
+        self, plan: Dict, scenario: str, framework_desc: str
+    ) -> Dict:
+        slides = plan.get("slides", [])
+        scqa = plan.get("scqa", {})
+        root_claim = plan.get("root_claim", scqa.get("answer", ""))
+
+        # Normalize page numbers
+        for i, s in enumerate(slides, 1):
+            s["page_number"] = i
+
+        # Build narrative_logic string for frontend display
+        arc, desc = SCENARIO_FRAMEWORK_MAP.get(scenario, ("", framework_desc))
+        if scqa.get("answer"):
+            narrative_logic = f"{desc} | 顶层结论: {scqa['answer']}"
+        else:
+            narrative_logic = desc or framework_desc
+
+        # Ensure required fields
+        for s in slides:
+            s.setdefault("supporting_hint", "")
+            s.setdefault("data_source", "")
+            s.setdefault("primary_visual", "text_only")
+            s.setdefault("narrative_arc", "evidence")
+            s.setdefault("section", "")
+            s.setdefault("title", s.get("takeaway_message", ""))
+            # section dividers have no takeaway
+            if s.get("slide_type") == "section_divider":
+                s["takeaway_message"] = s.get("takeaway_message") or s.get("title", "")
+                s["primary_visual"] = "text_only"
+
+        return {
+            "narrative_logic": narrative_logic,
+            "scqa": scqa,
+            "root_claim": root_claim,
+            "items": slides,
+            "data_gap_suggestions": [],
+        }
+
+    # ------------------------------------------------------------------
+    # 兜底：当LLM输出完全无法解析时
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fallback_plan() -> Dict:
+        return {
+            "scqa": {
+                "situation": "文档内容已分析",
+                "complication": "需要结构化呈现",
+                "question": "如何有效传达核心观点？",
+                "answer": "通过结构化演示文稿系统呈现分析结论",
+            },
+            "root_claim": "通过结构化演示文稿系统呈现分析结论",
+            "slides": [
+                {"page_number": 1, "slide_type": "title", "title": "演示文稿",
+                 "takeaway_message": "", "supporting_hint": "", "data_source": "",
+                 "primary_visual": "text_only", "narrative_arc": "opening", "section": ""},
+                {"page_number": 2, "slide_type": "content", "title": "核心结论",
+                 "takeaway_message": "本次分析提供了系统化的决策依据和行动建议",
+                 "supporting_hint": "", "data_source": "",
+                 "primary_visual": "visual_block", "narrative_arc": "resolution", "section": ""},
+                {"page_number": 3, "slide_type": "summary", "title": "总结",
+                 "takeaway_message": "行动建议与后续步骤",
+                 "supporting_hint": "", "data_source": "",
+                 "primary_visual": "text_only", "narrative_arc": "closing", "section": ""},
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # 从 raw_content 构建 chunks（向后兼容，当 analyze 阶段未生成 chunks 时）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_chunks_from_raw(raw: Dict) -> List[Dict]:
+        from pipeline.agents.analyze_agent import AnalyzeAgent
+        source_pages = raw.get("source_pages", [])
+        return AnalyzeAgent._chunk_document(source_pages)
