@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches
-from models import RawContent, TableData
+from models import RawContent, TableData, SourcePage
 
 
 class PptxParser:
@@ -33,12 +33,19 @@ class PptxParser:
 
         all_text_parts = []
         all_tables = []
+        source_pages = []
 
         for idx, slide in enumerate(prs.slides, 1):
             # 提取文本
             slide_text = self._extract_text_from_slide(slide)
             if slide_text.strip():
                 all_text_parts.append(f"--- 第{idx}页 ---\n{slide_text}")
+                title = self._extract_slide_title(slide) or f"第{idx}页"
+                source_pages.append(SourcePage(
+                    title=title,
+                    content=slide_text,
+                    page_number=idx,
+                ))
 
             # 提取表格
             slide_tables = self._extract_tables_from_slide(slide, idx)
@@ -57,7 +64,30 @@ class PptxParser:
             tables=all_tables,
             metadata=metadata,
             detected_language=lang,
+            source_pages=source_pages,
         )
+
+    def _extract_slide_title(self, slide) -> str:
+        """提取幻灯片标题：优先 title placeholder，其次首个短文本。"""
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            try:
+                pf = getattr(shape, "placeholder_format", None)
+                if pf is not None and pf.idx == 0:
+                    text = shape.text_frame.text.strip()
+                    if text:
+                        return text[:80]
+            except Exception:
+                pass
+        # fallback: first non-empty paragraph shorter than 80 chars (likely a title)
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    text = para.text.strip()
+                    if text and len(text) < 80:
+                        return text
+        return ""
 
     def _extract_text_from_slide(self, slide) -> str:
         """提取单页幻灯片中的所有文本"""
