@@ -567,9 +567,9 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
                 errors.append(f"第{pn}页 text_blocks 为空")
                 continue
 
-            content_blocks = [b for b in text_blocks if b.get("type") in ("bullet", "body")]
+            content_blocks = [b for b in text_blocks if b.get("content", "").strip() and not b.get("is_bold")]
             if len(content_blocks) < 1:
-                errors.append(f"第{pn}页内容过少（少于1个bullet/body块）")
+                errors.append(f"第{pn}页内容过少（少于1个正文块）")
 
             if primary_visual == "chart" and not s.get("chart_suggestion"):
                 errors.append(f"第{pn}页 primary_visual='chart' 但缺少 chart_suggestion")

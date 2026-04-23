@@ -317,6 +317,41 @@ class DesignAgent(CodeAgent):
                 edges.append(DiagramEdge(from_id=str(e.get("from", "")), to_id=str(e.get("to", "")), label=e.get("label", "")))
             return DiagramSpec(diagram_type="relationship", nodes=nodes, edges=edges, title=cds.title)
 
+        elif cds.architecture:
+            arch = cds.architecture
+            for layer in arch.layers:
+                layer_label = layer.get("label", "")
+                for item in layer.get("items", []):
+                    label = item if isinstance(item, str) else item.get("label", str(item))
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=label, group=layer_label))
+            if not nodes and arch.root:
+                nodes.append(DiagramNode(node_id="root", label=arch.root.get("label", "")))
+            return DiagramSpec(diagram_type="architecture", nodes=nodes, title=cds.title)
+
+        elif cds.framework:
+            fw = cds.framework
+            if fw.quadrants:
+                for q in fw.quadrants:
+                    pos = q.get("position", "")
+                    for item in q.get("items", []):
+                        nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=str(item), group=pos))
+            elif fw.pyramid_levels:
+                for lvl in fw.pyramid_levels:
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=lvl.get("label", ""), sublabel=lvl.get("desc", ""), group="default"))
+            elif fw.funnel_stages:
+                for st in fw.funnel_stages:
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=st.get("label", ""), group="default"))
+            elif fw.strengths or fw.weaknesses or fw.opportunities or fw.threats:
+                for item in fw.strengths:
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=str(item), group="top_left"))
+                for item in fw.weaknesses:
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=str(item), group="top_right"))
+                for item in fw.opportunities:
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=str(item), group="bottom_left"))
+                for item in fw.threats:
+                    nodes.append(DiagramNode(node_id=f"n_{len(nodes)}", label=str(item), group="bottom_right"))
+            return DiagramSpec(diagram_type="framework", nodes=nodes, title=cds.title)
+
         return None
 
     @staticmethod

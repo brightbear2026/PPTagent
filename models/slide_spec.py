@@ -1069,7 +1069,21 @@ class ContentDiagramSpec:
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentDiagramSpec:
-        dtype = DiagramType(data["diagram_type"])
+        try:
+            dtype = DiagramType(data["diagram_type"])
+        except (ValueError, KeyError):
+            # LLM returned an unknown diagram_type; map common aliases or use process_flow
+            raw = str(data.get("diagram_type", "")).lower()
+            _alias = {
+                "hierarchy": DiagramType.ARCHITECTURE,
+                "org_chart": DiagramType.ARCHITECTURE,
+                "flowchart": DiagramType.PROCESS_FLOW,
+                "flow": DiagramType.PROCESS_FLOW,
+                "comparison": DiagramType.FRAMEWORK,
+                "matrix": DiagramType.FRAMEWORK,
+                "causal": DiagramType.RELATIONSHIP,
+            }
+            dtype = _alias.get(raw, DiagramType.PROCESS_FLOW)
         spec = cls(diagram_type=dtype, title=data.get("title", ""))
 
         if dtype == DiagramType.PROCESS_FLOW:

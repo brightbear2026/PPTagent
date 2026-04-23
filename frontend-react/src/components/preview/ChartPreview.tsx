@@ -33,20 +33,24 @@ interface Props {
 }
 
 const ChartPreview: React.FC<Props> = ({ chart, width, height }) => {
-  // Handle both backend formats:
-  //   Agent format:  series[].data (number[]), series[0].labels (string[])
-  //   TS type format: series[].values (number[]), top-level categories (string[])
-  const raw = chart as any;
+  // series may arrive as array or single object — normalise to array
+  const rawSeries: any[] = Array.isArray(chart.series)
+    ? chart.series
+    : chart.series
+    ? [chart.series]
+    : [];
 
-  const labels: string[] =
-    chart.categories?.length
-      ? chart.categories
-      : (raw.series?.[0]?.labels ?? []);
+  const labels: string[] = Array.isArray(chart.categories) && chart.categories.length
+    ? chart.categories
+    : (rawSeries[0]?.labels ?? []);
 
-  const datasets = (chart.series ?? []).map((s: any, i: number) => {
-    const values: number[] = s.values?.length ? s.values : (s.data ?? []);
+  const datasets = rawSeries.map((s: any, i: number) => {
+    const raw_values = s.values ?? s.data ?? [];
+    const values: number[] = Array.isArray(raw_values)
+      ? raw_values.map((v: any) => (typeof v === 'number' ? v : parseFloat(v) || 0))
+      : [];
     const color = PALETTE[i % PALETTE.length];
-    return { label: s.name, data: values, rawColor: color };
+    return { label: s.name ?? '', data: values, rawColor: color };
   });
 
   const type = chart.chart_type ?? 'bar';

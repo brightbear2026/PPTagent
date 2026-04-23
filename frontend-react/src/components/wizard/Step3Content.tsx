@@ -3,7 +3,7 @@
    Left: page nav | Middle: editing | Right: live preview
    ============================================================ */
 
-import React, { useState } from 'react';
+import React, { useState, Component } from 'react';
 import {
   Card, Button, Input, Select, Tag, List, Tooltip, message, Space,
   Empty, Typography, Popconfirm,
@@ -325,7 +325,9 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
         title={<span style={{ fontSize: 14, color: '#002B4E' }}>实时预览</span>}
       >
         {currentSlide ? (
-          <SlidePreview slide={currentSlide} />
+          <PreviewErrorBoundary key={currentSlide.page_number}>
+            <SlidePreview slide={currentSlide} />
+          </PreviewErrorBoundary>
         ) : (
           <Empty description="选择页面查看预览" style={{ marginTop: 80 }} />
         )}
@@ -333,6 +335,26 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
     </div>
   );
 };
+
+// ── Error Boundary — prevents preview crash from blanking the page ──
+
+class PreviewErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 16, color: '#8B9DAF', fontSize: 12 }}>
+          预览渲染失败（数据异常），请在左侧编辑区核对内容
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Slide Preview Component ──
 
