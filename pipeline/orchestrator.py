@@ -418,7 +418,11 @@ class Orchestrator:
             return f"内容填充完成：共{len(slides)}页"
         elif stage == "design":
             slides = result.get("slides", [])
-            return f"视觉设计完成：共{len(slides)}页"
+            skipped = result.get("skipped_pages", [])
+            msg = f"视觉设计完成：共{len(slides)}页"
+            if skipped:
+                msg += f"（{len(skipped)}页内容生成失败已跳过，最终PPT将少这些页）"
+            return msg
         elif stage == "render":
             output_file = result.get("output_file", "")
             return f"PPT生成完成：{output_file}"
@@ -479,6 +483,13 @@ class Orchestrator:
         if stage == "outline":
             items = result.get("items", result.get("slides", []))
             self.store.update_task(task_id, slides=json.dumps(items, ensure_ascii=False))
+        elif stage == "design":
+            skipped = result.get("skipped_pages", [])
+            if skipped:
+                logger.warning(
+                    f"[Design] {len(skipped)}页被跳过: "
+                    f"{[p['page_number'] for p in skipped]}"
+                )
         elif stage == "render":
             output_file = result.get("output_file", "")
             if output_file:
