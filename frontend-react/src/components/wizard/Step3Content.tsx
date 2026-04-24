@@ -331,7 +331,14 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
       <Card
         style={{ width: 380, flexShrink: 0, borderRadius: 2, overflow: 'auto' }}
         styles={{ body: { padding: 16 } }}
-        title={<span style={{ fontSize: 14, color: '#002B4E' }}>实时预览</span>}
+        title={
+          <span style={{ fontSize: 14, color: '#002B4E' }}>
+            内容预览
+            <span style={{ fontSize: 11, color: '#8B9DAF', fontWeight: 400, marginLeft: 6 }}>
+              （示意图，配色/排版以导出PPT为准）
+            </span>
+          </span>
+        }
       >
         {currentSlide ? (
           <PreviewErrorBoundary key={currentSlide.page_number}>
@@ -401,7 +408,7 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
       {/* Top accent bar */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0,
-        height: 3, background: 'linear-gradient(90deg, #003D6E, #C9A84C)',
+        height: 3, background: '#003D6E',
       }} />
 
       {/* Takeaway */}

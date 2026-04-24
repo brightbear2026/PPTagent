@@ -218,6 +218,10 @@ class HTMLDesignAgent:
     ) -> str:
         """Generate HTML for a single slide via LLM."""
 
+        # Title/cover slides always use a fixed template — LLM produces content-page layout for these.
+        if slide_data.get("slide_type") == "title":
+            return self._cover_slide_html(slide_index, slide_data, theme_colors, total_slides, task)
+
         if self.llm is None:
             return self._fallback_html(slide_index, slide_data, theme_colors, total_slides)
 
@@ -331,6 +335,49 @@ class HTMLDesignAgent:
 - 底部 {primary} 色页脚（24px高，含页码）
 - 左侧 takeaway 竖条（4px宽，{primary}色）
 """
+
+    def _cover_slide_html(
+        self,
+        slide_index: int,
+        slide_data: Dict,
+        theme_colors: Dict[str, str],
+        total_slides: int,
+        task: Dict,
+    ) -> str:
+        """Fixed cover/title slide template — dark primary background with centered title."""
+        primary = theme_colors.get("primary", "#003D6E")
+        accent = theme_colors.get("accent", "#FF6B35")
+        title = slide_data.get("title", "") or task.get("title", "演示文稿")
+        subtitle = slide_data.get("takeaway_message", "") or ""
+        # Use text_blocks first block as subtitle if takeaway_message is empty
+        if not subtitle:
+            blocks = slide_data.get("text_blocks", [])
+            if blocks:
+                b = blocks[0]
+                subtitle = b.get("content", "") if isinstance(b, dict) else str(b)
+
+        return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:{primary}; position:relative;">
+
+<!-- Left accent stripe -->
+<div style="position:absolute; top:0; left:0; width:8px; height:540px; background-color:{accent};"></div>
+
+<!-- Bottom accent band -->
+<div style="position:absolute; bottom:0; left:0; width:960px; height:6px; background-color:{accent};"></div>
+
+<!-- Title -->
+<h1 style="position:absolute; left:80px; top:150px; width:800px; height:140px; font-size:36px; color:#FFFFFF; font-weight:bold; line-height:1.4;">{title}</h1>
+
+<!-- Subtitle / root claim -->
+<p style="position:absolute; left:80px; top:310px; width:720px; height:60px; font-size:16px; color:#AECCE0;">{subtitle}</p>
+
+<!-- Divider line -->
+<div style="position:absolute; left:80px; top:290px; width:600px; height:2px; background-color:{accent};"></div>
+
+</body>
+</html>"""
 
     def _fallback_html(
         self,
