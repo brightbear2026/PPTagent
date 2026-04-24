@@ -327,6 +327,67 @@ class ChartRenderer:
                 print("[ChartRenderer] plotly或kaleido未安装，复杂图表将降级为native渲染")
         return self._plotly_available
 
+    def render_into_pptx(
+        self,
+        pptx_path: str,
+        placeholders: list,
+        slides_data: list,
+        output_path: str,
+        theme=None,
+    ) -> str:
+        """
+        Inject native charts into an existing .pptx at placeholder positions.
+
+        Used after html2pptx.js renders text/shapes/images — this adds python-pptx
+        native charts at the placeholder locations.
+
+        Args:
+            pptx_path: Path to .pptx produced by html2pptx.js
+            placeholders: [{"slide_index": int, "items": [{"id": str, "x": float, "y": float, "w": float, "h": float}]}]
+            slides_data: Per-slide chart specs: [{"chart_spec": ChartSpec dict, "theme": VisualTheme}]
+            output_path: Where to save the final .pptx
+            theme: Default VisualTheme if per-slide theme is None
+
+        Returns:
+            output_path
+        """
+        from pptx import Presentation
+        from pptx.util import Inches
+
+        prs = Presentation(pptx_path)
+
+        for ph_entry in placeholders:
+            slide_idx = ph_entry.get("slide_index", 0)
+            if slide_idx >= len(prs.slides) or slide_idx >= len(slides_data):
+                continue
+
+            slide = prs.slides[slide_idx]
+            data = slides_data[slide_idx] if slide_idx < len(slides_data) else {}
+            chart_spec_dict = data.get("chart_spec")
+            if not chart_spec_dict:
+                continue
+
+            chart_spec = ChartSpec.from_dict(chart_spec_dict) if isinstance(chart_spec_dict, dict) else chart_spec_dict
+            slide_theme = data.get("theme") or theme
+
+            for ph_item in ph_entry.get("items", []):
+                x_in = ph_item.get("x", 1)
+                y_in = ph_item.get("y", 1)
+                w_in = ph_item.get("w", 4)
+                h_in = ph_item.get("h", 3)
+
+                rect = Rect(
+                    left=int(x_in * 914400),
+                    top=int(y_in * 914400),
+                    width=int(w_in * 914400),
+                    height=int(h_in * 914400),
+                )
+
+                self.render(slide, chart_spec, rect, slide_theme)
+
+        prs.save(output_path)
+        return output_path
+
     @staticmethod
     def _parse_color(hex_color: str):
         """解析十六进制颜色为 RGBColor"""

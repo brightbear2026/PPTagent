@@ -1,0 +1,11 @@
+{
+  "name": "pptagent-html2pptx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTML slide to PPTX converter for PPTAgent",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "pptxgenjs": "^3.12.0",
+    "sharp": "^0.33.0"
+  }
+}

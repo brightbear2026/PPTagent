@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -289,15 +290,33 @@ class Orchestrator:
             return agent.run(context)
 
         elif stage == "design":
+            render_mode = os.environ.get("RENDER_MODE", "html")
+            if render_mode == "html":
+                from pipeline.layer6_output.node_bridge import is_node_available
+                if is_node_available():
+                    from pipeline.agents.html_design_agent import HTMLDesignAgent
+                    try:
+                        llm = self._get_llm(stage)
+                    except ValueError:
+                        llm = None
+                    agent = HTMLDesignAgent(llm)
+                    return agent.run(context)
+            # Fallback to legacy render path
             from pipeline.agents.design_agent import DesignAgent
             try:
                 llm = self._get_llm(stage)
             except ValueError:
-                llm = None  # DesignAgent only uses LLM for optional chart supplementation
+                llm = None
             agent = DesignAgent(llm)
             return agent.run(context)
 
         elif stage == "render":
+            # When using HTML rendering, design stage handles both design+render.
+            # This stage becomes a no-op pass-through.
+            design_result = context.get("design") or self.store.get_stage_result(task_id, "design")
+            if design_result and design_result.get("output_file"):
+                return design_result
+            # Legacy path
             from pipeline.agents.render_agent import RenderAgent
             agent = RenderAgent()
             return agent.run(context)
