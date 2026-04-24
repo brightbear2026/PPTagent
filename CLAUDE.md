@@ -233,12 +233,14 @@ User's Step1 `scenario` selection hard-maps to narrative framework:
 
 ## Known Issues & Roadmap
 
-### P1 (next iteration)
-- SSE: currently 0.5s polling; should use asyncio.Queue event-driven push
-- Step1 sub-progress not visible during parse+analyze (5%→30% is a black box)
-- `_find_chart_table`: only injects top-2 tables; could use BM25 row-level filtering for large tables
-
-### P2 (technical debt)
+### P1 (technical debt)
 - `analyze_agent.py:_analyze_table_code` references `MetricType.GROWTH_RATE` which doesn't exist (should be `YOY_GROWTH`); currently caught by try/except so non-fatal
 - `SupplementalData.micro_analysis` is a dead column in the DB schema
 - stagger/sleep patterns in old code paths should be replaced with tenacity exponential backoff
+
+### Running Tests
+
+```bash
+# Run e2e HTML render test (requires container with Node + Playwright)
+docker-compose -f docker-compose.dev.yml exec backend python3 -m pytest tests/test_e2e_html_render.py -v
+```
