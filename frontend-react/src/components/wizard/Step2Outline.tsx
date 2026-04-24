@@ -35,6 +35,35 @@ const SLIDE_TYPE_COLORS: Record<string, string> = {
   summary:    '#2E7D32',
 };
 
+// Map structure keys to display labels for all framework types
+const STRUCTURE_KEY_LABELS: Record<string, string> = {
+  // SCQA
+  situation: 'S 情境',
+  complication: 'C 挑战',
+  question: 'Q 核心问题',
+  answer: 'A 顶层结论',
+  // SCR
+  resolution: '结论/结果',
+  // AIDA
+  attention: '吸引注意',
+  interest: '激发兴趣',
+  desire: '激发欲望',
+  action: '行动号召',
+  // Explanation (ADDIE)
+  objective: '目标',
+  current_state: '现状',
+  gap: '差距',
+  solution: '方案',
+  evaluation: '评估',
+  // Issue Tree
+  core_question: '核心问题',
+  decomposition_logic: '分解逻辑',
+  key_finding: '关键发现',
+  // Problem-Solution
+  problem_statement: '问题陈述',
+  solution_statement: '方案陈述',
+};
+
 interface Step2Props {
   taskId: string;
   outline: OutlineResult;
@@ -152,7 +181,7 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
           </Text>
         </div>
 
-        {outline.scqa && (
+        {outline.scqa && Object.keys(outline.scqa).length > 0 && (
           <div style={{
             marginTop: 12,
             padding: '12px 16px',
@@ -161,33 +190,26 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
             borderRadius: 4,
           }}>
             <Text style={{ fontSize: 12, color: '#8B6D00', fontWeight: 600, letterSpacing: 1 }}>
-              论证结构（SCQA）
+              论证结构
             </Text>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginTop: 8 }}>
-              {outline.scqa.situation && (
-                <div>
-                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>S 情境</Text>
-                  <div style={{ fontSize: 13, color: '#262626', marginTop: 2 }}>{outline.scqa.situation}</div>
-                </div>
-              )}
-              {outline.scqa.complication && (
-                <div>
-                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>C 挑战</Text>
-                  <div style={{ fontSize: 13, color: '#262626', marginTop: 2 }}>{outline.scqa.complication}</div>
-                </div>
-              )}
-              {outline.scqa.question && (
-                <div>
-                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>Q 核心问题</Text>
-                  <div style={{ fontSize: 13, color: '#262626', marginTop: 2 }}>{outline.scqa.question}</div>
-                </div>
-              )}
-              {outline.scqa.answer && (
-                <div>
-                  <Text style={{ fontSize: 11, color: '#8C8C8C' }}>A 顶层结论</Text>
-                  <div style={{ fontSize: 13, color: '#003D6E', fontWeight: 600, marginTop: 2 }}>{outline.scqa.answer}</div>
-                </div>
-              )}
+              {Object.entries(outline.scqa).map(([key, value]) => {
+                if (!value) return null;
+                const scqa = outline.scqa!;
+                const nonEmptyKeys = Object.keys(scqa).filter(k => scqa[k]);
+                const isLast = key === nonEmptyKeys[nonEmptyKeys.length - 1];
+                return (
+                  <div key={key}>
+                    <Text style={{ fontSize: 11, color: '#8C8C8C' }}>{STRUCTURE_KEY_LABELS[key] || key}</Text>
+                    <div style={{
+                      fontSize: 13,
+                      color: isLast ? '#003D6E' : '#262626',
+                      fontWeight: isLast ? 600 : 400,
+                      marginTop: 2,
+                    }}>{value}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

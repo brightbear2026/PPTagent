@@ -69,18 +69,11 @@ export interface OutlineItem {
   section?: string;
 }
 
-export interface SCQA {
-  situation: string;
-  complication: string;
-  question: string;
-  answer: string;
-}
-
 export interface OutlineResult {
   narrative_logic: string;
   items: OutlineItem[];
   data_gap_suggestions: string[];
-  scqa?: SCQA;
+  scqa?: Record<string, string>;
   root_claim?: string;
 }
 

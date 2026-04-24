@@ -39,6 +39,46 @@ SCENARIO_FRAMEWORK_MAP: Dict[str, tuple] = {
     "产品发布":  ("problem_solution", "问题-方案框架：痛点树（问题）→ 解决方案树（方案+利益）"),
 }
 
+# 框架 → 输出结构模板（让 system prompt 的 JSON 格式与叙事框架一致）
+FRAMEWORK_STRUCTURES: Dict[str, dict] = {
+    "scqa": {
+        "field": "scqa",
+        "keys": ["situation", "complication", "question", "answer"],
+        "labels": ["现状背景", "核心挑战/冲突", "核心问题", "顶层结论"],
+        "opener_title": "SCQA开篇：{question}",
+    },
+    "scr": {
+        "field": "scqa",
+        "keys": ["situation", "complication", "resolution"],
+        "labels": ["情境背景", "挑战/行动", "结论/结果"],
+        "opener_title": "开篇：{resolution}",
+    },
+    "aida": {
+        "field": "scqa",
+        "keys": ["attention", "interest", "desire", "action"],
+        "labels": ["痛点/注意力", "方案价值/兴趣", "利益证据/欲望", "行动号召"],
+        "opener_title": "开篇：{attention}",
+    },
+    "explanation": {
+        "field": "scqa",
+        "keys": ["objective", "current_state", "gap", "solution", "evaluation"],
+        "labels": ["学习/沟通目标", "现状描述", "差距与挑战", "解决方案", "评估与总结"],
+        "opener_title": "开篇：{objective}",
+    },
+    "issue_tree": {
+        "field": "scqa",
+        "keys": ["core_question", "decomposition_logic", "key_finding"],
+        "labels": ["核心问题", "分解逻辑", "关键发现"],
+        "opener_title": "开篇：{core_question}",
+    },
+    "problem_solution": {
+        "field": "scqa",
+        "keys": ["problem_statement", "solution_statement"],
+        "labels": ["痛点/问题陈述", "解决方案陈述"],
+        "opener_title": "开篇：{problem_statement}",
+    },
+}
+
 SLIDE_ROLE_TO_NARRATIVE_ARC = {
     "cover":       "opening",
     "opener":      "opening",
@@ -161,7 +201,7 @@ class PlanAgent:
         plan_data = self._parse_plan_json(raw_output)
 
         # Rule-based verify + one-shot fix
-        issues = self._verify_plan(plan_data, chunks)
+        issues = self._verify_plan(plan_data, chunks, framework_arc)
         if issues and self.MAX_VERIFY_RETRIES > 0:
             logger.warning("[PlanAgent] 验证发现问题，尝试LLM修复: %s", issues)
             plan_data = self._fix_plan(messages, plan_data, issues, chunks)
@@ -176,6 +216,16 @@ class PlanAgent:
         arc_constraint = ""
         if framework_arc:
             arc_constraint = f'\n- narrative_arc 字段使用: "{framework_arc}"（用户已选定场景，不可更改）'
+
+        # Build framework-specific structure template
+        struct = FRAMEWORK_STRUCTURES.get(framework_arc, FRAMEWORK_STRUCTURES["scqa"])
+        struct_lines = []
+        for key, label in zip(struct["keys"], struct["labels"]):
+            struct_lines.append(f'    "{key}": "{label}（1-2句）"')
+        struct_json = ",\n".join(struct_lines)
+
+        # Last key is used as root_claim reference
+        last_key = struct["keys"][-1]
 
         return f"""你是一位麦肯锡/BCG风格的咨询报告编辑，使用金字塔原理组织演示文稿。
 
@@ -203,12 +253,9 @@ class PlanAgent:
 ```json
 {{
   "scqa": {{
-    "situation": "现状背景（1-2句）",
-    "complication": "核心挑战/冲突（1-2句）",
-    "question": "演示文稿要回答的核心问题（1句）",
-    "answer": "顶层结论，即整个演示文稿的核心答案（完整句子）"
+{struct_json}
   }},
-  "root_claim": "顶层结论（与 scqa.answer 一致）",
+  "root_claim": "顶层结论（与 scqa.{last_key} 一致）",
   "slides": [
     {{
       "page_number": 1,
@@ -224,7 +271,7 @@ class PlanAgent:
     {{
       "page_number": 2,
       "slide_type": "content",
-      "title": "SCQA开篇：[核心问题]",
+      "title": "开篇：[核心观点]",
       "takeaway_message": "顶层结论（完整句子）",
       "supporting_hint": "引言/背景",
       "data_source": "",
@@ -346,7 +393,7 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
     # 验证
     # ------------------------------------------------------------------
 
-    def _verify_plan(self, plan: Dict, chunks: List[Dict]) -> List[str]:
+    def _verify_plan(self, plan: Dict, chunks: List[Dict], framework_arc: str = "scqa") -> List[str]:
         issues = []
         slides = plan.get("slides", [])
 
@@ -358,13 +405,14 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
             tm = s.get("takeaway_message", "")
             if tm and not re.search(r'[一-龥a-zA-Z]{2}', tm):
                 issues.append(f"takeaway_message 过短或无内容: P{s.get('page_number')}")
-            # Check for noun-phrase pattern: Chinese takeaway with no verb indicators
             if tm and len(tm) < 8 and s.get("slide_type") in ("content", "data", "diagram"):
                 issues.append(f"P{s.get('page_number')} takeaway_message 可能是名词短语，应为完整句子: {tm!r}")
 
         scqa = plan.get("scqa", {})
-        if not scqa.get("answer"):
-            issues.append("scqa.answer（顶层结论）为空")
+        struct = FRAMEWORK_STRUCTURES.get(framework_arc, FRAMEWORK_STRUCTURES["scqa"])
+        last_key = struct["keys"][-1]
+        if not scqa.get(last_key):
+            issues.append(f"scqa.{last_key}（顶层结论）为空")
 
         return issues
 
@@ -414,16 +462,27 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
     ) -> Dict:
         slides = plan.get("slides", [])
         scqa = plan.get("scqa", {})
-        root_claim = plan.get("root_claim", scqa.get("answer", ""))
+
+        # Extract root_claim: try explicit field, then last structure key, then any value
+        arc, _ = SCENARIO_FRAMEWORK_MAP.get(scenario, ("", framework_desc))
+        struct = FRAMEWORK_STRUCTURES.get(arc, FRAMEWORK_STRUCTURES["scqa"])
+        root_claim = plan.get("root_claim", "")
+        if not root_claim:
+            # Try each key in reverse order to find a non-empty value
+            for key in reversed(struct["keys"]):
+                val = scqa.get(key, "")
+                if val:
+                    root_claim = val
+                    break
 
         # Normalize page numbers
         for i, s in enumerate(slides, 1):
             s["page_number"] = i
 
         # Build narrative_logic string for frontend display
-        arc, desc = SCENARIO_FRAMEWORK_MAP.get(scenario, ("", framework_desc))
-        if scqa.get("answer"):
-            narrative_logic = f"{desc} | 顶层结论: {scqa['answer']}"
+        _, desc = SCENARIO_FRAMEWORK_MAP.get(scenario, ("", framework_desc))
+        if root_claim:
+            narrative_logic = f"{desc} | 顶层结论: {root_claim}"
         else:
             narrative_logic = desc or framework_desc
 
