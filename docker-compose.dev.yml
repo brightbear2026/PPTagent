@@ -38,6 +38,7 @@ services:
       - ./llm_client:/app/llm_client
       - ./storage:/app/storage
       - ./templates:/app/templates
+      - ./tests:/app/tests
       - ppt_output_dev:/app/output
     command: python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
