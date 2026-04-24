@@ -26,10 +26,10 @@ Each agent's result is persisted in `pipeline_stages` PostgreSQL table. Users ca
 |-------|-------|-------------|
 | `parse` | ParseAgent (code-only) | DOCX/XLSX/CSV/PPTX/TXT/MD → RawContent |
 | `analyze` | AnalyzeAgent (LLM) | Document strategy + audience analysis + **chunk generation** |
-| `outline` | **PlanAgent** (LLM) | Pyramid Principle → DeckPlan (SCQA + argument slides) |
+| `outline` | **PlanAgent** (LLM) | Pyramid Principle → DeckPlan (framework structure + argument slides) |
 | `content` | ContentAgent (LLM, per-slide parallel) | Each slide's text blocks + chart/diagram specs |
-| `design` | DesignAgent (code + optional LLM) | Layout templates + visual themes + chart conversion |
-| `render` | RenderAgent (code-only) | python-pptx → `.pptx` file |
+| `design` | **HTMLDesignAgent** (LLM, default) or DesignAgent | HTML-first rendering path; fallback to legacy python-pptx |
+| `render` | html2pptx.js + ChartRenderer (default) or RenderAgent | Node/Playwright → pptxgenjs + native chart injection |
 
 ### 2 Mandatory Checkpoints
 
@@ -153,7 +153,13 @@ PPTagent/
     layer1_input/            # Format-specific parsers (DOCX/XLSX/CSV/MD/TXT/PPTX)
     layer4_visual/           # VisualDesigner (layout templates + themes)
     layer5_chart/            # ChartGenerator (chart spec → ChartSpec)
-    layer6_output/           # PPT builder + diagram renderer
+    layer6_output/           # PPT builder + diagram renderer + HTML→PPTX bridge
+      html2pptx.js           # Node/Playwright: HTML slide → pptxgenjs (primary renderer)
+      html2pptx_wrapper.js   # Batch wrapper for multiple slides
+      node_bridge.py         # Python↔Node subprocess bridge (JSON stdio)
+      css_linter.py          # CSS whitelist validator + LLM feedback loop
+      chart_renderer.py      # python-pptx native chart injection at placeholder coords
+      ppt_builder.py         # Legacy python-pptx builder (fallback when Node unavailable)
     skills/                  # Rendering skills registry (charts/diagrams/visual_blocks)
     orchestrator.py          # Stage-by-stage execution + checkpoint management
   models/
@@ -210,11 +216,13 @@ docker-compose exec backend python3 -c "..."
 
 1. **Docker-first**: Always rebuild container after code changes
 2. **PlanAgent = Pyramid Principle**: Outline is an argument sequence, not chapter mapping
-3. **Per-slide parallel**: ContentAgent runs MAX_CONCURRENT=4 slides simultaneously  
+3. **Per-slide parallel**: ContentAgent runs MAX_CONCURRENT=4 slides simultaneously
 4. **OutlineItem → ContentAgent compatibility**: PlanAgent output uses `items` key; ContentAgent reads `outline.get("items", outline.get("slides", []))`
 5. **narrative_arc values** must match `NarrativeRole` enum: opening / context / evidence / analysis / solution / recommendation / closing
 6. **API keys**: Never stored in plaintext; always encrypt with `storage/encryption.py`
 7. **New Python deps**: Add to `requirements.txt` → rebuild Docker image
+8. **HTML rendering is default**: Set `RENDER_MODE=legacy` to bypass Node/Playwright and use pure python-pptx path
+9. **Framework-agnostic scqa field**: `outline.scqa` is `Record<string, string>` — keys vary by framework (e.g. SCR has no `answer`, AIDA has no `question`); always read via `struct["keys"]` from `FRAMEWORK_STRUCTURES`
 
 ## Scenario → Framework Mapping (PlanAgent)
 
@@ -231,12 +239,28 @@ User's Step1 `scenario` selection hard-maps to narrative framework:
 | 产品发布 | Problem-Solution | problem tree + solution tree |
 | (auto) | LLM decides | scr / problem_solution / explanation |
 
-## Known Issues & Roadmap
+## HTML Rendering Pipeline
 
-### P1 (technical debt)
-- `analyze_agent.py:_analyze_table_code` references `MetricType.GROWTH_RATE` which doesn't exist (should be `YOY_GROWTH`); currently caught by try/except so non-fatal
-- `SupplementalData.micro_analysis` is a dead column in the DB schema
-- stagger/sleep patterns in old code paths should be replaced with tenacity exponential backoff
+Default rendering path (requires Node 20 + Playwright in container):
+
+```
+HTMLDesignAgent (LLM per slide)
+    ↓  HTML string
+css_linter.py (whitelist validate → LLM fix loop, max 1 retry)
+    ↓  validated HTML files
+html2pptx.js via node_bridge.py (Playwright extract layout → pptxgenjs)
+    ↓  PPTX with chart placeholders
+chart_renderer.py (inject native python-pptx charts at placeholder coords)
+    ↓  final .pptx
+```
+
+**Theme system**: 5 built-in themes in `ThemeRegistry` → HTML color palettes, auto-selected from `analysis.strategy`.
+
+**Fallback**: If `is_node_available()` returns False, orchestrator falls back to legacy `DesignAgent` + `RenderAgent`.
+
+## Known Issues
+
+- None currently tracked. See git log for history.
 
 ### Running Tests
 
