@@ -3,12 +3,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖（psycopg2编译需要）
-RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev && rm -rf /var/lib/apt/lists/*
+# 安装系统依赖（psycopg2编译需要 + Node.js for html2pptx）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
 # 安装Python依赖
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 安装 html2pptx Node.js 依赖
+COPY pipeline/layer6_output/package.json pipeline/layer6_output/package.json
+RUN cd pipeline/layer6_output && npm install --production && npx playwright install chromium --with-deps
 
 # 复制代码
 COPY . .

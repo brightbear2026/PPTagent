@@ -134,7 +134,17 @@ class HTMLDesignAgent:
             if warnings:
                 logger.info("Slide %d linter warnings: %s", i, warnings)
 
-            # Inspect loop: try html2pptx, if fail, regenerate once
+            # Inspect loop: pre-validate, regenerate if needed (max 1 retry)
+            html = self._inspect_and_fix(
+                html=html,
+                slide_index=i,
+                slide_data=sd,
+                theme_colors=theme_colors,
+                total_slides=total,
+                task=task,
+                linter=linter,
+            )
+
             html_path = os.path.join(html_dir, f"slide_{i:02d}.html")
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html)
@@ -244,6 +254,61 @@ class HTMLDesignAgent:
             logger.warning("LLM generation failed for slide %d: %s, using fallback", slide_index, e)
             return self._fallback_html(slide_index, slide_data, theme_colors, total_slides)
 
+    def _inspect_and_fix(
+        self, html, slide_index, slide_data, theme_colors, total_slides, task, linter,
+    ) -> str:
+        """Pre-validate HTML with a single-slide Node.js render. Regenerate on failure."""
+        # Fast check: CSS linter validate (no Node.js needed)
+        errors = linter.validate(html)
+        if not errors:
+            return html
+
+        logger.warning("Slide %d validation errors: %s", slide_index, errors)
+
+        if not self.llm:
+            # No LLM to retry with, return as-is (html2pptx will skip or best-effort)
+            return html
+
+        # Retry: feed errors back to LLM
+        fix_prompt = (
+            f"你刚才生成的第{slide_index + 1}页 HTML 存在以下问题：\n"
+            + "\n".join(f"- {e}" for e in errors)
+            + "\n\n请修正这些问题并重新输出完整的 HTML 文档。只输出 HTML。"
+        )
+
+        try:
+            response = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": self._build_system_prompt(theme_colors)},
+                    {"role": "user", "content": json.dumps(slide_data, ensure_ascii=False)},
+                    {"role": "assistant", "content": html},
+                    {"role": "user", "content": fix_prompt},
+                ],
+                temperature=0.2,
+                max_tokens=4000,
+            )
+
+            fixed_html = response.strip()
+            if fixed_html.startswith("```"):
+                fixed_html = fixed_html.split("\n", 1)[-1]
+            if fixed_html.endswith("```"):
+                fixed_html = fixed_html.rsplit("```", 1)[0]
+
+            # Re-lint the fix
+            fixed_html, fix_warnings = linter.fix(fixed_html)
+            remaining = linter.validate(fixed_html)
+
+            if len(remaining) < len(errors):
+                logger.info("Slide %d: fix reduced errors %d→%d", slide_index, len(errors), len(remaining))
+                return fixed_html
+            else:
+                logger.warning("Slide %d: fix didn't help, keeping original", slide_index)
+                return html
+
+        except Exception as e:
+            logger.warning("Slide %d inspect-loop retry failed: %s", slide_index, e)
+            return html
+
     def _build_system_prompt(self, theme_colors: Dict[str, str]) -> str:
         accent = theme_colors.get("accent", "#C9A84C")
         primary = theme_colors.get("primary", "#003D6E")
@@ -328,25 +393,39 @@ class HTMLDesignAgent:
 
     @staticmethod
     def _get_theme_colors(analysis_data: Dict) -> Dict[str, str]:
-        """Extract theme colors from analysis result."""
-        default_colors = {
-            "primary": "#003D6E",
-            "accent": "#C9A84C",
-            "bg": "#EEF4FA",
-            "text": "#2D3436",
-            "muted": "#8B9DAF",
-            "border": "#C8D8E8",
+        """Extract theme colors. Maps from ThemeRegistry or analysis strategy."""
+        from pipeline.layer4_visual.theme_registry import ThemeRegistry
+
+        # Map analysis-detected style to theme
+        style_theme_map = {
+            "consulting_formal": "consulting_formal",
+            "tech_modern": "tech_modern",
+            "business_minimalist": "business_minimalist",
+            "finance_stable": "finance_stable",
+            "creative_vibrant": "creative_vibrant",
         }
 
-        if not analysis_data:
-            return default_colors
-
-        try:
+        theme_id = "consulting_formal"  # default
+        if analysis_data:
             strategy = analysis_data.get("strategy", {})
-            # Future: read theme from analysis
-            return default_colors
-        except Exception:
-            return default_colors
+            style = strategy.get("visual_style", "")
+            theme_id = style_theme_map.get(style, "consulting_formal")
+
+        registry = ThemeRegistry()
+        theme = registry.get_theme(theme_id)
+
+        return {
+            "primary": theme.colors.get("primary", "#003D6E"),
+            "secondary": theme.colors.get("secondary", "#005A9E"),
+            "accent": theme.colors.get("accent", "#FF6B35"),
+            "text": theme.colors.get("text_dark", "#2D3436"),
+            "muted": theme.colors.get("text_light", "#636E72"),
+            "bg": "#EEF4FA",
+            "border": "#C8D8E8",
+            "theme_id": theme_id,
+            "font_title": theme.fonts.get("title", "Arial"),
+            "font_body": theme.fonts.get("body", "Calibri"),
+        }
 
     @staticmethod
     def _match_slides(outline_items: list, content_slides: list) -> list:

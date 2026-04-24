@@ -51,5 +51,8 @@ test_*.py
 frontend-react/node_modules
 frontend-react/dist
 
+# html2pptx test slides (not needed in production)
+pipeline/layer6_output/test_slides/
+
 # Claude Code
 .claude/
