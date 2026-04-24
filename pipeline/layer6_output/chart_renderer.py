@@ -353,8 +353,19 @@ class ChartRenderer:
         """
         from pptx import Presentation
         from pptx.util import Inches
+        from pptx.chart.data import CategoryChartData
 
         prs = Presentation(pptx_path)
+
+        # Map ChartType to python-pptx XL_CHART_TYPE
+        _CHART_TYPE_MAP = {
+            "column": 51,    # XL_CHART_TYPE.COLUMN_CLUSTERED
+            "bar": 57,       # XL_CHART_TYPE.BAR_CLUSTERED
+            "line": 4,       # XL_CHART_TYPE.LINE
+            "pie": 5,        # XL_CHART_TYPE.PIE
+            "area": 29,      # XL_CHART_TYPE.AREA
+            "scatter": -4169, # XL_CHART_TYPE.XY_SCATTER
+        }
 
         for ph_entry in placeholders:
             slide_idx = ph_entry.get("slide_index", 0)
@@ -367,7 +378,21 @@ class ChartRenderer:
             if not chart_spec_dict:
                 continue
 
-            chart_spec = ChartSpec.from_dict(chart_spec_dict) if isinstance(chart_spec_dict, dict) else chart_spec_dict
+            # Normalize: ChartSuggestion / ChartSpec / dict → ChartSpec
+            if isinstance(chart_spec_dict, dict):
+                chart_spec = ChartSpec.from_dict(chart_spec_dict)
+            elif hasattr(chart_spec_dict, "chart_type"):
+                # Likely a ChartSuggestion — convert to dict then to ChartSpec
+                raw = {
+                    "chart_type": getattr(chart_spec_dict, "chart_type", "column"),
+                    "title": getattr(chart_spec_dict, "title", ""),
+                    "categories": getattr(chart_spec_dict, "categories", []),
+                    "series": getattr(chart_spec_dict, "series", []),
+                    "so_what": getattr(chart_spec_dict, "so_what", ""),
+                }
+                chart_spec = ChartSpec.from_dict(raw)
+            else:
+                continue
             slide_theme = data.get("theme") or theme
 
             for ph_item in ph_entry.get("items", []):
@@ -376,13 +401,39 @@ class ChartRenderer:
                 w_in = ph_item.get("w", 4)
                 h_in = ph_item.get("h", 3)
 
+                # Try direct native chart first (simpler types)
+                chart_type_str = chart_spec.chart_type.value if hasattr(chart_spec.chart_type, "value") else str(chart_spec.chart_type).lower()
+                xl_type = _CHART_TYPE_MAP.get(chart_type_str)
+
+                if xl_type is not None and chart_spec.categories and chart_spec.series:
+                    try:
+                        chart_data = CategoryChartData()
+                        chart_data.categories = list(chart_spec.categories)
+                        for s in chart_spec.series:
+                            chart_data.add_series(s.name, (float(v) for v in s.values))
+
+                        chart_frame = slide.shapes.add_chart(
+                            xl_type,
+                            Inches(x_in), Inches(y_in),
+                            Inches(w_in), Inches(h_in),
+                            chart_data,
+                        )
+                        chart = chart_frame.chart
+                        chart.has_legend = bool(chart_spec.show_legend)
+                        if chart_spec.title:
+                            chart.has_title = True
+                            chart.chart_title.text_frame.paragraphs[0].text = chart_spec.title
+                        continue
+                    except Exception as e:
+                        print(f"[ChartRenderer] native chart failed: {e}, trying render()")
+
+                # Fallback to render() method (Plotly PNG etc.)
                 rect = Rect(
                     left=int(x_in * 914400),
                     top=int(y_in * 914400),
                     width=int(w_in * 914400),
                     height=int(h_in * 914400),
                 )
-
                 self.render(slide, chart_spec, rect, slide_theme)
 
         prs.save(output_path)

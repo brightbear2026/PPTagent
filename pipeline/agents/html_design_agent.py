@@ -453,10 +453,19 @@ class HTMLDesignAgent:
                 slide_data["diagram_spec"] = content.get("diagram_spec")
                 slide_data["visual_block"] = content.get("visual_block")
             elif hasattr(content, "text_blocks"):
-                slide_data["text_blocks"] = content.text_blocks
-                slide_data["chart_suggestion"] = getattr(content, "chart_suggestion", None)
-                slide_data["diagram_spec"] = getattr(content, "diagram_spec", None)
-                slide_data["visual_block"] = getattr(content, "visual_block", None)
+                # Convert TextBlock objects to plain dicts for template consumption
+                raw_blocks = content.text_blocks
+                slide_data["text_blocks"] = [
+                    {"content": b.content, "is_bold": b.is_bold, "level": b.level}
+                    if hasattr(b, "content") else b
+                    for b in raw_blocks
+                ]
+                cs = getattr(content, "chart_suggestion", None)
+                slide_data["chart_suggestion"] = cs.to_dict() if hasattr(cs, "to_dict") else cs
+                ds = getattr(content, "diagram_spec", None)
+                slide_data["diagram_spec"] = ds.to_dict() if hasattr(ds, "to_dict") else ds
+                vb = getattr(content, "visual_block", None)
+                slide_data["visual_block"] = vb.to_dict() if hasattr(vb, "to_dict") else vb
 
             slides_data.append(slide_data)
 
