@@ -400,6 +400,9 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
         if len(slides) < 4:
             issues.append(f"幻灯片数量过少（{len(slides)}页），至少需要4页")
 
+        if not any(s.get("slide_type") == "title" for s in slides):
+            issues.append("缺少封面页（slide_type=title），请在第1页添加封面")
+
         content_slides = [s for s in slides if s.get("slide_type") not in ("title", "section_divider")]
         for s in content_slides:
             tm = s.get("takeaway_message", "")
@@ -474,6 +477,21 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
                 if val:
                     root_claim = val
                     break
+
+        # Ensure at least one title slide exists as the first slide
+        has_title_slide = any(s.get("slide_type") == "title" for s in slides)
+        if not has_title_slide:
+            slides.insert(0, {
+                "page_number": 1,
+                "slide_type": "title",
+                "title": root_claim or "演示文稿",
+                "takeaway_message": "",
+                "supporting_hint": "",
+                "data_source": "",
+                "primary_visual": "text_only",
+                "narrative_arc": "opening",
+                "section": "",
+            })
 
         # Normalize page numbers
         for i, s in enumerate(slides, 1):

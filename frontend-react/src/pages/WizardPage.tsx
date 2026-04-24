@@ -204,6 +204,10 @@ const WizardPage: React.FC = () => {
     if (!tid) return;
     try {
       await resumePipeline(tid, 'outline');
+      // Refresh outline + generation after reset so saved edits use the new generation=0
+      await fetchOutline(tid);
+      setContent(null);
+      setContentGeneration(0);
       setCurrent(2);
       sse.connect(tid);
       message.info('已返回大纲编辑');
@@ -296,6 +300,7 @@ const WizardPage: React.FC = () => {
             generation={contentGeneration}
             onConfirm={handleContentConfirm}
             onBack={handleBackToOutline}
+            onGenerationUpdate={setContentGeneration}
             buildFailed={buildFailed}
           />
         )}

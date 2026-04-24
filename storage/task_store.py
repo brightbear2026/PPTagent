@@ -427,7 +427,8 @@ class TaskStore:
                     cur.execute("""
                         UPDATE pipeline_stages
                         SET status = 'pending', result = NULL, error = NULL,
-                            started_at = NULL, completed_at = NULL
+                            started_at = NULL, completed_at = NULL,
+                            generation = 0
                         WHERE task_id = %s AND stage = %s
                     """, (task_id, stage))
             conn.commit()

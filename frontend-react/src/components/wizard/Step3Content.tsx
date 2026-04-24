@@ -12,7 +12,7 @@ import {
   DeleteOutlined, PlusOutlined, RedoOutlined,
   BarChartOutlined, ApartmentOutlined, ArrowLeftOutlined,
 } from '@ant-design/icons';
-import { updateStage, rerunPage } from '../../api/client';
+import { updateStage, rerunPage, getStageResult } from '../../api/client';
 import type { OutlineResult, ContentResult, SlideContent, TextBlock } from '../../types';
 import ChartPreview from '../preview/ChartPreview';
 import DiagramPreview from '../preview/DiagramPreview';
@@ -27,10 +27,11 @@ interface Step3Props {
   generation?: number;
   onConfirm: () => void;
   onBack?: () => void;
+  onGenerationUpdate?: (gen: number) => void;
   buildFailed?: boolean;
 }
 
-const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generation, onConfirm, onBack, buildFailed }) => {
+const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generation, onConfirm, onBack, onGenerationUpdate, buildFailed }) => {
   const [slides, setSlides] = useState<SlideContent[]>(content.slides);
   const [selectedPage, setSelectedPage] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -56,21 +57,21 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
   const updateTextBlock = (slideIdx: number, blockIdx: number, field: keyof TextBlock, value: any) => {
     updateSlide(slideIdx, (s) => ({
       ...s,
-      text_blocks: s.text_blocks.map((b, i) => (i === blockIdx ? { ...b, [field]: value } : b)),
+      text_blocks: (s.text_blocks ?? []).map((b, i) => (i === blockIdx ? { ...b, [field]: value } : b)),
     }));
   };
 
   const addTextBlock = (slideIdx: number) => {
     updateSlide(slideIdx, (s) => ({
       ...s,
-      text_blocks: [...s.text_blocks, { content: '', level: 1, is_bold: false }],
+      text_blocks: [...(s.text_blocks ?? []), { content: '', level: 1, is_bold: false }],
     }));
   };
 
   const removeTextBlock = (slideIdx: number, blockIdx: number) => {
     updateSlide(slideIdx, (s) => ({
       ...s,
-      text_blocks: s.text_blocks.filter((_, i) => i !== blockIdx),
+      text_blocks: (s.text_blocks ?? []).filter((_, i) => i !== blockIdx),
     }));
   };
 
@@ -82,6 +83,14 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
     const pageNum = slides[slideIdx].page_number;
     try {
       await rerunPage(taskId, pageNum);
+      // Refresh slides from server so updated content and new generation are applied
+      const stageData = await getStageResult(taskId, 'content');
+      if (stageData?.result?.slides) {
+        setSlides(stageData.result.slides);
+        if (onGenerationUpdate && stageData.generation != null) {
+          onGenerationUpdate(stageData.generation);
+        }
+      }
       message.success(`第${pageNum}页已重新生成`);
     } catch (err: any) {
       message.error(err.response?.data?.detail || '重跑失败');
@@ -417,7 +426,7 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
 
       {/* Text blocks */}
       <div style={{ overflow: 'hidden', maxHeight: textMaxH, flexShrink: 0 }}>
-        {slide.text_blocks.slice(0, 6).map((block, i) => (
+        {(slide.text_blocks ?? []).slice(0, 6).map((block, i) => (
           <div
             key={i}
             style={{
