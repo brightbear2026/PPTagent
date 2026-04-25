@@ -92,7 +92,14 @@ N层分层架构 → architecture_stack
 3-4个数字指标 → content_key_metrics
 单一核心结论需强调 → quote_highlight
 3-6个框架/步骤/原则 → icon_grid
-默认 → content_bullets"""
+默认 → content_bullets
+
+## 内容保留规则（最重要）
+你的职责是选布局，不是重写内容。严格遵守：
+- bullets / items[].desc / annotations 等文本字段，必须直接来自 slide_data.text_blocks 的 content 字段，原样搬运或仅做布局适配（如加编号），不要概括、压缩、重写
+- 必须保留 text_blocks 中的具体数据、百分比、金额、专有名词、人名/产品名等事实性内容
+- 每个 bullet/desc 应保持 30-60 字，与原始 text_blocks 长度相当
+- 如果某条 text_blocks 内容较长（>60字），可以适当精简但必须保留核心数据和结论"""
 
 # Legacy free-HTML system prompt (kept for fallback inspect-loop)
 _SYSTEM_PROMPT = """你是一位 PPT 视觉设计师。为每张幻灯片生成完整的 HTML 文档。
