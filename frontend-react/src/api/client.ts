@@ -160,8 +160,10 @@ export async function updateStage(
 
 // ── Rerun Page ──
 
-export async function rerunPage(taskId: string, pageNumber: number) {
-  const { data } = await http.post(`/task/${taskId}/rerun-page/${pageNumber}`);
+export async function rerunPage(taskId: string, pageNumber: number, userFeedback: string = '') {
+  const { data } = await http.post(`/task/${taskId}/rerun-page/${pageNumber}`, {
+    user_feedback: userFeedback,
+  });
   return data;
 }
 

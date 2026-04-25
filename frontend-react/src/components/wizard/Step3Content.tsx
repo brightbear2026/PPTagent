@@ -5,7 +5,7 @@
 
 import React, { useState, Component } from 'react';
 import {
-  Card, Button, Input, Select, Tag, List, Tooltip, message, Space,
+  Card, Button, Input, Select, Tag, List, message, Space,
   Empty, Typography, Popconfirm,
 } from 'antd';
 import {
@@ -31,11 +31,17 @@ interface Step3Props {
   buildFailed?: boolean;
 }
 
+const STRUCTURAL_SLIDE_TYPES = new Set(['title', 'agenda', 'section_divider']);
+
 const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generation, onConfirm, onBack, onGenerationUpdate, buildFailed }) => {
-  const [slides, setSlides] = useState<SlideContent[]>(content.slides);
+  const [slides, setSlides] = useState<SlideContent[]>(
+    content.slides.filter(s => !STRUCTURAL_SLIDE_TYPES.has(s.slide_type))
+  );
   const [selectedPage, setSelectedPage] = useState(0);
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [rerunFeedback, setRerunFeedback] = useState('');
+  const [lastRevisionNotes, setLastRevisionNotes] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (buildFailed && confirmed) {
@@ -79,18 +85,23 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
     updateSlide(slideIdx, (s) => ({ ...s, takeaway_message: value }));
   };
 
-  const handleRerunPage = async (slideIdx: number) => {
+  const handleRerunPage = async (slideIdx: number, feedback: string) => {
     const pageNum = slides[slideIdx].page_number;
+    setLastRevisionNotes(null);
     try {
-      await rerunPage(taskId, pageNum);
+      const result = await rerunPage(taskId, pageNum, feedback);
       // Refresh slides from server so updated content and new generation are applied
       const stageData = await getStageResult(taskId, 'content');
       if (stageData?.result?.slides) {
-        setSlides(stageData.result.slides);
+        setSlides(stageData.result.slides.filter((s: SlideContent) => !STRUCTURAL_SLIDE_TYPES.has(s.slide_type)));
         if (onGenerationUpdate && stageData.generation != null) {
           onGenerationUpdate(stageData.generation);
         }
       }
+      if (result?.slide?.revision_notes) {
+        setLastRevisionNotes(result.slide.revision_notes);
+      }
+      setRerunFeedback('');
       message.success(`第${pageNum}页已重新生成`);
     } catch (err: any) {
       message.error(err.response?.data?.detail || '重跑失败');
@@ -192,7 +203,7 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
                 </Button>
               </div>
 
-              {currentSlide.text_blocks.map((block, bIdx) => (
+              {(currentSlide.text_blocks ?? []).map((block, bIdx) => (
                 <div
                   key={bIdx}
                   style={{
@@ -227,7 +238,7 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
                 </div>
               ))}
 
-              {currentSlide.text_blocks.length === 0 && (
+              {(currentSlide.text_blocks ?? []).length === 0 && (
                 <Empty description="暂无文字内容" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               )}
             </div>
@@ -269,13 +280,6 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
               </Card>
             )}
 
-            {/* Source note */}
-            {currentSlide.source_note && (
-              <div style={{ fontSize: 12, color: '#8B9DAF', marginTop: 8 }}>
-                来源: {currentSlide.source_note}
-              </div>
-            )}
-
             {/* Warnings / Failed */}
             {currentSlide.is_failed && (
               <div style={{ color: '#ff4d4f', marginTop: 8, fontSize: 13 }}>
@@ -283,8 +287,33 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
               </div>
             )}
 
+            {/* Rerun with feedback */}
+            <div style={{ marginTop: 16, marginBottom: 8 }}>
+              <TextArea
+                value={rerunFeedback}
+                onChange={(e) => setRerunFeedback(e.target.value)}
+                placeholder="告诉 AI 需要改进的方向（可选，直接点重跑也可以）"
+                rows={2}
+                style={{ borderRadius: 2, fontSize: 13, marginBottom: 6 }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Button
+                  size="small"
+                  icon={<RedoOutlined />}
+                  onClick={() => handleRerunPage(selectedPage, rerunFeedback)}
+                >
+                  重新生成本页
+                </Button>
+                {lastRevisionNotes && (
+                  <span style={{ fontSize: 12, color: '#888' }}>
+                    AI 说：{lastRevisionNotes}
+                  </span>
+                )}
+              </div>
+            </div>
+
             {/* Page actions */}
-            <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
               {onBack && (
                 <Button
                   icon={<ArrowLeftOutlined />}
@@ -295,15 +324,6 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
                   返回大纲
                 </Button>
               )}
-              <Tooltip title="重新生成本页">
-                <Button
-                  size="small"
-                  icon={<RedoOutlined />}
-                  onClick={() => handleRerunPage(selectedPage)}
-                >
-                  重跑本页
-                </Button>
-              </Tooltip>
               <div style={{ flex: 1 }} />
               <Button
                 type="primary"
@@ -318,7 +338,7 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
                   borderRadius: 2,
                 }}
               >
-                确认内容，生成PPT
+                生成 PPT
               </Button>
             </div>
           </>
@@ -458,7 +478,9 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
       <div style={{ flex: 1 }} />
 
       {/* ── Chart Preview ── */}
-      {hasChart && slide.chart_suggestion && (
+      {hasChart && slide.chart_suggestion &&
+        Array.isArray(slide.chart_suggestion.series) &&
+        slide.chart_suggestion.series.length > 0 && (
         <div style={{ flexShrink: 0, overflow: 'hidden' }}>
           <div style={{ fontSize: 7.5, color: '#8B9DAF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             <BarChartOutlined style={{ fontSize: 9 }} />
@@ -472,7 +494,7 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
       )}
 
       {/* ── Diagram Preview ── */}
-      {hasDiagram && slide.diagram_spec && (
+      {hasDiagram && slide.diagram_spec && slide.diagram_spec.diagram_type && (
         <div style={{ flexShrink: 0, overflow: 'hidden' }}>
           <div style={{ fontSize: 7.5, color: '#8B9DAF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             <ApartmentOutlined style={{ fontSize: 9 }} />
@@ -482,13 +504,6 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
             </Tag>
           </div>
           <DiagramPreview diagram={slide.diagram_spec} width={width - 24} height={VISUAL_H - 14} />
-        </div>
-      )}
-
-      {/* Source */}
-      {slide.source_note && !hasVisual && (
-        <div style={{ fontSize: 7.5, color: '#8B9DAF', marginTop: 3, flexShrink: 0 }}>
-          来源: {slide.source_note}
         </div>
       )}
     </div>

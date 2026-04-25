@@ -26,14 +26,17 @@ const { TextArea } = Input;
 const { Text } = Typography;
 
 const SLIDE_TYPE_COLORS: Record<string, string> = {
-  title:      '#C9A84C',
-  agenda:     '#8B9DAF',
-  content:    '#003D6E',
-  data:       '#005B96',
-  diagram:    '#48A9E6',
-  comparison: '#FF6B35',
-  summary:    '#2E7D32',
+  title:           '#C9A84C',
+  agenda:          '#8B9DAF',
+  section_divider: '#48A9E6',
+  content:         '#003D6E',
+  data:            '#005B96',
+  diagram:         '#48A9E6',
+  comparison:      '#FF6B35',
+  summary:         '#2E7D32',
 };
+
+const STRUCTURAL_TYPES = new Set(['title', 'agenda', 'section_divider']);
 
 // Map structure keys to display labels for all framework types
 const STRUCTURE_KEY_LABELS: Record<string, string> = {
@@ -79,6 +82,16 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [supplementing, setSupplementing] = useState(false);
+  const [scqaExpanded, setScqaExpanded] = useState(false);
+
+  // Extract framework name from narrative_logic (text before first "：" or ":")
+  const frameworkName = outline.narrative_logic
+    ? (outline.narrative_logic.split(/[：:]/)[0] || '叙事框架').trim()
+    : '叙事框架';
+
+  // Root claim summary: prefer root_claim, otherwise first non-empty scqa value
+  const rootClaimSummary = (outline as any).root_claim
+    || (outline.scqa ? Object.values(outline.scqa).find(v => v) : '') || '';
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -169,19 +182,33 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
 
   return (
     <div>
-      {/* Narrative logic + SCQA structure */}
+      {/* Narrative logic + SCQA structure (collapsible) */}
       <Card
         style={{ borderRadius: 2, marginBottom: 16 }}
         styles={{ body: { padding: '16px 20px' } }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: outline.scqa ? 14 : 0 }}>
-          <Tag color="gold" style={{ marginTop: 2, flexShrink: 0 }}>叙事逻辑</Tag>
-          <Text style={{ color: '#002B4E', fontSize: 14, lineHeight: 1.7 }}>
-            {outline.narrative_logic}
+        {/* Summary row — always visible */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Tag color="blue" style={{ flexShrink: 0 }}>{frameworkName}</Tag>
+          <Text style={{ color: '#595959', fontSize: 13, flex: 1 }}>
+            {rootClaimSummary
+              ? (rootClaimSummary.length > 70 ? rootClaimSummary.slice(0, 70) + '…' : rootClaimSummary)
+              : outline.narrative_logic}
           </Text>
+          {outline.scqa && Object.keys(outline.scqa).length > 0 && (
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, flexShrink: 0 }}
+              onClick={() => setScqaExpanded(v => !v)}
+            >
+              {scqaExpanded ? '收起框架' : '展开框架'}
+            </Button>
+          )}
         </div>
 
-        {outline.scqa && Object.keys(outline.scqa).length > 0 && (
+        {/* Expanded framework details */}
+        {scqaExpanded && outline.scqa && Object.keys(outline.scqa).length > 0 && (
           <div style={{
             marginTop: 12,
             padding: '12px 16px',
@@ -189,10 +216,7 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
             border: '1px solid #E8E8E8',
             borderRadius: 4,
           }}>
-            <Text style={{ fontSize: 12, color: '#8B6D00', fontWeight: 600, letterSpacing: 1 }}>
-              论证结构
-            </Text>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
               {Object.entries(outline.scqa).map(([key, value]) => {
                 if (!value) return null;
                 const scqa = outline.scqa!;
@@ -219,18 +243,49 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((_, i) => `item-${i}`)} strategy={verticalListSortingStrategy}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-            {items.map((item, index) => (
-              <SortableCard
-                key={`item-${index}`}
-                id={`item-${index}`}
-                item={item}
-                index={index}
-                onUpdate={updateItem}
-                onRemove={removeItem}
-                onMove={moveItem}
-                total={items.length}
-              />
-            ))}
+            {items.map((item, index) => {
+              let sectionHeader: React.ReactNode = null;
+              if (item.slide_type === 'section_divider') {
+                const secIndex = items.slice(0, index).filter(it => it.slide_type === 'section_divider').length;
+                const nextDivIdx = items.findIndex((it, j) => j > index && it.slide_type === 'section_divider');
+                const endPage = nextDivIdx >= 0
+                  ? (items[nextDivIdx - 1]?.page_number ?? item.page_number)
+                  : (items[items.length - 1]?.page_number ?? item.page_number);
+                sectionHeader = (
+                  <div style={{
+                    padding: '6px 16px', marginTop: 4, borderRadius: 2,
+                    borderLeft: '4px solid #003D6E', background: '#EEF4FA',
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    fontSize: 13, color: '#003D6E', fontWeight: 600,
+                  }}>
+                    <span style={{
+                      background: '#003D6E', color: '#fff',
+                      padding: '2px 10px', borderRadius: 2, fontSize: 12,
+                    }}>
+                      第{secIndex + 1}章
+                    </span>
+                    {item.title || item.takeaway_message}
+                    <span style={{ color: '#8B9DAF', fontWeight: 400, marginLeft: 'auto', fontSize: 12 }}>
+                      P{item.page_number} – P{endPage}
+                    </span>
+                  </div>
+                );
+              }
+              return (
+                <React.Fragment key={`item-${index}`}>
+                  {sectionHeader}
+                  <SortableCard
+                    id={`item-${index}`}
+                    item={item}
+                    index={index}
+                    onUpdate={updateItem}
+                    onRemove={removeItem}
+                    onMove={moveItem}
+                    total={items.length}
+                  />
+                </React.Fragment>
+              );
+            })}
           </div>
         </SortableContext>
       </DndContext>
@@ -377,28 +432,36 @@ const SortableCard: React.FC<SortableCardProps> = ({
               </Tag>
             </div>
 
-            <Input
-              value={item.takeaway_message}
-              onChange={(e) => onUpdate(index, 'takeaway_message', e.target.value)}
-              placeholder="核心论点 (takeaway)"
-              style={{ borderRadius: 2, marginBottom: 6, fontWeight: 500 }}
-              variant="borderless"
-            />
-
-            {item.slide_type !== 'title' && (
-              <Input
-                value={item.supporting_hint}
-                onChange={(e) => onUpdate(index, 'supporting_hint', e.target.value)}
-                placeholder="支撑材料提示"
-                style={{ borderRadius: 2, fontSize: 13, color: '#8B9DAF' }}
-                variant="borderless"
-              />
-            )}
-
-            {item.data_source && (
-              <Text style={{ fontSize: 12, color: '#8B9DAF' }}>
-                数据来源: {item.data_source}
+            {STRUCTURAL_TYPES.has(item.slide_type) ? (
+              <Text style={{ fontSize: 13, color: '#8B9DAF' }}>
+                {item.slide_type === 'agenda'
+                  ? '目录页（自动生成）'
+                  : item.slide_type === 'section_divider'
+                    ? (item.title || item.takeaway_message || '章节过渡页')
+                    : '封面页'}
               </Text>
+            ) : (
+              <>
+                <Input
+                  value={item.takeaway_message}
+                  onChange={(e) => onUpdate(index, 'takeaway_message', e.target.value)}
+                  placeholder="核心论点 (takeaway)"
+                  style={{ borderRadius: 2, marginBottom: 6, fontWeight: 500 }}
+                  variant="borderless"
+                />
+                <Input
+                  value={item.supporting_hint}
+                  onChange={(e) => onUpdate(index, 'supporting_hint', e.target.value)}
+                  placeholder="支撑材料提示"
+                  style={{ borderRadius: 2, fontSize: 13, color: '#8B9DAF' }}
+                  variant="borderless"
+                />
+                {item.data_source && (
+                  <Text style={{ fontSize: 12, color: '#8B9DAF' }}>
+                    数据来源: {item.data_source}
+                  </Text>
+                )}
+              </>
             )}
           </div>
 
@@ -414,7 +477,7 @@ const SortableCard: React.FC<SortableCardProps> = ({
               disabled={index === total - 1}
               onClick={() => onMove(index, 1)}
             />
-            {item.slide_type !== 'title' && (
+            {!STRUCTURAL_TYPES.has(item.slide_type) && (
               <Popconfirm title="确定删除此页？" onConfirm={() => onRemove(index)}>
                 <Button size="small" type="text" danger icon={<DeleteOutlined />} />
               </Popconfirm>

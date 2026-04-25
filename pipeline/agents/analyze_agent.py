@@ -1,11 +1,6 @@
 """
-AnalyzeAgent — ReActAgent
+AnalyzeAgent — 直接 LLM 调用（StructuredLLMAgent）
 LLM读取文档，分析受众和汇报场景，输出策略框架 + 派生指标。
-
-工具：
-  - read_section(section_title): 读取文档指定章节
-  - compute_table_metrics(table_index): 计算表格派生指标
-  - submit_analysis(json): 提交最终分析结果
 
 输出：AnalysisResult.to_dict()
 """
@@ -17,24 +12,22 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from .base import CodeAgent, ReActAgent, Tool, ValidationResult
+from .base import StructuredLLMAgent, ValidationResult, load_prompt
 from llm_client.base import ChatMessage
 
 logger = logging.getLogger(__name__)
 
 
-class AnalyzeAgent(ReActAgent):
+class AnalyzeAgent(StructuredLLMAgent):
     """
-    策略分析 Agent。
+    策略分析 Agent。直接调用 LLM（不使用 ReAct 工具循环）。
 
-    通过 ReAct 循环：
     1. 读取文档概要和关键章节
     2. 结合目标受众和汇报场景输出策略框架
     3. 调用代码工具计算派生指标
-    4. 提交最终 AnalysisResult
+    4. 输出 AnalysisResult
     """
 
-    max_iterations = 3
     max_validation_retries = 2
     temperature = 0.4
     max_tokens = 4096
@@ -45,27 +38,7 @@ class AnalyzeAgent(ReActAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """你是一位专业的战略分析师。文档内容已在用户消息中完整提供。
-
-直接输出 JSON 分析结果，放在 ```json ... ``` 代码块中。不要说废话，直接输出 JSON。
-
-格式：
-```json
-{
-  "document_summary": "文档总结（50字以上）",
-  "audience_analysis": "受众分析",
-  "scenario_strategy": "叙事策略（SCR/SCQA等框架）",
-  "core_themes": ["主题1", "主题2", "主题3"],
-  "recommended_structure": "开篇→问题→分析→方案→行动",
-  "key_messages": ["关键信息1", "关键信息2", "关键信息3"],
-  "recommended_page_range": "12-18页"
-}
-```"""
-
-    @property
-    def tools(self) -> List[Tool]:
-        # 不使用工具调用 — 直接让 LLM 输出 JSON 文本，通过 extract_output 解析
-        return []
+        return load_prompt("analyze_agent", "v1")
 
     def build_initial_messages(self, context: Dict[str, Any]) -> List[ChatMessage]:
         self._context = context
@@ -201,9 +174,43 @@ class AnalyzeAgent(ReActAgent):
         """运行 Agent，返回序列化的 AnalysisResult dict"""
         report = context.get("report_progress", lambda p, m: None)
         self._submitted_analysis = None
+        self._context = context
 
         report(16, "正在分析受众与策略...")
-        result = super().run(context)
+
+        messages = [
+            ChatMessage(role="system", content=self.system_prompt),
+            *self.build_initial_messages(context),
+        ]
+
+        result = None
+        for attempt in range(self.max_validation_retries + 1):
+            raw_text = self._call_llm(messages)
+            messages.append(ChatMessage(role="assistant", content=raw_text))
+            self._submitted_analysis = None  # reset for fresh extraction
+
+            try:
+                result = self.extract_output(messages)
+            except Exception as e:
+                if attempt < self.max_validation_retries:
+                    messages.append(ChatMessage(
+                        role="user",
+                        content=f"输出解析失败：{e}\n请重新输出符合格式要求的JSON结果。",
+                    ))
+                    continue
+                raise RuntimeError(f"AnalyzeAgent: 无法提取分析结果: {e}") from e
+
+            vr = self.validate(result)
+            if vr.valid:
+                break
+            if attempt < self.max_validation_retries:
+                messages.append(ChatMessage(
+                    role="user",
+                    content=f"输出不符合要求，请修正：\n{vr.summary()}\n\n请重新输出完整结果。",
+                ))
+
+        if result is None:
+            result = self.extract_output(messages)
 
         report(27, "正在计算数据指标...")
         raw = context.get("raw_content", {})

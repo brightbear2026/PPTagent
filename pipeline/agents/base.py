@@ -10,6 +10,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from llm_client.base import (
@@ -20,6 +21,20 @@ from llm_client.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Prompt 版本化工具
+# ---------------------------------------------------------------------------
+
+_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+def load_prompt(agent_name: str, version: str = "v1") -> str:
+    """从 pipeline/prompts/{agent_name}.{version}.md 读取系统 prompt。"""
+    path = _PROMPTS_DIR / f"{agent_name}.{version}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    raise FileNotFoundError(f"Prompt file not found: {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -268,3 +283,73 @@ class CodeAgent(ABC):
     def run(self, context: Dict[str, Any]) -> Any:
         """执行确定性逻辑，返回阶段输出"""
         ...
+
+
+# ---------------------------------------------------------------------------
+# StructuredLLMAgent：直接 LLM 调用 + 结构化输出基类
+# 用于 AnalyzeAgent / ContentAgent 等不需要工具循环的 LLM Agent
+# ---------------------------------------------------------------------------
+
+class StructuredLLMAgent(CodeAgent):
+    """
+    一次性 LLM 调用 Agent。不使用 ReAct 工具循环。
+
+    提供：
+    - self.llm：LLM 客户端
+    - _call_llm(messages)：带日志和错误检测的单次 LLM 调用，返回文本
+    - run_structured(messages, schema)：调用 LLM + Pydantic 校验 + 1 次 fix retry
+    """
+
+    temperature: float = 0.7
+    max_tokens: int = 4096
+
+    def __init__(self, llm_client):
+        self.llm = llm_client
+
+    def _call_llm(self, messages: List[ChatMessage], **kwargs) -> str:
+        """调用 LLM，返回文本内容。失败时抛出 RuntimeError。"""
+        t0 = time.time()
+        response: ChatResponse = self.llm.chat(
+            messages=messages,
+            tools=None,
+            temperature=kwargs.get("temperature", getattr(self, "temperature", 0.7)),
+            max_tokens=kwargs.get("max_tokens", getattr(self, "max_tokens", 4096)),
+        )
+        elapsed = time.time() - t0
+        logger.info(
+            "[%s] LLM耗时 %.1fs | finish=%s | tokens=%s",
+            self.__class__.__name__, elapsed,
+            response.finish_reason, response.total_tokens,
+        )
+        if not response.success:
+            raise RuntimeError(f"LLM调用失败: {response.error}")
+        return response.content or ""
+
+    def run_structured(self, messages: List[ChatMessage], output_schema, fix_hint: str = ""):
+        """
+        调用 LLM，Pydantic 校验输出，失败时给一次 fix retry。
+
+        Args:
+            messages: 完整消息列表（含 system）
+            output_schema: Pydantic BaseModel 子类
+            fix_hint: 校验失败时追加的修复提示
+
+        Returns:
+            output_schema 实例
+        """
+        from pydantic import ValidationError
+
+        raw = self._call_llm(messages)
+        try:
+            return output_schema.model_validate_json(raw)
+        except (ValidationError, Exception) as e:
+            logger.warning("[%s] Pydantic 校验失败，尝试 fix retry: %s", self.__class__.__name__, e)
+            fix_msgs = list(messages) + [
+                ChatMessage(role="assistant", content=raw),
+                ChatMessage(
+                    role="user",
+                    content=f"输出格式错误：{e}\n{fix_hint}\n请修正并重新输出合法 JSON。",
+                ),
+            ]
+            raw2 = self._call_llm(fix_msgs)
+            return output_schema.model_validate_json(raw2)  # 再失败则 raise

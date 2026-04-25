@@ -157,8 +157,8 @@ class Orchestrator:
             current_step="完成",
             message="PPT生成完成！")
 
-    async def rerun_page(self, task_id: str, page_number: int):
-        """单页重跑：只重新生成指定页的内容（兼容旧接口）"""
+    async def rerun_page(self, task_id: str, page_number: int, user_feedback: str = ""):
+        """单页重跑：只重新生成指定页的内容。"""
         from pipeline.agents.content_agent import ContentAgent
 
         task = self.store.get_task(task_id)
@@ -194,16 +194,52 @@ class Orchestrator:
         # 临时替换大纲只含该页，重跑填充
         single_context = dict(context)
         single_context["outline"] = {"items": [target]}
-        new_slides = await asyncio.to_thread(agent.run, single_context)
+        single_context["_user_feedback"] = user_feedback
+
+        new_slides = await asyncio.to_thread(
+            self._rerun_single_slide, agent, target, single_context, user_feedback
+        )
 
         # 合并到 content result
         existing_slides = content.get("slides", [])
         merged = {s["page_number"]: s for s in existing_slides}
-        for s in new_slides.get("slides", []):
+        for s in (new_slides or []):
             merged[s["page_number"]] = s
 
         updated_content = {"slides": sorted(merged.values(), key=lambda x: x["page_number"])}
         self.store.save_stage_result(task_id, "content", updated_content)
+
+    @staticmethod
+    def _rerun_single_slide(agent, target_slide: dict, context: dict, user_feedback: str) -> list:
+        """在线程中执行单页重跑，传入 user_feedback。"""
+        shared = agent._build_shared_context(context)
+        result = agent._generate_one_slide(target_slide, None, shared, user_feedback=user_feedback)
+        if result is None:
+            result = agent._make_placeholder(target_slide)
+        # Normalize to content result format (mirrors _build_content_result logic for one slide)
+        raw_blocks = result.get("text_blocks", [])
+        text_blocks = []
+        for b in raw_blocks:
+            if isinstance(b, dict):
+                text_blocks.append({
+                    "content": b.get("text", b.get("content", "")),
+                    "level": b.get("level", 0),
+                    "is_bold": b.get("type") == "heading",
+                })
+        pn = result.get("page_number", target_slide.get("page_number"))
+        entry = {
+            "page_number": pn,
+            "slide_type": target_slide.get("slide_type", "content"),
+            "takeaway_message": target_slide.get("takeaway_message", ""),
+            "primary_visual": target_slide.get("primary_visual", "text"),
+            "text_blocks": text_blocks,
+            "chart_suggestion": result.get("chart_suggestion"),
+            "diagram_spec": result.get("diagram_spec"),
+            "visual_block": result.get("visual_block"),
+            "source_note": result.get("visual_hint", ""),
+            "revision_notes": result.get("revision_notes"),
+        }
+        return [entry]
 
     # ------------------------------------------------------------------
     # 阶段执行

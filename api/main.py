@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root))
 from dotenv import load_dotenv
 load_dotenv(project_root / ".env")
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Form, Request, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Form, Request, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
@@ -747,6 +747,10 @@ async def confirm_checkpoint(
     }
 
 
+class RerunPageRequest(BaseModel):
+    user_feedback: str = ""
+
+
 class SupplementRequest(BaseModel):
     """补充数据请求"""
     stage: str  # "outline" or "content"
@@ -792,12 +796,13 @@ async def add_supplemental_data(task_id: str, body: SupplementRequest):
 async def rerun_single_page(
     task_id: str,
     page_number: int,
-    background_tasks: BackgroundTasks = BackgroundTasks()
+    req: RerunPageRequest = Body(default_factory=RerunPageRequest),
 ):
     """
-    单页重跑：只重新生成指定页的内容
+    单页重跑：只重新生成指定页的内容。
 
     前提：content阶段已完成。
+    可选 body: {"user_feedback": "告诉AI需要改进的方向"}
     """
     store = get_store()
     task = store.get_task(task_id)
@@ -810,14 +815,20 @@ async def rerun_single_page(
 
     try:
         controller = PipelineController()
-        await controller.rerun_page(task_id, page_number)
+        await controller.rerun_page(task_id, page_number, user_feedback=req.user_feedback)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    # Return updated slide data for frontend to refresh
+    updated_content = store.get_stage_result(task_id, "content") or {}
+    updated_slides = updated_content.get("slides", [])
+    updated_slide = next((s for s in updated_slides if s.get("page_number") == page_number), None)
 
     return {
         "task_id": task_id,
         "page_number": page_number,
         "message": f"第{page_number}页内容已重新生成",
+        "slide": updated_slide,
     }
 
 

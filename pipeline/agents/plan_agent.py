@@ -206,7 +206,7 @@ class PlanAgent:
             logger.warning("[PlanAgent] 验证发现问题，尝试LLM修复: %s", issues)
             plan_data = self._fix_plan(messages, plan_data, issues, chunks)
 
-        return self._to_outline_result(plan_data, scenario, framework_desc)
+        return self._to_outline_result(plan_data, scenario, framework_desc, chunks)
 
     # ------------------------------------------------------------------
     # Prompt 构建
@@ -240,12 +240,14 @@ class PlanAgent:
 3. 幻灯片顺序遵循叙事逻辑，不是文档章节顺序。相关论点聚合，不是一章节一页。
 4. supporting_hint 填写原文中具体章节名称，让内容生成阶段能找到支撑材料。
 5. 兄弟幻灯片 MECE（不重叠、无遗漏）；总页数 8-20 页（不含封面/目录/结尾固定页）。
+6. 将内容页分成 3-5 个逻辑章节，每张非封面幻灯片必须设置 section 字段（如"第一章 市场背景"）。
 
 ## 禁止事项
 - 用文档章节标题直接作为 takeaway_message
 - 一个文档章节对应一张幻灯片（章节映射）
 - takeaway_message 是名词短语而非完整句子
 - 生成超过25张幻灯片
+- 在 slides 中生成 agenda（目录）或 section_divider（章节过渡页）——这些由系统自动插入
 
 ## 输出格式
 严格 JSON，放在 ```json ... ``` 代码块中：
@@ -266,7 +268,8 @@ class PlanAgent:
       "data_source": "",
       "primary_visual": "text_only",
       "narrative_arc": "opening",
-      "section": ""
+      "section": "",
+      "chunk_ids": []
     }},
     {{
       "page_number": 2,
@@ -277,7 +280,20 @@ class PlanAgent:
       "data_source": "",
       "primary_visual": "visual_block",
       "narrative_arc": "opening",
-      "section": "开篇"
+      "section": "第一章 开篇导入",
+      "chunk_ids": ["ch_xxxxxx", "ch_yyyyyy"]
+    }},
+    {{
+      "page_number": 3,
+      "slide_type": "content",
+      "title": "示例内容页",
+      "takeaway_message": "关键论点（含动词的完整句子）",
+      "supporting_hint": "相关原文章节名",
+      "data_source": "",
+      "primary_visual": "text_only",
+      "narrative_arc": "evidence",
+      "section": "第一章 开篇导入",
+      "chunk_ids": ["ch_zzzzzz"]
     }}
   ]
 }}
@@ -285,7 +301,9 @@ class PlanAgent:
 
 slide_type 取值：title / content / data / diagram / summary
 primary_visual 取值：text_only / chart / diagram / visual_block
-narrative_arc 取值：opening / context / evidence / solution / recommendation / closing"""
+narrative_arc 取值：opening / context / evidence / solution / recommendation / closing
+section 取值：章节名称字符串，如"第一章 市场背景"/"第二章 核心挑战"，title 页留空
+chunk_ids：从上方"文档 Chunk 参考"中选取 1-3 个最相关的 id，title 页留空列表"""
 
     def _build_user_prompt(
         self,
@@ -324,10 +342,11 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
         ]
         tables_text = "\n".join(table_lines) if table_lines else "（无数据表格）"
 
-        # Chunk ID 参考列表（供 supporting_hint 精确对应）
+        # Chunk ID 参考列表（按 section 均匀采样，防止长文档后半段被截断）
+        sampled_chunks = self._sample_chunks(chunks)
         chunk_ref_lines = [
             f"  [{c['id']}] [{c['section']}] {c['text'][:100]}…"
-            for c in chunks[:30]
+            for c in sampled_chunks
         ]
         chunks_text = "\n".join(chunk_ref_lines) if chunk_ref_lines else "（无 chunk 数据）"
 
@@ -364,7 +383,26 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
 请严格按照系统提示中的 JSON 格式输出大纲。记住：
 - 每个 content/data 页的 takeaway_message 必须是含动词的完整句子
 - 幻灯片顺序是论证逻辑，不是文档章节顺序
-- supporting_hint 填写上方章节列表中的具体章节名"""
+- supporting_hint 填写上方章节列表中的具体章节名
+- chunk_ids 从上方"文档 Chunk 参考"中选取相关 id，title/agenda 页留空列表"""
+
+    # ------------------------------------------------------------------
+    # Chunk 采样（按 section 均匀采样，避免长文档截断）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _sample_chunks(chunks: List[Dict], max_per_section: int = 5) -> List[Dict]:
+        """按 section 均匀采样 chunks，每 section 最多 max_per_section 个。"""
+        from collections import defaultdict
+        section_buckets: dict = defaultdict(list)
+        for c in chunks:
+            section_buckets[c.get("section", "_default")].append(c)
+
+        sampled = []
+        for sec_chunks in section_buckets.values():
+            step = max(1, len(sec_chunks) // max_per_section)
+            sampled.extend(sec_chunks[::step][:max_per_section])
+        return sampled
 
     # ------------------------------------------------------------------
     # JSON 解析
@@ -461,9 +499,16 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
     # ------------------------------------------------------------------
 
     def _to_outline_result(
-        self, plan: Dict, scenario: str, framework_desc: str
+        self, plan: Dict, scenario: str, framework_desc: str, chunks: Optional[List[Dict]] = None
     ) -> Dict:
         slides = plan.get("slides", [])
+
+        # Whitelist-filter chunk_ids: remove any ids the LLM invented
+        if chunks:
+            valid_ids = {c["id"] for c in chunks if c.get("id")}
+            for s in slides:
+                raw_ids = s.get("chunk_ids", [])
+                s["chunk_ids"] = [cid for cid in raw_ids if cid in valid_ids]
         scqa = plan.get("scqa", {})
 
         # Extract root_claim: try explicit field, then last structure key, then any value
@@ -516,6 +561,50 @@ narrative_arc 取值：opening / context / evidence / solution / recommendation 
             if s.get("slide_type") == "section_divider":
                 s["takeaway_message"] = s.get("takeaway_message") or s.get("title", "")
                 s["primary_visual"] = "text_only"
+
+        # ── Auto-inject agenda + section_divider slides ───────────────────────
+        _structural = {"agenda", "section_divider"}
+
+        # Strip any structural slides the LLM accidentally generated
+        slides = [s for s in slides if s.get("slide_type") not in _structural]
+
+        # Collect unique section names in order of first appearance (skip title slides)
+        sections_order: list = []
+        for s in slides:
+            if s.get("slide_type") == "title":
+                continue
+            sec = s.get("section", "").strip()
+            if sec and sec not in sections_order:
+                sections_order.append(sec)
+
+        # Only inject when there are 2 or more distinct chapters
+        if len(sections_order) >= 2:
+            title_slides = [s for s in slides if s.get("slide_type") == "title"]
+            content_slides = [s for s in slides if s.get("slide_type") != "title"]
+
+            agenda_slide = {
+                "slide_type": "agenda", "title": "目录", "takeaway_message": "目录",
+                "supporting_hint": "", "data_source": "", "primary_visual": "text_only",
+                "narrative_arc": "opening", "section": "",
+            }
+
+            rebuilt: list = []
+            for sec in sections_order:
+                rebuilt.append({
+                    "slide_type": "section_divider", "title": sec, "takeaway_message": sec,
+                    "supporting_hint": "", "data_source": "", "primary_visual": "text_only",
+                    "narrative_arc": "context", "section": sec,
+                })
+                rebuilt.extend(s for s in content_slides if s.get("section", "").strip() == sec)
+
+            # Slides without a section assignment go at the end
+            rebuilt.extend(s for s in content_slides if not s.get("section", "").strip())
+
+            slides = title_slides + [agenda_slide] + rebuilt
+
+        # Final page renumber after all injections
+        for i, s in enumerate(slides, 1):
+            s["page_number"] = i
 
         return {
             "narrative_logic": narrative_logic,

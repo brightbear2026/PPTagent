@@ -1,5 +1,5 @@
 """
-ContentAgent — per-slide 并行内容生成
+ContentAgent — per-slide 并行内容生成（StructuredLLMAgent）
 每个大纲页面独立调用 LLM，最多 MAX_CONCURRENT 并发。
 
 优势：
@@ -16,13 +16,13 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
-from .base import ReActAgent, Tool, ValidationResult
+from .base import StructuredLLMAgent, ValidationResult, load_prompt
 from llm_client.base import ChatMessage
 
 logger = logging.getLogger(__name__)
 
 
-class ContentAgent(ReActAgent):
+class ContentAgent(StructuredLLMAgent):
     """
     内容填充 Agent — per-slide 并行架构。
 
@@ -31,8 +31,6 @@ class ContentAgent(ReActAgent):
     """
 
     MAX_CONCURRENT = 4
-    max_iterations = 3
-    max_validation_retries = 2
     temperature = 0.6
     max_tokens = 1800  # 单页输出，不触发 finish_reason=length
 
@@ -44,26 +42,7 @@ class ContentAgent(ReActAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """你是专业PPT内容填充师。为指定的单个PPT页面生成内容。
-
-直接输出单个页面的 JSON 对象，放在 ```json ... ``` 代码块中。不要说废话，直接输出 JSON。
-
-格式：
-{"page_number":1,"text_blocks":[{"type":"heading","text":"标题"},{"type":"bullet","text":"要点","level":1}],"chart_suggestion":{"chart_type":"bar","title":"图表标题","categories":["A","B","C"],"series":[{"name":"系列","values":[1,2,3]}]},"diagram_spec":null,"visual_block":null,"visual_hint":"布局建议"}
-
-visual_block 示例（kpi_cards）：{"type":"kpi_cards","items":[{"title":"营收","value":"32%","description":"同比增长","trend":"up"}]}
-visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"value":"1.56亿","title":"年度营收","description":"创历史新高"}]}
-
-要求：
-- text_blocks 包含1个 heading 和至少4个 bullet 项，每条bullet提炼一个独立论点或数据点
-- bullet 内容必须来自原文材料，禁止编造；每条≥20字，避免泛泛而谈
-- chart_type 必须是用户消息中"可用图表类型"列出的值之一
-- chart 数据只用原文中明确存在的数字，禁止编造
-- 输出单个 JSON 对象（不是数组），完整且有效"""
-
-    @property
-    def tools(self) -> List[Tool]:
-        return []
+        return load_prompt("content_agent", "v1")
 
     # ------------------------------------------------------------------
     # 主执行入口（完全覆盖基类 run，不进 ReAct 循环）
@@ -80,24 +59,33 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
             raise ValueError("大纲为空，无法生成内容")
 
         shared = self._build_shared_context(context)
+
+        # Structural slides bypass LLM — pre-populate with empty content
+        _STRUCTURAL_TYPES = {"title", "agenda", "section_divider"}
+        for slide in all_slides:
+            if slide.get("slide_type") in _STRUCTURAL_TYPES:
+                pn = slide.get("page_number", 0)
+                self._page_contents[pn] = {
+                    "page_number": pn, "text_blocks": [], "chart_suggestion": None,
+                    "diagram_spec": None, "visual_block": None, "visual_hint": "",
+                }
+
+        llm_slide_count = sum(1 for s in all_slides if s.get("slide_type") not in _STRUCTURAL_TYPES)
         logger.info(
-            f"[ContentAgent] per-slide并行，共{len(all_slides)}页，最多{self.MAX_CONCURRENT}并发"
+            f"[ContentAgent] per-slide并行，共{len(all_slides)}页（{llm_slide_count}页需LLM），最多{self.MAX_CONCURRENT}并发"
         )
 
         report = context.get("report_progress", lambda p, m: None)
-        total_slides = len(all_slides)
+        total_slides = llm_slide_count
         completed_count = 0
 
         with ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT) as executor:
-            futures: Dict = {
-                executor.submit(
-                    self._generate_one_slide,
-                    slide,
-                    all_slides[i - 1] if i > 0 else None,
-                    shared,
-                ): slide
-                for i, slide in enumerate(all_slides)
-            }
+            futures: Dict = {}
+            for i, slide in enumerate(all_slides):
+                if slide.get("slide_type") in _STRUCTURAL_TYPES:
+                    continue
+                prev_slide = all_slides[i - 1] if i > 0 else None
+                futures[executor.submit(self._generate_one_slide, slide, prev_slide, shared)] = slide
 
             for fut in as_completed(futures):
                 slide = futures[fut]
@@ -194,6 +182,10 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
         # 始终准备 raw_text fallback（关键词匹配全部失败时的最后保底）
         raw_text_fallback = (raw.get("raw_text", "") or "")[:4000]
 
+        # chunks：来自 analyze 阶段，带 id 字段，供 chunk_ids 精确查找
+        analysis = context.get("analysis", {})
+        chunks = analysis.get("chunks", [])
+
         return {
             "task": task,
             "source_pages": source_pages,
@@ -201,6 +193,7 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
             "tables_text": tables_text,
             "skill_section": skill_section,
             "raw_text_fallback": raw_text_fallback,
+            "chunks": chunks,
         }
 
     # ------------------------------------------------------------------
@@ -235,7 +228,7 @@ visual_block 示例（stat_highlight）：{"type":"stat_highlight","items":[{"va
             if chart_data:
                 material_text = f"\n## 数据表格（直接使用，禁止编造数字）\n{chart_data}\n"
         if not material_text:
-            section_text = self._find_best_section(slide, shared["source_pages"])
+            section_text = self._get_slide_context(slide, shared)
             if section_text:
                 material_text = f"\n## 相关原文材料\n{section_text}\n"
             elif shared.get("raw_text_fallback"):
@@ -272,7 +265,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         return [ChatMessage(role="user", content=user_msg)]
 
     def _generate_one_slide(
-        self, slide: Dict, prev_slide: Optional[Dict], shared: Dict
+        self, slide: Dict, prev_slide: Optional[Dict], shared: Dict, user_feedback: str = ""
     ) -> Optional[Dict]:
         """调用 LLM 生成单页内容，含截断检测和一次重试。线程安全（无写共享状态）。"""
         pn = slide.get("page_number", "?")
@@ -280,6 +273,16 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
             ChatMessage(role="system", content=self.system_prompt),
             *self._build_slide_messages(slide, prev_slide, shared),
         ]
+
+        if user_feedback:
+            messages.append(ChatMessage(
+                role="user",
+                content=(
+                    f"用户对上一版本的反馈：{user_feedback}\n"
+                    "请根据反馈改进，并在输出 JSON 中额外包含 revision_notes 字段，"
+                    "用一句话说明做了哪些改动。"
+                ),
+            ))
 
         for attempt in range(2):
             try:
@@ -292,7 +295,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
                 if not response.success:
                     raise RuntimeError(f"LLM调用失败: {response.error}")
 
-                # finish_reason 截断检测（基类 P0 修复的单页版本）
+                # finish_reason 截断检测
                 if response.finish_reason in ("length", "max_tokens") and attempt == 0:
                     logger.warning(f"[ContentAgent] P{pn} 输出截断，要求重新输出...")
                     messages.append(ChatMessage(role="assistant", content=response.content or ""))
@@ -326,6 +329,17 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
     # ------------------------------------------------------------------
     # 材料匹配（静态，线程安全）
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_slide_context(slide: Dict, shared: Dict) -> str:
+        """精确 chunk_ids 查找，降级到 bigram 关键词搜索。"""
+        bound_ids = set(slide.get("chunk_ids", []))
+        if bound_ids:
+            relevant = [c for c in shared.get("chunks", []) if c.get("id") in bound_ids]
+            if relevant:
+                return "\n\n".join(c.get("text", c.get("content", "")) for c in relevant[:3])
+        # 降级：bigram 搜索
+        return ContentAgent._find_best_section(slide, shared["source_pages"])
 
     @staticmethod
     def _extract_kw(text: str) -> List[str]:
@@ -504,10 +518,14 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
             for s in outline.get("items", outline.get("slides", []))
         }
 
+        _STRUCTURAL_TYPES = {"title", "agenda", "section_divider"}
         slides = []
         for pn in sorted(self._page_contents.keys()):
             page = self._page_contents[pn]
             outline_page = outline_slides.get(pn, {})
+            # Structural slides have no user-editable content; HTMLDesignAgent uses templates
+            if outline_page.get("slide_type") in _STRUCTURAL_TYPES:
+                continue
 
             raw_blocks = page.get("text_blocks", [])
             text_blocks = []
@@ -543,34 +561,6 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
 
         return {"slides": slides}
 
-    # ------------------------------------------------------------------
-    # 抽象方法实现（基类要求；实际执行走 run() 覆盖路径）
-    # ------------------------------------------------------------------
-
-    def build_initial_messages(self, context: Dict[str, Any]) -> List[ChatMessage]:
-        """供基类 run() 调用的兜底实现（正常路径不走这里）。"""
-        slides = context.get("outline", {}).get("items", [])
-        if not slides:
-            return [ChatMessage(role="user", content="大纲为空")]
-        shared = self._build_shared_context(context)
-        return self._build_slide_messages(slides[0], None, shared)
-
-    def extract_output(self, messages: List[ChatMessage]) -> Dict:
-        if self._page_contents:
-            return self._build_content_result()
-
-        for msg in reversed(messages):
-            if msg.role == "assistant" and msg.content:
-                pages = self._parse_pages_from_text(msg.content)
-                if pages:
-                    logger.info(f"[ContentAgent] 从文本回复中提取到{len(pages)}页内容")
-                    for page in pages:
-                        pn = page.get("page_number")
-                        if pn:
-                            self._page_contents[pn] = page
-                    return self._build_content_result()
-
-        raise ValueError("未完成内容填充，请确认 LLM 已输出 JSON")
 
     def validate(self, output: Dict) -> ValidationResult:
         errors = []
