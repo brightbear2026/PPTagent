@@ -16,7 +16,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,10 @@ _CHROME_TEMPLATE = """
   <p style="color:#FFFFFF; font-size:9px; margin:4px 24px;">{footer}</p>
 </div>
 """
+
+_AUTO_ICONS = ["🎯", "💡", "📊", "⚙️", "🔍", "🚀", "🌟", "📈", "🛡️", "🤝"]
+_COMPARISON_KEYWORDS = ("vs", " v.s.", "对比", "相比", "相较", "vs.", "对照", "差异", "区别")
+_NUMERIC_TOKENS = ("%", "％", "亿", "万", "千", "倍", "x", "X", "k", "K", "M", "B")
 
 # System prompt for the slot-based template approach (primary path)
 _SLOT_SYSTEM_PROMPT = """你是 PPT 设计助手。根据幻灯片数据选择模板并填写槽位。
@@ -52,7 +56,7 @@ slots: title, metrics([{label,value,unit,note}] ≤4), sub_bullets(list 可选)
 
 ### chart_focus
 适用：图表为主（仅当 chart_suggestion 存在时使用）
-slots: title, annotations(list[str] ≤4条，每条≤35字)
+slots: title, annotations(list[str] ≤4条，每条≤80字)
 
 ### quote_highlight
 适用：需强调单一核心结论
@@ -62,8 +66,28 @@ slots: title, quote_text(str ≤60字), sub_bullets(list[str] ≤4)
 适用：3-6个并列框架/原则/步骤
 slots: title, items([{icon:emoji, title:str, desc:str}] 3-6个)
 
+### architecture_stack
+适用：N层堆叠架构（基础设施→平台→应用等分层），从下到上堆叠
+slots: title, layers([{name:str, desc:str}] 2-5层，从底层到顶层排列)
+
+### timeline_horizontal
+适用：多阶段计划、路线图、里程碑
+slots: title, phases([{label:str(如"90天"), title:str, desc:str}] 2-5个阶段)
+
+### quadrant_matrix
+适用：按两个维度分类的四种状态/策略（2×2象限）
+slots: title, x_label(str ≤10字), y_label(str ≤10字), cells([{label:str, items:list[str]}] 4个，按 左下/右下/左上/右上 顺序)
+
+### role_columns
+适用：3-4个角色/对象的特性对比
+slots: title, roles([{name:str, subtitle:str, bullets:list[str]}] 3-4个角色)
+
 ## 选择规则
 chart_suggestion存在 → chart_focus
+N层分层架构 → architecture_stack
+多阶段/时间线/路线图 → timeline_horizontal
+2×2象限/四分法 → quadrant_matrix
+3-4个角色/对象并列对比 → role_columns
 两方明确对比 → content_two_column
 3-4个数字指标 → content_key_metrics
 单一核心结论需强调 → quote_highlight
@@ -280,18 +304,20 @@ class HTMLDesignAgent:
             return self._agenda_slide_html(slide_index, slide_data, theme_colors, total_slides, task)
 
         if self.llm is None:
-            return self._fallback_html(slide_index, slide_data, theme_colors, total_slides)
+            return self._heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
 
         user_msg = json.dumps({
             "slide_number": slide_index + 1,
             **slide_data,
         }, ensure_ascii=False)
 
+        from llm_client.base import ChatMessage
+
         try:
             response = self.llm.chat(
                 messages=[
-                    {"role": "system", "content": _SLOT_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
+                    ChatMessage(role="system", content=_SLOT_SYSTEM_PROMPT),
+                    ChatMessage(role="user", content=user_msg),
                 ],
                 temperature=0.2,
                 max_tokens=800,
@@ -322,63 +348,128 @@ class HTMLDesignAgent:
             )
 
         except Exception as e:
-            logger.warning("Slot generation failed for slide %d: %s, using fallback", slide_index, e)
-            return self._fallback_html(slide_index, slide_data, theme_colors, total_slides)
+            if isinstance(e, (TypeError, AttributeError, NameError)):
+                logger.error("Slide %d: code error in slot generation: %s", slide_index, e, exc_info=True)
+                raise
+            logger.warning("Slot generation failed for slide %d: %s, using heuristic fallback", slide_index, e)
+            return self._heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
 
     def _inspect_and_fix(
         self, html, slide_index, slide_data, theme_colors, total_slides, task, linter,
     ) -> str:
-        """Pre-validate HTML with a single-slide Node.js render. Regenerate on failure."""
-        # Fast check: CSS linter validate (no Node.js needed)
-        errors = linter.validate(html)
-        if not errors:
+        """Pre-validate HTML with CSS lint + real Node.js dry-run render. Regenerate on failure."""
+
+        # Collect errors from both lint and real render
+        all_errors = []
+
+        # 1. CSS lint check (fast, no browser)
+        lint_errors = linter.validate(html)
+        all_errors.extend(lint_errors)
+
+        # 2. Real Node.js dry-run render check
+        render_ok = True
+        render_errors = []
+        try:
+            from pipeline.layer6_output.node_bridge import NodeRenderBridge
+            bridge = NodeRenderBridge()
+            # Write html to a temp file for the validator
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=".html", mode="w", delete=False, encoding="utf-8",
+            )
+            tmp.write(html)
+            tmp.close()
+            try:
+                result = bridge.validate_single_slide(tmp.name)
+                render_ok = result.get("ok", False)
+                render_errors = result.get("errors", [])
+                all_errors.extend(render_errors)
+            finally:
+                os.unlink(tmp.name)
+        except Exception as e:
+            logger.warning("Slide %d: Node validate unavailable (%s), skipping render check", slide_index, e)
+
+        if not all_errors:
             return html
 
-        logger.warning("Slide %d validation errors: %s", slide_index, errors)
-
-        if not self.llm:
-            # No LLM to retry with, return as-is (html2pptx will skip or best-effort)
-            return html
-
-        # Retry: feed errors back to LLM
-        fix_prompt = (
-            f"你刚才生成的第{slide_index + 1}页 HTML 存在以下问题：\n"
-            + "\n".join(f"- {e}" for e in errors)
-            + "\n\n请修正这些问题并重新输出完整的 HTML 文档。只输出 HTML。"
+        logger.warning(
+            "Slide %d: inspect errors (lint=%d, render=%d): %s",
+            slide_index, len(lint_errors), len(render_errors),
+            all_errors[:5],
         )
 
-        try:
-            response = self.llm.chat(
-                messages=[
-                    {"role": "system", "content": self._build_system_prompt(theme_colors)},
-                    {"role": "user", "content": json.dumps(slide_data, ensure_ascii=False)},
-                    {"role": "assistant", "content": html},
-                    {"role": "user", "content": fix_prompt},
-                ],
-                temperature=0.2,
-                max_tokens=4000,
+        # 3. If LLM available, try one fix pass
+        if self.llm:
+            fix_prompt = (
+                f"你刚才生成的第{slide_index + 1}页 HTML 存在以下问题：\n"
+                + "\n".join(f"- {e}" for e in all_errors)
+                + "\n\n请修正这些问题并重新输出完整的 HTML 文档。只输出 HTML。\n"
+                "注意约束：\n"
+                "- body 必须是 960x540px，不能有溢出\n"
+                "- 不要使用 <svg>、<iframe>、<video>、<canvas> 标签\n"
+                "- P/H1-H6/UL/OL/LI 标签不能有 background/border/box-shadow\n"
+                "- DIV 不能有 background-image\n"
+                "- 所有文字必须放在 P/H1-H6/UL/OL/LI 标签内，DIV 不能包含裸文字\n"
             )
 
-            fixed_html = (response.content if hasattr(response, "content") else str(response) or "").strip()
-            if fixed_html.startswith("```"):
-                fixed_html = fixed_html.split("\n", 1)[-1]
-            if fixed_html.endswith("```"):
-                fixed_html = fixed_html.rsplit("```", 1)[0]
+            try:
+                response = self.llm.chat(
+                    messages=[
+                        ChatMessage(role="system", content=self._build_system_prompt(theme_colors)),
+                        ChatMessage(role="user", content=json.dumps(slide_data, ensure_ascii=False)),
+                        ChatMessage(role="assistant", content=html),
+                        ChatMessage(role="user", content=fix_prompt),
+                    ],
+                    temperature=0.2,
+                    max_tokens=4000,
+                )
 
-            # Re-lint the fix
-            fixed_html, fix_warnings = linter.fix(fixed_html)
-            remaining = linter.validate(fixed_html)
+                fixed_html = (response.content if hasattr(response, "content") else str(response) or "").strip()
+                if fixed_html.startswith("```"):
+                    fixed_html = fixed_html.split("\n", 1)[-1]
+                if fixed_html.endswith("```"):
+                    fixed_html = fixed_html.rsplit("```", 1)[0]
 
-            if len(remaining) < len(errors):
-                logger.info("Slide %d: fix reduced errors %d→%d", slide_index, len(errors), len(remaining))
-                return fixed_html
-            else:
-                logger.warning("Slide %d: fix didn't help, keeping original", slide_index)
-                return html
+                # Re-validate the fix
+                fixed_html, _ = linter.fix(fixed_html)
+                remaining_lint = linter.validate(fixed_html)
 
-        except Exception as e:
-            logger.warning("Slide %d inspect-loop retry failed: %s", slide_index, e)
-            return html
+                # Re-run Node validation on fix
+                remaining_render = []
+                try:
+                    tmp2 = tempfile.NamedTemporaryFile(
+                        suffix=".html", mode="w", delete=False, encoding="utf-8",
+                    )
+                    tmp2.write(fixed_html)
+                    tmp2.close()
+                    try:
+                        r2 = bridge.validate_single_slide(tmp2.name)
+                        if not r2.get("ok", False):
+                            remaining_render = r2.get("errors", [])
+                    finally:
+                        os.unlink(tmp2.name)
+                except Exception:
+                    pass  # Node unavailable, accept lint-only result
+
+                remaining = remaining_lint + remaining_render
+                if len(remaining) < len(all_errors):
+                    logger.info(
+                        "Slide %d: fix reduced errors %d→%d",
+                        slide_index, len(all_errors), len(remaining),
+                    )
+                    return fixed_html
+                else:
+                    logger.warning("Slide %d: LLM fix didn't help (%d→%d), using heuristic fallback",
+                                   slide_index, len(all_errors), len(remaining))
+            except Exception as e:
+                if isinstance(e, (TypeError, AttributeError, NameError)):
+                    logger.error("Slide %d: code error in inspect-loop: %s", slide_index, e, exc_info=True)
+                    raise
+                logger.warning("Slide %d inspect-loop LLM retry failed: %s", slide_index, e)
+
+        # 4. Fix failed or no LLM — use heuristic template fallback
+        logger.info("Slide %d: falling back to heuristic template", slide_index)
+        return self._heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
 
     def _build_system_prompt(self, theme_colors: Dict[str, str]) -> str:
         accent = theme_colors.get("accent", "#C9A84C")
@@ -519,6 +610,237 @@ class HTMLDesignAgent:
 
 </body>
 </html>"""
+
+    # ------------------------------------------------------------------ #
+    # Heuristic template picker — pure code, no LLM
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _chart_has_data(slide_data: Dict) -> bool:
+        """Check whether chart_suggestion contains real data rows."""
+        chart = slide_data.get("chart_suggestion") or {}
+        if isinstance(chart, dict):
+            series = chart.get("series") or chart.get("data")
+            if isinstance(series, list) and len(series) > 0:
+                return True
+            labels = chart.get("labels") or chart.get("categories")
+            if isinstance(labels, list) and len(labels) > 0:
+                return True
+        return False
+
+    @staticmethod
+    def _looks_like_comparison(title: str, blocks: List[Dict]) -> bool:
+        """Detect comparison intent from title or block content."""
+        text = title.lower()
+        for block in blocks[:4]:
+            text += " " + (block.get("content", "") if isinstance(block, dict) else str(block)).lower()
+        for kw in _COMPARISON_KEYWORDS:
+            if kw.lower() in text:
+                return True
+        return False
+
+    @staticmethod
+    def _split_comparison(blocks: List[Dict]) -> Tuple[List[str], List[str]]:
+        """Split text blocks into two groups at a comparison keyword boundary."""
+        left, right = [], []
+        flipped = False
+        for block in blocks:
+            content = block.get("content", "") if isinstance(block, dict) else str(block)
+            if not flipped:
+                for kw in _COMPARISON_KEYWORDS:
+                    if kw in content:
+                        flipped = True
+                        break
+                if not flipped:
+                    left.append(content)
+            else:
+                right.append(content)
+        # If no keyword found, split in half
+        if not right and len(blocks) >= 4:
+            mid = len(blocks) // 2
+            left = [b.get("content", "") if isinstance(b, dict) else str(b) for b in blocks[:mid]]
+            right = [b.get("content", "") if isinstance(b, dict) else str(b) for b in blocks[mid:]]
+        return left[:4], right[:4]
+
+    @staticmethod
+    def _infer_column_label(items: List[str], fallback: str) -> str:
+        """Try to extract a short label from the first item, else use fallback."""
+        if not items:
+            return fallback
+        first = items[0]
+        # Take first 12 chars as label
+        if len(first) <= 12:
+            return first.rstrip("：: ")
+        return first[:12].rstrip("：: ") + "…"
+
+    @staticmethod
+    def _has_numeric(text: str) -> bool:
+        """Check if text contains numeric indicators."""
+        for tok in _NUMERIC_TOKENS:
+            if tok in text:
+                return True
+        # Also check for plain digits
+        import re as _re
+        return bool(_re.search(r"\d+\.?\d*", text))
+
+    @staticmethod
+    def _extract_metric(block: Dict) -> Optional[Dict[str, str]]:
+        """Try to extract {label, value, unit, note} from a text block."""
+        content = block.get("content", "") if isinstance(block, dict) else str(block)
+        if not content:
+            return None
+        # Find the first numeric token
+        import re as _re
+        m = _re.search(r"([\d,]+\.?\d*)\s*(%|％|亿|万|倍|元|美元|k|K|M|B)?", content)
+        if not m:
+            return None
+        value = m.group(1)
+        unit = m.group(2) or ""
+        # Label: text before the number (up to 15 chars)
+        prefix = content[:m.start()].strip().rstrip("：:，,、是为达约超近")
+        label = prefix[-15:] if len(prefix) > 15 else prefix
+        if not label:
+            label = "指标"
+        # Note: text after the number
+        rest = content[m.end():].strip().lstrip("，,。.、 ")
+        note = rest[:60] if rest else ""
+        return {"label": label, "value": value, "unit": unit, "note": note}
+
+    def _pick_template_and_slots(
+        self,
+        slide_data: Dict,
+        body_blocks: List[Dict],
+        bold_blocks: List[Dict],
+        title: str,
+    ) -> Tuple[str, Dict]:
+        """Decision tree → (template_id, slots)."""
+
+        # 1. Chart with real data → chart_focus
+        if self._chart_has_data(slide_data):
+            annotations = []
+            for b in body_blocks[:4]:
+                c = b.get("content", "") if isinstance(b, dict) else str(b)
+                if c:
+                    annotations.append(c[:80])
+            return "chart_focus", {
+                "title": title,
+                "annotations": annotations or ["关键趋势"],
+            }
+
+        n_blocks = len(body_blocks)
+
+        # 2. Comparison intent → content_two_column
+        if self._looks_like_comparison(title, body_blocks) and n_blocks >= 2:
+            left, right = self._split_comparison(body_blocks)
+            return "content_two_column", {
+                "title": title,
+                "left_label": self._infer_column_label(left, "方案A"),
+                "left_bullets": left,
+                "right_label": self._infer_column_label(right, "方案B"),
+                "right_bullets": right,
+            }
+
+        # 3. Numeric-heavy blocks → content_key_metrics
+        numeric_blocks = [b for b in body_blocks if self._has_numeric(
+            b.get("content", "") if isinstance(b, dict) else str(b)
+        )]
+        if len(numeric_blocks) >= 2:
+            metrics = []
+            for b in numeric_blocks[:4]:
+                m = self._extract_metric(b)
+                if m:
+                    metrics.append(m)
+            if len(metrics) >= 2:
+                sub_bullets = []
+                for b in body_blocks:
+                    if b not in numeric_blocks:
+                        c = b.get("content", "") if isinstance(b, dict) else str(b)
+                        if c:
+                            sub_bullets.append(c[:40])
+                return "content_key_metrics", {
+                    "title": title,
+                    "metrics": metrics,
+                    "sub_bullets": sub_bullets[:3],
+                }
+
+        # 4. 3-6 short parallel blocks → icon_grid
+        if 3 <= n_blocks <= 6:
+            max_len = max(len(b.get("content", "") if isinstance(b, dict) else str(b)) for b in body_blocks)
+            if max_len <= 60:
+                items = []
+                for idx, b in enumerate(body_blocks):
+                    content = b.get("content", "") if isinstance(b, dict) else str(b)
+                    icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
+                    if len(content) <= 15:
+                        items.append({"icon": icon, "title": content, "desc": ""})
+                    else:
+                        mid = min(len(content), 20)
+                        # Try to split at a punctuation
+                        for sep in ["：", ":", "—", "-", "，", ","]:
+                            pos = content.find(sep)
+                            if 0 < pos < 40:
+                                mid = pos
+                                break
+                        items.append({
+                            "icon": icon,
+                            "title": content[:mid].rstrip("：:—-，, "),
+                            "desc": content[mid:].lstrip("：:—-，, ")[:40],
+                        })
+                return "icon_grid", {"title": title, "items": items}
+
+        # 5. Everything else → content_bullets
+        bullets = []
+        for b in body_blocks[:5]:
+            c = b.get("content", "") if isinstance(b, dict) else str(b)
+            if c:
+                bullets.append(c[:40])
+        return "content_bullets", {
+            "title": title,
+            "bullets": bullets,
+            "has_chart": bool(slide_data.get("chart_suggestion")),
+        }
+
+    def _heuristic_template_html(
+        self,
+        slide_index: int,
+        slide_data: Dict,
+        theme_colors: Dict[str, str],
+        total_slides: int,
+    ) -> str:
+        """Select template purely from slide_data structure — no LLM needed."""
+        try:
+            title = slide_data.get("takeaway_message", "")
+            text_blocks = slide_data.get("text_blocks", [])
+
+            # Separate bold / body blocks
+            bold_blocks = []
+            body_blocks = []
+            for b in text_blocks:
+                if not isinstance(b, dict):
+                    body_blocks.append({"content": str(b)})
+                    continue
+                if b.get("is_bold"):
+                    bold_blocks.append(b)
+                else:
+                    body_blocks.append(b)
+
+            template_id, slots = self._pick_template_and_slots(
+                slide_data, body_blocks, bold_blocks, title
+            )
+
+            from pipeline.layer6_output.slide_templates import render_template
+            html = render_template(
+                template_id=template_id,
+                slots=slots,
+                theme_colors=theme_colors,
+                page_number=slide_index + 1,
+                total_slides=total_slides,
+            )
+            logger.info("Slide %d: heuristic picked template=%s", slide_index, template_id)
+            return html
+        except Exception as e:
+            logger.warning("Heuristic template failed for slide %d: %s, using raw fallback", slide_index, e)
+            return self._fallback_html(slide_index, slide_data, theme_colors, total_slides)
 
     def _fallback_html(
         self,

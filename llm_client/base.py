@@ -253,6 +253,35 @@ class LLMClient(ABC):
         else:
             return self._call_api(prompt, temperature, max_tokens, **kwargs)
 
+    @staticmethod
+    def _normalize_messages(messages: List[Any]) -> List[ChatMessage]:
+        """Normalize a mixed list of ChatMessage / dict into List[ChatMessage].
+
+        All-ChatMessage fast path avoids list rebuild. Dict entries are
+        converted; anything else raises a clear TypeError.
+        """
+        if not messages:
+            return []
+        if all(isinstance(m, ChatMessage) for m in messages):
+            return messages
+        normalized: List[ChatMessage] = []
+        for i, m in enumerate(messages):
+            if isinstance(m, ChatMessage):
+                normalized.append(m)
+            elif isinstance(m, dict):
+                role = m.get("role")
+                content = m.get("content")
+                if not role or content is None:
+                    raise TypeError(
+                        f"chat message[{i}] dict missing 'role' or 'content': {m!r}"
+                    )
+                normalized.append(ChatMessage(role=role, content=str(content)))
+            else:
+                raise TypeError(
+                    f"chat message[{i}] must be ChatMessage or dict, got {type(m).__name__}"
+                )
+        return normalized
+
     def chat(
         self,
         messages: List[ChatMessage],
@@ -260,8 +289,14 @@ class LLMClient(ABC):
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> ChatResponse:
-        """多轮对话（tenacity 指数退避重试 + ProviderGate 并发控制）。"""
+        """多轮对话（tenacity 指数退避重试 + ProviderGate 并发控制）。
+
+        messages 接受 ChatMessage 对象或 {"role":..., "content":...} dict 的混合列表;
+        dict 会自动归一化为 ChatMessage,以容忍上层调用方式不一致。
+        """
         from . import provider_gate
+
+        messages = self._normalize_messages(messages)
 
         provider_gate.acquire(self.provider)
         try:
