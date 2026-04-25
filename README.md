@@ -168,12 +168,13 @@ cp .env.example .env
 编辑 `.env`：
 
 ```env
-# 生成加密主密钥（运行一次，保存好）
+# 加密主密钥：用下面的命令生成，把输出结果粘贴到这里
 # python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-MASTER_ENCRYPTION_KEY=your-generated-fernet-key
+# 会生成类似 gAAAAABhxxxxx... 的一串字符
+MASTER_ENCRYPTION_KEY=<粘贴上面命令的输出>
 
-# PostgreSQL 密码
-POSTGRES_PASSWORD=your-secure-password
+# 数据库密码：自己定一个就行，本地开发随便填
+POSTGRES_PASSWORD=mypassword123
 ```
 
 ### 2. 启动服务
