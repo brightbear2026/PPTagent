@@ -81,7 +81,7 @@ class DesignAgent(CodeAgent):
             except ValueError:
                 slide.slide_type = SlideType.CONTENT
 
-            # narrative_arc：优先使用 OutlineAgent LLM 直接填写的值，回退到关键词推断
+            # narrative_arc：优先使用 PlanAgent LLM 直接填写的值，回退到关键词推断
             llm_arc = getattr(item, "narrative_arc", "") or ""
             if llm_arc:
                 try:

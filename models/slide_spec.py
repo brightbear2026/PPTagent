@@ -929,7 +929,7 @@ class OutlineItem:
     supporting_hint: str = ""           # 该页需要什么支撑材料
     data_source: str = ""               # 引用的数据来源 e.g. "Sheet1: 季度收入表"
     primary_visual: str = ""            # PrimaryVisualType值: "chart"/"diagram"/"visual_block"/"text_only"
-    narrative_arc: str = ""             # NarrativeRole值，由 OutlineAgent LLM 直接填写
+    narrative_arc: str = ""             # NarrativeRole值，由 PlanAgent LLM 直接填写
     chunk_ids: list = field(default_factory=list)  # 精确绑定的原文 chunk id 列表
 
 

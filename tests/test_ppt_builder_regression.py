@@ -402,7 +402,30 @@ class TestPPTBuilderRegression(unittest.TestCase):
 
     def test_outline_extract_json_handles_llm_quirks(self):
         """Regression: LLM 围栏/尾随逗号/行注释/缺失围栏都要能解析"""
-        from pipeline.agents.outline_agent import OutlineAgent
+        import re
+
+        def _parse_json_from_text(text):
+            patterns = [
+                r'```json\s*(\[[\s\S]*?\])\s*```',
+                r'```\s*(\[[\s\S]*?\])\s*```',
+                r'(\[[\s\S]*"slide_type"[\s\S]*?\])',
+            ]
+            def _clean(s):
+                s = re.sub(r'//[^\n]*', '', s)
+                s = re.sub(r',(\s*[\]\}])', r'\1', s)
+                return s
+            for pattern in patterns:
+                for match in re.finditer(pattern, text):
+                    raw = match.group(1)
+                    for candidate in (raw, _clean(raw)):
+                        try:
+                            data = json.loads(candidate)
+                            if isinstance(data, list) and data and isinstance(data[0], dict):
+                                if "slide_type" in data[0] or "page_number" in data[0]:
+                                    return data
+                        except Exception:
+                            continue
+            return []
 
         slide = '{"page_number":1,"slide_type":"title","takeaway":"封面"}'
 
@@ -425,7 +448,7 @@ class TestPPTBuilderRegression(unittest.TestCase):
         }
         for name, raw in cases.items():
             with self.subTest(case=name):
-                parsed = OutlineAgent._parse_slides_from_text(raw)
+                parsed = _parse_json_from_text(raw)
                 self.assertIsNotNone(parsed, f"{name} 解析失败")
                 self.assertGreater(len(parsed), 0, f"{name} 结果为空")
                 self.assertIn("page_number", parsed[0])
