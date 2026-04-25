@@ -29,6 +29,7 @@ output/*.pptx
 # Node
 node_modules/
 frontend-react/dist/
+pipeline/layer6_output/test_slides/
 
 # IDE
 .idea/
