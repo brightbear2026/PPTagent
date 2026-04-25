@@ -816,8 +816,11 @@ async def rerun_single_page(
     try:
         controller = PipelineController()
         await controller.rerun_page(task_id, page_number, user_feedback=req.user_feedback)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"重跑失败：{e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("rerun_page 异常")
+        raise HTTPException(status_code=500, detail=f"内部错误：{type(e).__name__}: {e}")
 
     # Return updated slide data for frontend to refresh
     updated_content = store.get_stage_result(task_id, "content") or {}

@@ -53,6 +53,17 @@ const ChartPreview: React.FC<Props> = ({ chart, width, height }) => {
     return { label: s.name ?? '', data: values, rawColor: color };
   });
 
+  // Guard: no real data → show placeholder instead of crashing chart.js
+  if (!datasets.length || datasets.every(d => !d.data.length)) {
+    return (
+      <div style={{ width, height, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', fontSize: 8, color: '#8B9DAF',
+                    border: '1px dashed #C8D8E8', borderRadius: 2 }}>
+        图表数据不完整
+      </div>
+    );
+  }
+
   const type = chart.chart_type ?? 'bar';
 
   // ── Compact axis options ──

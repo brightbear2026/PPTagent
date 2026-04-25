@@ -42,8 +42,9 @@ const ArrowDefs: React.FC = () => (
 );
 
 /* ── truncate helper ── */
-function trunc(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+function trunc(s: any, n: number) {
+  const str = (s == null) ? '' : String(s);
+  return str.length > n ? str.slice(0, n - 1) + '…' : str;
 }
 
 /* ── process_flow: left-to-right boxes with arrows ── */

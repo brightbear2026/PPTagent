@@ -380,6 +380,9 @@ class PreviewErrorBoundary extends Component<
 > {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[PreviewErrorBoundary]', error, info);
+  }
   render() {
     if (this.state.hasError) {
       return (
@@ -480,7 +483,10 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
       {/* ── Chart Preview ── */}
       {hasChart && slide.chart_suggestion &&
         Array.isArray(slide.chart_suggestion.series) &&
-        slide.chart_suggestion.series.length > 0 && (
+        slide.chart_suggestion.series.length > 0 &&
+        slide.chart_suggestion.series.some((s: any) =>
+          Array.isArray(s.values ?? s.data) && (s.values ?? s.data).length > 0
+        ) && (
         <div style={{ flexShrink: 0, overflow: 'hidden' }}>
           <div style={{ fontSize: 7.5, color: '#8B9DAF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             <BarChartOutlined style={{ fontSize: 9 }} />
@@ -494,7 +500,8 @@ const SlidePreview: React.FC<{ slide: SlideContent }> = ({ slide }) => {
       )}
 
       {/* ── Diagram Preview ── */}
-      {hasDiagram && slide.diagram_spec && slide.diagram_spec.diagram_type && (
+      {hasDiagram && slide.diagram_spec && slide.diagram_spec.diagram_type &&
+        Array.isArray(slide.diagram_spec.nodes) && slide.diagram_spec.nodes.length > 0 && (
         <div style={{ flexShrink: 0, overflow: 'hidden' }}>
           <div style={{ fontSize: 7.5, color: '#8B9DAF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             <ApartmentOutlined style={{ fontSize: 9 }} />
