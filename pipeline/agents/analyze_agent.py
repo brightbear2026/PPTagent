@@ -111,6 +111,7 @@ class AnalyzeAgent(StructuredLLMAgent):
                         recommended_structure=result.get("recommended_structure", "开篇→分析→结论"),
                         key_messages=result.get("key_messages", ["核心信息"]),
                         recommended_page_range=result.get("recommended_page_range", "12-16页"),
+                        visual_style=result.get("visual_style", ""),
                     )
                     return self._submitted_analysis
 
@@ -360,19 +361,15 @@ class AnalyzeAgent(StructuredLLMAgent):
         recommended_structure: str,
         key_messages: List[str],
         recommended_page_range: str,
+        visual_style: str = "",
     ) -> str:
         """接收最终分析结果，存储并返回确认"""
-        from models.slide_spec import StrategyInsight
-
-        strategy = StrategyInsight(
-            document_summary=document_summary,
-            audience_analysis=audience_analysis,
-            scenario_strategy=scenario_strategy,
-            core_themes=core_themes,
-            recommended_structure=recommended_structure,
-            recommended_page_range=recommended_page_range,
-            key_messages=key_messages,
-        )
+        _VALID_STYLES = {
+            "consulting_formal", "tech_modern", "business_minimalist",
+            "finance_stable", "creative_vibrant",
+        }
+        if visual_style not in _VALID_STYLES:
+            visual_style = "consulting_formal"
 
         self._submitted_analysis = {
             "strategy": {
@@ -383,6 +380,7 @@ class AnalyzeAgent(StructuredLLMAgent):
                 "recommended_structure": recommended_structure,
                 "recommended_page_range": recommended_page_range,
                 "key_messages": key_messages,
+                "visual_style": visual_style,
             },
             "derived_metrics": [],
             "key_findings": [],

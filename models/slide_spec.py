@@ -801,6 +801,7 @@ class StrategyInsight:
     recommended_structure: str = ""        # 推荐的叙事框架（如SCR/SCQA/Issue Tree）
     recommended_page_range: str = ""       # 推荐页数范围（如"15-20页"）
     key_messages: list[str] = field(default_factory=list)      # 核心论点（3-5个）
+    visual_style: str = ""                 # 视觉风格（consulting_formal/tech_modern/business_minimalist/finance_stable/creative_vibrant）
 
 
 @dataclass
