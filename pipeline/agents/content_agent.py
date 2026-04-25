@@ -249,6 +249,21 @@ class ContentAgent(StructuredLLMAgent):
         else:
             visual_req = "chart_suggestion、diagram_spec、visual_block 均设为 null"
 
+        # Layout hint guidance
+        layout_hint = slide.get("layout_hint", "")
+        layout_guide = ""
+        if layout_hint:
+            _LAYOUT_GUIDES = {
+                "comparison": "本页为两方对比布局，text_blocks 应分为两组（如：前半部分描述方案A，后半部分描述方案B），每组各含2-4条要点。",
+                "metrics": "本页为数据指标布局，text_blocks 应包含3-4个含具体数字的要点（百分比、金额、倍数等），每条一句话。",
+                "chart_focus": "本页以图表为主，text_blocks 应提供2-3条图表解读/标注（每条≤80字），补充 chart_suggestion。",
+                "quote_emphasis": "本页强调单一核心结论，第1条 text_block 应为核心结论（≤60字），后续2-3条为支撑论据。",
+                "framework_grid": "本页为2×2象限/分层架构布局，text_blocks 应按象限或层级组织，每部分1-2条描述。",
+                "narrative": "本页为时间线/流程布局，text_blocks 应按阶段/步骤顺序排列，每阶段1-2条要点。",
+                "parallel_points": "本页为并列论据布局，text_blocks 应包含3-5条独立并列的论据，每条一句话。",
+            }
+            layout_guide = f"\n## 布局指导（layout_hint={layout_hint}）\n{_LAYOUT_GUIDES.get(layout_hint, '')}\n"
+
         user_msg = f"""请为以下单个PPT页面生成内容。
 
 ## 当前页面
@@ -256,7 +271,7 @@ class ContentAgent(StructuredLLMAgent):
 - 标题: {title}
 - 核心观点: {takeaway}
 - 目标受众: {task.get('target_audience', '管理层')}
-{prev_ctx}{material_text}{shared.get('skill_section', '')}---
+{prev_ctx}{material_text}{shared.get('skill_section', '')}{layout_guide}---
 {visual_req}
 text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
 
@@ -553,6 +568,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
                 "diagram_spec": page.get("diagram_spec"),
                 "visual_block": page.get("visual_block"),
                 "source_note": page.get("visual_hint", ""),
+                "layout_hint": outline_page.get("layout_hint", ""),
             }
             if page.get("is_failed"):
                 entry["is_failed"] = True

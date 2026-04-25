@@ -40,7 +40,8 @@
       "primary_visual": "text_only",
       "narrative_arc": "opening",
       "section": "",
-      "chunk_ids": []
+      "chunk_ids": [],
+      "layout_hint": ""
     },
     {
       "page_number": 2,
@@ -52,7 +53,8 @@
       "primary_visual": "visual_block",
       "narrative_arc": "opening",
       "section": "第一章 开篇导入",
-      "chunk_ids": ["ch_xxxxxx", "ch_yyyyyy"]
+      "chunk_ids": ["ch_xxxxxx", "ch_yyyyyy"],
+      "layout_hint": "quote_emphasis"
     },
     {
       "page_number": 3,
@@ -64,7 +66,8 @@
       "primary_visual": "text_only",
       "narrative_arc": "evidence",
       "section": "第一章 开篇导入",
-      "chunk_ids": ["ch_zzzzzz"]
+      "chunk_ids": ["ch_zzzzzz"],
+      "layout_hint": "parallel_points"
     }
   ]
 }
@@ -73,5 +76,13 @@
 slide_type 取值：title / content / data / diagram / summary
 primary_visual 取值：text_only / chart / diagram / visual_block
 narrative_arc 取值：opening / context / evidence / solution / recommendation / closing
+layout_hint 取值（每页必填，title 页留空）：
+- parallel_points：3-5个并列论据/证据（默认）
+- comparison：两方对比（方案A vs B、before/after）
+- metrics：3-4个核心数据指标，强调数字
+- chart_focus：图表为主（primary_visual=chart 时使用）
+- quote_emphasis：强调单一核心结论
+- framework_grid：2×2象限/四分法/分层架构
+- narrative：时间线/流程/路线图
 section 取值：章节名称字符串，如"第一章 市场背景"/"第二章 核心挑战"，title 页留空
 chunk_ids：从上方"文档 Chunk 参考"中选取 1-3 个最相关的 id，title 页留空列表

@@ -486,6 +486,7 @@ class PlanAgent:
             s.setdefault("narrative_arc", "evidence")
             s.setdefault("section", "")
             s.setdefault("title", s.get("takeaway_message", ""))
+            s.setdefault("layout_hint", "")
             # section dividers have no takeaway
             if s.get("slide_type") == "section_divider":
                 s["takeaway_message"] = s.get("takeaway_message") or s.get("title", "")
@@ -560,15 +561,18 @@ class PlanAgent:
             "slides": [
                 {"page_number": 1, "slide_type": "title", "title": "演示文稿",
                  "takeaway_message": "", "supporting_hint": "", "data_source": "",
-                 "primary_visual": "text_only", "narrative_arc": "opening", "section": ""},
+                 "primary_visual": "text_only", "narrative_arc": "opening", "section": "",
+                 "layout_hint": ""},
                 {"page_number": 2, "slide_type": "content", "title": "核心结论",
                  "takeaway_message": "本次分析提供了系统化的决策依据和行动建议",
                  "supporting_hint": "", "data_source": "",
-                 "primary_visual": "visual_block", "narrative_arc": "resolution", "section": ""},
+                 "primary_visual": "visual_block", "narrative_arc": "resolution", "section": "",
+                 "layout_hint": "quote_emphasis"},
                 {"page_number": 3, "slide_type": "summary", "title": "总结",
                  "takeaway_message": "行动建议与后续步骤",
                  "supporting_hint": "", "data_source": "",
-                 "primary_visual": "text_only", "narrative_arc": "closing", "section": ""},
+                 "primary_visual": "text_only", "narrative_arc": "closing", "section": "",
+                 "layout_hint": "parallel_points"},
             ],
         }
 

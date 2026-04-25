@@ -931,6 +931,7 @@ class OutlineItem:
     primary_visual: str = ""            # PrimaryVisualType值: "chart"/"diagram"/"visual_block"/"text_only"
     narrative_arc: str = ""             # NarrativeRole值，由 PlanAgent LLM 直接填写
     chunk_ids: list = field(default_factory=list)  # 精确绑定的原文 chunk id 列表
+    layout_hint: str = ""  # 布局建议: parallel_points/comparison/metrics/chart_focus/quote_emphasis/framework_grid/narrative
 
 
 @dataclass
@@ -949,7 +950,9 @@ class OutlineResult:
                  "supporting_hint": i.supporting_hint,
                  "data_source": i.data_source,
                  "primary_visual": i.primary_visual,
-                 "narrative_arc": i.narrative_arc}
+                 "narrative_arc": i.narrative_arc,
+                 "chunk_ids": i.chunk_ids,
+                 "layout_hint": i.layout_hint}
                 for i in self.items
             ],
             "data_gap_suggestions": self.data_gap_suggestions,
@@ -966,7 +969,9 @@ class OutlineResult:
                     supporting_hint=i.get("supporting_hint", ""),
                     data_source=i.get("data_source", ""),
                     primary_visual=i.get("primary_visual", ""),
-                    narrative_arc=i.get("narrative_arc", ""))
+                    narrative_arc=i.get("narrative_arc", ""),
+                    chunk_ids=i.get("chunk_ids", []),
+                    layout_hint=i.get("layout_hint", ""))
                 for i in data.get("items", [])
             ],
             data_gap_suggestions=data.get("data_gap_suggestions", []),

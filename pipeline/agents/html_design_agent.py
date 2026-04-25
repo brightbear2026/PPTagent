@@ -660,6 +660,17 @@ class HTMLDesignAgent:
         note = rest[:60] if rest else ""
         return {"label": label, "value": value, "unit": unit, "note": note}
 
+    # layout_hint → template_id mapping
+    _LAYOUT_HINT_MAP: Dict[str, str] = {
+        "parallel_points": "content_bullets",
+        "comparison": "content_two_column",
+        "metrics": "content_key_metrics",
+        "chart_focus": "chart_focus",
+        "quote_emphasis": "quote_highlight",
+        "framework_grid": "icon_grid",
+        "narrative": "timeline_horizontal",
+    }
+
     def _pick_template_and_slots(
         self,
         slide_data: Dict,
@@ -668,6 +679,16 @@ class HTMLDesignAgent:
         title: str,
     ) -> Tuple[str, Dict]:
         """Decision tree → (template_id, slots)."""
+
+        # 0. layout_hint short-circuit: if set, trust it directly
+        hint = slide_data.get("layout_hint", "")
+        if hint and hint in self._LAYOUT_HINT_MAP:
+            forced_template = self._LAYOUT_HINT_MAP[hint]
+            logger.info("layout_hint=%s → forcing template=%s", hint, forced_template)
+            # Build slots for the forced template
+            return self._build_slots_for_template(
+                forced_template, slide_data, body_blocks, bold_blocks, title
+            )
 
         # 1. Chart with real data → chart_focus
         if self._chart_has_data(slide_data):
@@ -749,6 +770,92 @@ class HTMLDesignAgent:
             if c:
                 bullets.append(c[:40])
         return "content_bullets", {
+            "title": title,
+            "bullets": bullets,
+            "has_chart": bool(slide_data.get("chart_suggestion")),
+        }
+
+    def _build_slots_for_template(
+        self,
+        template_id: str,
+        slide_data: Dict,
+        body_blocks: List[Dict],
+        bold_blocks: List[Dict],
+        title: str,
+    ) -> Tuple[str, Dict]:
+        """Build minimal slots for a forced template_id (layout_hint path)."""
+        if template_id == "chart_focus":
+            annotations = []
+            for b in body_blocks[:4]:
+                c = b.get("content", "") if isinstance(b, dict) else str(b)
+                if c:
+                    annotations.append(c[:80])
+            return template_id, {"title": title, "annotations": annotations or ["关键趋势"]}
+
+        if template_id == "content_two_column":
+            left, right = self._split_comparison(body_blocks)
+            return template_id, {
+                "title": title,
+                "left_label": self._infer_column_label(left, "方案A"),
+                "left_bullets": left,
+                "right_label": self._infer_column_label(right, "方案B"),
+                "right_bullets": right,
+            }
+
+        if template_id == "content_key_metrics":
+            metrics = []
+            for b in body_blocks[:4]:
+                m = self._extract_metric(b)
+                if m:
+                    metrics.append(m)
+            if not metrics:
+                metrics = [{"label": "指标", "value": "-", "unit": "", "note": ""}]
+            return template_id, {"title": title, "metrics": metrics}
+
+        if template_id == "quote_highlight":
+            quote = body_blocks[0].get("content", "")[:60] if body_blocks else title[:60]
+            sub_bullets = []
+            for b in body_blocks[1:5]:
+                c = b.get("content", "") if isinstance(b, dict) else str(b)
+                if c:
+                    sub_bullets.append(c[:40])
+            return template_id, {"title": title, "quote_text": quote, "sub_bullets": sub_bullets}
+
+        if template_id == "icon_grid":
+            items = []
+            for idx, b in enumerate(body_blocks[:6]):
+                content = b.get("content", "") if isinstance(b, dict) else str(b)
+                icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
+                if len(content) <= 15:
+                    items.append({"icon": icon, "title": content, "desc": ""})
+                else:
+                    mid = min(len(content), 20)
+                    for sep in ["：", ":", "—", "-"]:
+                        pos = content.find(sep)
+                        if 0 < pos < 40:
+                            mid = pos
+                            break
+                    items.append({
+                        "icon": icon,
+                        "title": content[:mid].rstrip("：:—-，, "),
+                        "desc": content[mid:].lstrip("：:—-，, ")[:40],
+                    })
+            return template_id, {"title": title, "items": items or [{"icon": "📊", "title": title, "desc": ""}]}
+
+        if template_id == "timeline_horizontal":
+            phases = []
+            for idx, b in enumerate(body_blocks[:5]):
+                content = b.get("content", "") if isinstance(b, dict) else str(b)
+                phases.append({"label": f"阶段{idx+1}", "title": content[:20], "desc": content[:40]})
+            return template_id, {"title": title, "phases": phases or [{"label": "阶段1", "title": title, "desc": ""}]}
+
+        # Default: content_bullets
+        bullets = []
+        for b in body_blocks[:5]:
+            c = b.get("content", "") if isinstance(b, dict) else str(b)
+            if c:
+                bullets.append(c[:40])
+        return template_id, {
             "title": title,
             "bullets": bullets,
             "has_chart": bool(slide_data.get("chart_suggestion")),
@@ -916,10 +1023,12 @@ class HTMLDesignAgent:
                 slide_data["chart_suggestion"] = content.get("chart_suggestion")
                 slide_data["diagram_spec"] = content.get("diagram_spec")
                 slide_data["visual_block"] = content.get("visual_block")
-                # Pass layout hint from ContentAgent to HTMLDesignAgent LLM
-                vh = content.get("source_note") or content.get("visual_hint", "")
-                if vh:
-                    slide_data["layout_hint"] = vh
+                # layout_hint: prefer ContentAgent's pass-through, fall back to outline item
+                lh = content.get("layout_hint", "") or (
+                    item.get("layout_hint", "") if isinstance(item, dict) else getattr(item, "layout_hint", "")
+                )
+                if lh:
+                    slide_data["layout_hint"] = lh
             elif hasattr(content, "text_blocks"):
                 # Convert dataclass objects to plain dicts for template/JSON consumption
                 from dataclasses import asdict as _asdict

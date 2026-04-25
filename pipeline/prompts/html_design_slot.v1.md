@@ -45,7 +45,17 @@ slots: title, x_label(str ≤10字), y_label(str ≤10字), cells([{label:str, i
 适用：3-4个角色/对象的特性对比
 slots: title, roles([{name:str, subtitle:str, bullets:list[str]}] 3-4个角色)
 
-## 选择规则
+## 选择规则（layout_hint 最高优先级）
+如果输入数据中存在 layout_hint 字段，直接按以下映射选择模板（跳过其他规则）：
+- parallel_points → content_bullets
+- comparison → content_two_column
+- metrics → content_key_metrics
+- chart_focus → chart_focus
+- quote_emphasis → quote_highlight
+- framework_grid → icon_grid（如果 diagram_spec 指示分层架构则用 architecture_stack）
+- narrative → timeline_horizontal
+
+如果没有 layout_hint，则按以下规则选择：
 chart_suggestion存在 → chart_focus
 N层分层架构 → architecture_stack
 多阶段/时间线/路线图 → timeline_horizontal
