@@ -165,6 +165,82 @@ _T_ICON_GRID = """\
 </body>
 </html>"""
 
+_T_ARCHITECTURE_STACK = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+
+<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
+</div>
+
+<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+
+<<STACK_LAYERS_HTML>>
+
+</body>
+</html>"""
+
+_T_TIMELINE_HORIZONTAL = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+
+<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
+</div>
+
+<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+
+<<TIMELINE_ITEMS_HTML>>
+
+</body>
+</html>"""
+
+_T_QUADRANT_MATRIX = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+
+<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
+</div>
+
+<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+
+<<QUADRANT_CELLS_HTML>>
+
+</body>
+</html>"""
+
+_T_ROLE_COLUMNS = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+
+<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
+</div>
+
+<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+
+<<ROLE_COLUMNS_HTML>>
+
+</body>
+</html>"""
+
 TEMPLATES: dict[str, str] = {
     "content_bullets": _T_CONTENT_BULLETS,
     "content_two_column": _T_CONTENT_TWO_COLUMN,
@@ -172,6 +248,10 @@ TEMPLATES: dict[str, str] = {
     "chart_focus": _T_CHART_FOCUS,
     "quote_highlight": _T_QUOTE_HIGHLIGHT,
     "icon_grid": _T_ICON_GRID,
+    "architecture_stack": _T_ARCHITECTURE_STACK,
+    "timeline_horizontal": _T_TIMELINE_HORIZONTAL,
+    "quadrant_matrix": _T_QUADRANT_MATRIX,
+    "role_columns": _T_ROLE_COLUMNS,
 }
 
 # Schema used to generate the LLM system prompt
@@ -226,6 +306,36 @@ TEMPLATE_SCHEMAS: dict[str, dict] = {
         "required_slots": {
             "title": "str — 核心论点句",
             "items": "list[{icon:str, title:str, desc:str}] — 网格项3-6个，icon为单个emoji",
+        },
+    },
+    "architecture_stack": {
+        "description": "N层堆叠架构图，适合基础设施→平台→应用等分层结构，从下到上堆叠。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "layers": "list[{name:str, desc:str}] — 堆叠层2-5层，从底层到顶层排列",
+        },
+    },
+    "timeline_horizontal": {
+        "description": "横向时间线/路线图，适合多阶段计划、里程碑节点。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "phases": "list[{label:str, title:str, desc:str}] — 阶段2-5个，label为时间标签如'90天'",
+        },
+    },
+    "quadrant_matrix": {
+        "description": "2×2象限矩阵，适合按两个维度分类的四种状态/策略。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "x_label": "str — 横轴标签（≤10字）",
+            "y_label": "str — 纵轴标签（≤10字）",
+            "cells": "list[{label:str, items:list[str]}] — 4个格子，按 左下/右下/左上/右上 顺序",
+        },
+    },
+    "role_columns": {
+        "description": "3-4列角色/对象对比，每列展示一个角色的特征、职责、能力。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "roles": "list[{name:str, subtitle:str, bullets:list[str]}] — 角色3-4个，bullets最多4条",
         },
     },
 }
@@ -309,6 +419,24 @@ def render_template(
         result = result.replace("<<GRID_ITEMS_HTML>>",
                                 _render_icon_grid(slots.get("items", []), primary, accent, bg, text_color))
 
+    elif template_id == "architecture_stack":
+        result = result.replace("<<STACK_LAYERS_HTML>>",
+                                _render_stack_layers(slots.get("layers", []), primary, accent, bg, text_color, muted))
+
+    elif template_id == "timeline_horizontal":
+        result = result.replace("<<TIMELINE_ITEMS_HTML>>",
+                                _render_timeline(slots.get("phases", []), primary, accent, bg, text_color, muted))
+
+    elif template_id == "quadrant_matrix":
+        result = result.replace("<<QUADRANT_CELLS_HTML>>",
+                                _render_quadrant(slots.get("cells", []),
+                                                 slots.get("x_label", ""), slots.get("y_label", ""),
+                                                 primary, accent, bg, text_color, muted))
+
+    elif template_id == "role_columns":
+        result = result.replace("<<ROLE_COLUMNS_HTML>>",
+                                _render_role_columns(slots.get("roles", []), primary, accent, bg, text_color, muted))
+
     return result
 
 
@@ -350,6 +478,11 @@ def _render_metrics(
     box_top = 86
     box_h = 260
 
+    # Adaptive font-size based on column count and value length
+    value_font = {1: 56, 2: 48, 3: 38, 4: 30}.get(n, 38)
+    value_top = {1: 36, 2: 40, 3: 46, 4: 50}.get(n, 46)
+    note_top = {1: 108, 2: 110, 3: 114, 4: 100}.get(n, 114)
+
     parts = []
     for i, m in enumerate(metrics[:4]):
         label = _html.escape(str(m.get("label", "")))
@@ -357,13 +490,19 @@ def _render_metrics(
         unit = _html.escape(str(m.get("unit", "")))
         note = _html.escape(str(m.get("note", "")))
         left = starts[i]
+        # Shrink font further if value text is long
+        v_len = len(str(m.get("value", "")))
+        if v_len > 4:
+            value_font_cur = max(20, value_font - (v_len - 4) * 4)
+        else:
+            value_font_cur = value_font
         parts.append(
             f'<div style="position:absolute; left:{left}px; top:{box_top}px; width:{box_w}px; height:{box_h}px; background-color:{bg};">'
             f'<div style="position:absolute; top:0; left:0; width:{box_w}px; height:4px; background-color:{accent};"></div>'
             f'<p style="position:absolute; left:14px; top:16px; font-size:12px; color:{muted};">{label}</p>'
-            f'<p style="position:absolute; left:14px; top:46px; font-size:38px; color:{primary}; font-weight:bold; line-height:1;">{value}'
+            f'<p style="position:absolute; left:14px; top:{value_top}px; font-size:{value_font_cur}px; color:{primary}; font-weight:bold; line-height:1; white-space:nowrap;">{value}'
             f'<span style="font-size:15px; color:{muted}; margin-left:4px;">{unit}</span></p>'
-            f'<p style="position:absolute; left:14px; top:114px; width:{box_w - 28}px; font-size:11px; color:{muted}; line-height:1.45;">{note}</p>'
+            f'<p style="position:absolute; left:14px; top:{note_top}px; width:{box_w - 28}px; font-size:11px; color:{muted}; line-height:1.45;">{note}</p>'
             f'</div>'
         )
     return "\n".join(parts)
@@ -414,3 +553,175 @@ def _render_icon_grid(items: list, primary: str, accent: str, bg: str, text_colo
             f'</div>'
         )
     return "\n".join(parts)
+
+
+def _render_stack_layers(
+    layers: list, primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render N-layer stack (bottom to top)."""
+    n = min(len(layers), 5)
+    if n == 0:
+        return ""
+    layer_h = min(80, (420 - (n - 1) * 6) // n)
+    total_h = n * layer_h + (n - 1) * 6
+    top_start = 76 + (430 - total_h) // 2
+    colors = [primary, accent, bg, _lighten(primary, 0.6), _lighten(primary, 0.8)][:n]
+    text_colors = ["#FFFFFF", "#FFFFFF", text_color, primary, primary][:n]
+    parts = []
+    for i, layer in enumerate(layers[:n]):
+        idx = n - 1 - i  # reverse: first in list = bottom of stack
+        name = _html.escape(str(layer.get("name", f"Layer {i+1}")))
+        desc = _html.escape(str(layer.get("desc", "")))
+        top = top_start + idx * (layer_h + 6)
+        c = colors[i]
+        tc = text_colors[i]
+        parts.append(
+            f'<div style="position:absolute; left:60px; top:{top}px; width:840px; height:{layer_h}px; background-color:{c}; border-radius:3px;">'
+            f'<p style="position:absolute; left:16px; top:{max(4, (layer_h-20)//2)}px; font-size:14px; color:{tc}; font-weight:bold;">{name}</p>'
+            f'<p style="position:absolute; left:16px; top:{max(4, (layer_h-20)//2) + 20}px; width:800px; font-size:11px; color:{tc}; line-height:1.3;">{desc}</p>'
+            f'</div>'
+        )
+    return "\n".join(parts)
+
+
+def _render_timeline(
+    phases: list, primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render horizontal timeline with phase cards below a line."""
+    n = min(len(phases), 5)
+    if n == 0:
+        return ""
+    phase_w = min(200, (880 - (n - 1) * 20) // n)
+    gap_x = (880 - n * phase_w) // max(1, n - 1) if n > 1 else 0
+    line_top = 170
+    card_top = 200
+    card_h = 280
+    parts = []
+    # Horizontal line
+    first_left = 40
+    last_left = 40 + (n - 1) * (phase_w + gap_x)
+    parts.append(
+        f'<div style="position:absolute; left:{first_left}px; top:{line_top}px; '
+        f'width:{last_left + phase_w - first_left}px; height:3px; background-color:{primary};"></div>'
+    )
+    for i, phase in enumerate(phases[:n]):
+        label = _html.escape(str(phase.get("label", f"P{i+1}")))
+        title = _html.escape(str(phase.get("title", "")))
+        desc = _html.escape(str(phase.get("desc", "")))
+        left = 40 + i * (phase_w + gap_x)
+        dot_left = left + phase_w // 2
+        parts.append(
+            f'<div style="position:absolute; left:{dot_left - 8}px; top:{line_top - 6}px; '
+            f'width:16px; height:16px; background-color:{accent}; border-radius:8px;"></div>'
+        )
+        parts.append(
+            f'<p style="position:absolute; left:{left}px; top:{line_top - 34}px; width:{phase_w}px; '
+            f'font-size:12px; color:{accent}; font-weight:bold; text-align:center;">{label}</p>'
+        )
+        parts.append(
+            f'<div style="position:absolute; left:{left}px; top:{card_top}px; width:{phase_w}px; '
+            f'height:{card_h}px; background-color:{bg}; border-top:3px solid {primary};">'
+            f'<p style="position:absolute; left:10px; top:10px; width:{phase_w - 20}px; '
+            f'font-size:13px; color:{primary}; font-weight:bold;">{title}</p>'
+            f'<p style="position:absolute; left:10px; top:36px; width:{phase_w - 20}px; '
+            f'font-size:11px; color:{muted}; line-height:1.5;">{desc}</p>'
+            f'</div>'
+        )
+    return "\n".join(parts)
+
+
+def _render_quadrant(
+    cells: list, x_label: str, y_label: str,
+    primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render 2x2 quadrant matrix. cells order: BL, BR, TL, TR."""
+    if len(cells) < 4:
+        cells = cells + [{"label": "", "items": []}] * (4 - len(cells))
+    cell_w = 410
+    cell_h = 200
+    gap = 20
+    left_start = 70
+    top_start = 80
+    parts = []
+    x_esc = _html.escape(x_label)
+    y_esc = _html.escape(y_label)
+    parts.append(
+        f'<p style="position:absolute; left:{left_start}px; top:{top_start + 2 * cell_h + gap + 12}px; '
+        f'width:{2 * cell_w + gap}px; font-size:11px; color:{muted}; text-align:center;">{x_esc}</p>'
+    )
+    parts.append(
+        f'<p style="position:absolute; left:20px; top:{top_start + cell_h}px; '
+        f'font-size:11px; color:{muted}; transform:rotate(-90deg); transform-origin:center;">{y_esc}</p>'
+    )
+    positions = [
+        (left_start, top_start + cell_h + gap),
+        (left_start + cell_w + gap, top_start + cell_h + gap),
+        (left_start, top_start),
+        (left_start + cell_w + gap, top_start),
+    ]
+    shades = [_lighten(primary, 0.85), _lighten(accent, 0.85),
+              _lighten(accent, 0.85), _lighten(primary, 0.85)]
+    for i, ((cl, ct), cell) in enumerate(zip(positions, cells[:4])):
+        label = _html.escape(str(cell.get("label", "")))
+        items = cell.get("items", [])[:4]
+        shade = shades[i]
+        items_html = "".join(
+            f'<p style="font-size:11px; color:{text_color}; line-height:1.5;">• {_html.escape(str(it))}</p>'
+            for it in items
+        )
+        parts.append(
+            f'<div style="position:absolute; left:{cl}px; top:{ct}px; width:{cell_w}px; height:{cell_h}px; '
+            f'background-color:{shade}; border-radius:3px;">'
+            f'<p style="position:absolute; left:10px; top:8px; font-size:13px; color:{primary}; font-weight:bold;">{label}</p>'
+            f'<div style="position:absolute; left:10px; top:30px; width:{cell_w - 20}px; height:{cell_h - 40}px; overflow:hidden;">'
+            f'{items_html}'
+            f'</div>'
+            f'</div>'
+        )
+    return "\n".join(parts)
+
+
+def _render_role_columns(
+    roles: list, primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render 3-4 role/object comparison columns."""
+    n = min(len(roles), 4)
+    if n == 0:
+        return ""
+    col_w = min(260, (880 - (n - 1) * 16) // n)
+    gap_x = (880 - n * col_w) // max(1, n - 1) if n > 1 else 0
+    top_start = 80
+    col_h = 400
+    parts = []
+    for i, role in enumerate(roles[:n]):
+        name = _html.escape(str(role.get("name", f"Role {i+1}")))
+        subtitle = _html.escape(str(role.get("subtitle", "")))
+        bullets = role.get("bullets", [])[:4]
+        left = 40 + i * (col_w + gap_x)
+        bullets_html = "".join(
+            f'<p style="font-size:11px; color:{text_color}; line-height:1.5;">• {_html.escape(str(b))}</p>'
+            for b in bullets
+        )
+        parts.append(
+            f'<div style="position:absolute; left:{left}px; top:{top_start}px; width:{col_w}px; height:{col_h}px; '
+            f'background-color:{bg}; border-top:4px solid {accent};">'
+            f'<p style="position:absolute; left:12px; top:12px; font-size:15px; color:{primary}; font-weight:bold;">{name}</p>'
+            f'<p style="position:absolute; left:12px; top:36px; font-size:11px; color:{muted};">{subtitle}</p>'
+            f'<div style="position:absolute; left:12px; top:60px; width:{col_w - 24}px; height:{col_h - 72}px; overflow:hidden;">'
+            f'{bullets_html}'
+            f'</div>'
+            f'</div>'
+        )
+    return "\n".join(parts)
+
+
+def _lighten(hex_color: str, factor: float) -> str:
+    """Lighten a hex color toward white. factor=1 → white, factor=0 → original."""
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    r = int(r + (255 - r) * factor)
+    g = int(g + (255 - g) * factor)
+    b = int(b + (255 - b) * factor)
+    return f"#{r:02x}{g:02x}{b:02x}"

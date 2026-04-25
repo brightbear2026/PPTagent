@@ -120,6 +120,34 @@ class NodeRenderBridge:
 
         return data
 
+    def validate_single_slide(self, html_path: str) -> Dict[str, Any]:
+        """
+        Dry-run validate a single HTML slide via Node.js.
+        Returns {"ok": bool, "errors": [str]}.
+        """
+        validate_js = _LAYER6_DIR / "html2pptx_validate.js"
+        if not validate_js.exists():
+            return {"ok": False, "errors": ["html2pptx_validate.js not found"]}
+
+        cmd = [self._node_cmd, str(validate_js), str(Path(html_path).resolve())]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(_LAYER6_DIR),
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "errors": ["validation timed out (30s)"]}
+
+        try:
+            data = json.loads(result.stdout.strip())
+            return {"ok": data.get("ok", False), "errors": data.get("errors", [])}
+        except json.JSONDecodeError:
+            return {"ok": False, "errors": [f"invalid validator output: {result.stdout[:200]}"]}
+
 
 def is_node_available() -> bool:
     """Check if Node.js rendering is available."""
