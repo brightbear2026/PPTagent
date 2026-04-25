@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Form, Select, Input, Button, message, Card, Space, Typography, Divider, Switch, Radio, Alert } from 'antd';
-import { KeyOutlined, SaveOutlined, ApiOutlined, ThunderboltOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { KeyOutlined, SaveOutlined, ApiOutlined, ThunderboltOutlined, ExperimentOutlined, CheckCircleFilled, WarningFilled } from '@ant-design/icons';
 import { getModelConfig, updateModelConfig } from '../api/client';
 import type { PipelineModelConfig, StageModelConfig } from '../types';
 
@@ -157,6 +157,14 @@ const SettingsPage: React.FC = () => {
       ]
     : [];
 
+  // Compute config status for the overview bar
+  const anyKey = stages.some(s => s.data?.has_api_key);
+  const allKeys = stages.every(s => s.data?.has_api_key);
+  const configuredCount = stages.filter(s => s.data?.has_api_key).length;
+  const activeProvider = stages.find(s => s.data?.has_api_key)?.data?.provider || '';
+  const activeModel = stages.find(s => s.data?.has_api_key)?.data?.model || '';
+  const providerLabel = PROVIDER_PRESETS[activeProvider]?.label || activeProvider;
+
   return (
     <div style={{ padding: 32, maxWidth: 800, margin: '0 auto' }}>
       <h2 style={{ color: '#002B4E', fontSize: 22, fontWeight: 600, marginBottom: 8 }}>
@@ -165,6 +173,69 @@ const SettingsPage: React.FC = () => {
       <p style={{ color: '#8B9DAF', fontSize: 14, marginBottom: 20 }}>
         配置各阶段使用的LLM模型和API Key
       </p>
+
+      {/* ── Config status overview bar ── */}
+      {anyKey ? (
+        <Alert
+          message={
+            <span>
+              <CheckCircleFilled style={{ color: '#52c41a', marginRight: 6 }} />
+              API 已配置 — {mode === 'universal' ? '通用模式' : '分阶段模式'}
+              {mode === 'universal' && activeProvider && (
+                <span style={{ color: '#595959' }}> · {providerLabel} · {activeModel}</span>
+              )}
+            </span>
+          }
+          description={
+            mode === 'advanced' ? (
+              <div style={{ marginTop: 4, fontSize: 12 }}>
+                {stages.map(s => {
+                  const ok = s.data?.has_api_key;
+                  return (
+                    <span key={s.key} style={{ marginRight: 12 }}>
+                      <span style={{
+                        display: 'inline-block', width: 8, height: 8, borderRadius: 4,
+                        background: ok ? '#52c41a' : '#d9d9d9', marginRight: 4, verticalAlign: 'middle',
+                      }} />
+                      <span style={{ color: ok ? '#2D3436' : '#8B9DAF' }}>
+                        {STAGE_INFO[s.key]?.label || s.key}
+                      </span>
+                    </span>
+                  );
+                })}
+                {!allKeys && <span style={{ color: '#faad14', marginLeft: 8 }}>（{configuredCount}/{stages.length} 已配置）</span>}
+              </div>
+            ) : undefined
+          }
+          type="success"
+          showIcon={false}
+          style={{ marginBottom: 20, borderRadius: 2 }}
+        />
+      ) : (
+        <Alert
+          message={
+            <span>
+              <WarningFilled style={{ color: '#faad14', marginRight: 6 }} />
+              API Key 未配置 — 请先填写 API Key 才能生成 PPT
+            </span>
+          }
+          description={
+            <div style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: 13, color: '#595959' }}>
+                首次使用？推荐「通用配置」模式，三步完成：
+              </Text>
+              <ol style={{ margin: '6px 0 0 18px', fontSize: 13, color: '#595959', lineHeight: '1.8' }}>
+                <li>选择模型厂商（如 DeepSeek）</li>
+                <li>选择模型</li>
+                <li>粘贴 API Key → 保存</li>
+              </ol>
+            </div>
+          }
+          type="warning"
+          showIcon={false}
+          style={{ marginBottom: 20, borderRadius: 2 }}
+        />
+      )}
 
       {/* ── 模式切换 ── */}
       <Radio.Group
@@ -188,10 +259,10 @@ const SettingsPage: React.FC = () => {
         <>
           <Alert
             message="通用模式：只需配置一个模型，所有阶段统一使用"
-            description="适合大多数用户。如果你有多个模型厂商的API Key，可以切换到「分阶段配置」按能力分工。"
+            description="适合大多数用户。如果你有多个模型厂商的 API Key，可以切换到「分阶段配置」按能力分工。"
             type="info"
             showIcon
-            style={{ marginBottom: 20 }}
+            style={{ marginBottom: 20, borderRadius: 2 }}
           />
           <UniversalConfigCard
             stageData={config?.analyze}
@@ -205,10 +276,16 @@ const SettingsPage: React.FC = () => {
         <>
           <Alert
             message="分阶段模式：每个阶段独立配置模型"
-            description="推荐组合：大纲/内容用 DeepSeek-R1（推理强），图表用通义千问（数据稳定）。"
+            description={
+              <span>
+                推荐组合：大纲/内容用 DeepSeek-R1（推理强），图表用通义千问（数据稳定）。
+                <br />
+                <Text style={{ fontSize: 12, color: '#8B9DAF' }}>适合进阶用户：不同阶段用不同模型以优化效果。</Text>
+              </span>
+            }
             type="info"
             showIcon
-            style={{ marginBottom: 20 }}
+            style={{ marginBottom: 20, borderRadius: 2 }}
           />
           {stages.map(({ key, data }) => (
             <StageConfigCard
@@ -323,11 +400,19 @@ const UniversalConfigCard: React.FC<UniversalConfigCardProps> = ({
         )}
 
         <Space style={{ width: '100%', marginBottom: 16 }} size={16} align="center">
-          <Form.Item label="API Key" name="api_key" style={{ flex: 1, marginBottom: 0 }}
-            extra={stageData?.has_api_key ? '已配置，留空则保持不变' : '未配置'}
+          <Form.Item
+            label="API Key"
+            name="api_key"
+            style={{ flex: 1, marginBottom: 0 }}
+            extra={
+              stageData?.has_api_key
+                ? <span style={{ color: '#52c41a', fontSize: 12 }}>✓ 已配置，留空则保持不变</span>
+                : <span style={{ color: '#ff4d4f', fontSize: 12 }}>⚠ 请填写 API Key</span>
+            }
+            validateStatus={stageData?.has_api_key ? undefined : 'warning'}
           >
             <Input.Password
-              placeholder={stageData?.has_api_key ? '已配置 (留空不改)' : '请输入API Key'}
+              placeholder={stageData?.has_api_key ? '已配置 (留空不改)' : '请输入 API Key'}
               style={{ maxWidth: 500 }}
             />
           </Form.Item>
@@ -513,10 +598,15 @@ const StageConfigCard: React.FC<StageConfigCardProps> = ({
           label="API Key"
           name="api_key"
           style={{ marginBottom: 16 }}
-          extra={stageData.has_api_key ? '已配置，留空则保持不变' : '未配置'}
+          extra={
+            stageData.has_api_key
+              ? <span style={{ color: '#52c41a', fontSize: 12 }}>✓ 已配置，留空则保持不变</span>
+              : <span style={{ color: '#ff4d4f', fontSize: 12 }}>⚠ 请填写 API Key</span>
+          }
+          validateStatus={stageData.has_api_key ? undefined : 'warning'}
         >
           <Input.Password
-            placeholder={stageData.has_api_key ? '已配置 (留空不改)' : '请输入API Key'}
+            placeholder={stageData.has_api_key ? '已配置 (留空不改)' : '请输入 API Key'}
             style={{ maxWidth: 500 }}
           />
         </Form.Item>

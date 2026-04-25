@@ -130,7 +130,8 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
   // ── Render ──
 
   return (
-    <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 220px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 220px)' }}>
+    <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
       {/* Left: page navigation */}
       <Card
         style={{ width: 200, flexShrink: 0, borderRadius: 2, overflow: 'auto' }}
@@ -288,7 +289,7 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
             )}
 
             {/* Rerun with feedback */}
-            <div style={{ marginTop: 16, marginBottom: 8 }}>
+            <div style={{ marginTop: 16, marginBottom: 8, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
               <TextArea
                 value={rerunFeedback}
                 onChange={(e) => setRerunFeedback(e.target.value)}
@@ -298,9 +299,11 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Button
+                  type="link"
                   size="small"
                   icon={<RedoOutlined />}
                   onClick={() => handleRerunPage(selectedPage, rerunFeedback)}
+                  style={{ padding: 0, color: '#8B9DAF', fontSize: 12 }}
                 >
                   重新生成本页
                 </Button>
@@ -310,36 +313,6 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
                   </span>
                 )}
               </div>
-            </div>
-
-            {/* Page actions */}
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-              {onBack && (
-                <Button
-                  icon={<ArrowLeftOutlined />}
-                  onClick={onBack}
-                  disabled={confirmed || saving}
-                  style={{ borderRadius: 2 }}
-                >
-                  返回大纲
-                </Button>
-              )}
-              <div style={{ flex: 1 }} />
-              <Button
-                type="primary"
-                onClick={handleSave}
-                loading={saving || confirmed}
-                disabled={confirmed}
-                style={{
-                  background: '#C9A84C',
-                  borderColor: '#C9A84C',
-                  color: '#002B4E',
-                  fontWeight: 700,
-                  borderRadius: 2,
-                }}
-              >
-                生成 PPT
-              </Button>
             </div>
           </>
         ) : (
@@ -368,6 +341,49 @@ const Step3Content: React.FC<Step3Props> = ({ taskId, content, outline, generati
           <Empty description="选择页面查看预览" style={{ marginTop: 80 }} />
         )}
       </Card>
+    </div>
+
+    {/* Global action bar — sticky at bottom */}
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: '12px 0',
+      borderTop: '1px solid #E8E4D9',
+      marginTop: 8,
+      flexShrink: 0,
+    }}>
+      {onBack && (
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={onBack}
+          disabled={confirmed || saving}
+          style={{ borderRadius: 2 }}
+        >
+          返回大纲
+        </Button>
+      )}
+      <div style={{ flex: 1 }} />
+      <Button
+        type="primary"
+        onClick={handleSave}
+        loading={saving || confirmed}
+        disabled={confirmed}
+        size="large"
+        style={{
+          background: '#C9A84C',
+          borderColor: '#C9A84C',
+          color: '#002B4E',
+          fontWeight: 700,
+          borderRadius: 2,
+          height: 44,
+          paddingInline: 32,
+          fontSize: 15,
+        }}
+      >
+        确认并生成 PPT
+      </Button>
+    </div>
     </div>
   );
 };
