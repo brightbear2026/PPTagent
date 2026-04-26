@@ -134,7 +134,7 @@ class PipelineModelConfig(BaseModel):
     def mask_api_keys(self) -> "PipelineModelConfig":
         """返回api_key被遮蔽的副本（用于API响应）"""
         masked = self.model_copy(deep=True)
-        for stage in [masked.analyze, masked.outline, masked.content, masked.design]:
+        for stage in [masked.analyze, masked.outline, masked.content, masked.design, masked.build]:
             if stage.api_key:
                 stage.api_key = stage.api_key[:8] + "****" + stage.api_key[-4:]
         return masked

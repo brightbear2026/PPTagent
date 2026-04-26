@@ -55,21 +55,43 @@ const WizardPage: React.FC = () => {
   useEffect(() => { taskIdRef.current = taskId; }, [taskId]);
   useEffect(() => { currentRef.current = current; }, [current]);
 
-  // Sync state → URL params so navigation preserves wizard progress
+  // Sync state → URL params + localStorage so navigation preserves wizard progress
   useEffect(() => {
     const params: Record<string, string> = {};
     if (taskId) params.task = taskId;
     if (taskId && current > 1) params.step = String(current);
     setSearchParams(params, { replace: true });
+    // Persist active task to localStorage for cross-page restoration
+    if (taskId) {
+      localStorage.setItem('ppt_active_task', JSON.stringify({ taskId, step: current }));
+    } else {
+      localStorage.removeItem('ppt_active_task');
+    }
   }, [taskId, current, setSearchParams]);
 
-  // Restore task data on mount when URL has a task param
+  // Restore task data on mount: URL params take priority, fallback to localStorage
   useEffect(() => {
     const tid = searchParams.get('task');
     const step = Number(searchParams.get('step')) || 1;
     if (tid) {
       sse.connect(tid);
       restoreTaskData(tid, step);
+    } else {
+      // No URL param — check localStorage for active task
+      const saved = localStorage.getItem('ppt_active_task');
+      if (saved) {
+        try {
+          const { taskId: savedId, step: savedStep } = JSON.parse(saved);
+          if (savedId) {
+            setTaskId(savedId);
+            setCurrent(savedStep || 1);
+            sse.connect(savedId);
+            restoreTaskData(savedId, savedStep || 1);
+          }
+        } catch {
+          localStorage.removeItem('ppt_active_task');
+        }
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -227,6 +249,7 @@ const WizardPage: React.FC = () => {
     setBuildFailed(false);
     setFailedError(null);
     sse.disconnect();
+    localStorage.removeItem('ppt_active_task');
   };
 
   return (

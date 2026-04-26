@@ -164,6 +164,7 @@ const SettingsPage: React.FC = () => {
   const activeProvider = stages.find(s => s.data?.has_api_key)?.data?.provider || '';
   const activeModel = stages.find(s => s.data?.has_api_key)?.data?.model || '';
   const providerLabel = PROVIDER_PRESETS[activeProvider]?.label || activeProvider;
+  const activeConfigMode = (config as any)?.config_mode as ConfigMode | undefined;
 
   return (
     <div style={{ padding: 32, maxWidth: 800, margin: '0 auto' }}>
@@ -254,6 +255,17 @@ const SettingsPage: React.FC = () => {
           分阶段配置
         </Radio.Button>
       </Radio.Group>
+
+      {/* Mode mismatch warning: viewing a different mode than the active one */}
+      {anyKey && activeConfigMode && activeConfigMode !== mode && (
+        <Alert
+          message={`当前生效的是「${activeConfigMode === 'universal' ? '通用配置' : '分阶段配置'}」模式`}
+          description="保存当前页面的配置后，将切换到此模式并覆盖之前的设置。"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16, borderRadius: 2 }}
+        />
+      )}
 
       {mode === 'universal' && (
         <>

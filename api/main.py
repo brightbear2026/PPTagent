@@ -260,7 +260,7 @@ async def get_model_config():
     masked = pmc.mask_api_keys()
 
     # 对每个阶段，检查加密表是否有对应的key
-    for stage in [masked.analyze, masked.outline, masked.content, masked.build]:
+    for stage in [masked.analyze, masked.outline, masked.content, masked.design, masked.build]:
         if not stage.has_api_key:
             encrypted = store.get_api_key("default", stage.provider)
             if encrypted:
@@ -309,6 +309,9 @@ async def update_model_config(body: Dict):
 
     updated_stages = []
 
+    # Accept both "design" and "build" keys from frontend, normalize to "design"
+    STAGE_MAP = {"analyze": "analyze", "outline": "outline", "content": "content", "design": "design", "build": "design"}
+
     if body.get("config_mode") == "universal":
         # ── 通用模式：1个配置应用到4个stage ──
         universal = {
@@ -317,7 +320,7 @@ async def update_model_config(body: Dict):
             "api_key": body.get("universal_api_key", ""),
             "base_url": body.get("universal_base_url"),
         }
-        for stage_name in ["analyze", "outline", "content", "build"]:
+        for stage_name in ["analyze", "outline", "content", "design"]:
             stage_config = StageModelConfig(**universal)
             if stage_config.api_key:
                 encrypted = encrypt_api_key(stage_config.api_key)
@@ -326,12 +329,14 @@ async def update_model_config(body: Dict):
                 stage_config.has_api_key = True
             pmc.set_stage_config(stage_name, stage_config)
             updated_stages.append(stage_name)
+        # Also update build alias
+        pmc.build = pmc.design.model_copy()
         store.save_setting("default", "config_mode", "universal")
     else:
-        # ── 分阶段模式（现有逻辑）──
-        for stage_name in ["analyze", "outline", "content", "build"]:
-            if stage_name in body and isinstance(body[stage_name], dict):
-                stage_data = body[stage_name]
+        # ── 分阶段模式 ──
+        for body_key, stage_name in STAGE_MAP.items():
+            if body_key in body and isinstance(body[body_key], dict):
+                stage_data = body[body_key]
                 try:
                     stage_config = StageModelConfig(**stage_data)
                 except Exception as e:
@@ -342,9 +347,16 @@ async def update_model_config(body: Dict):
                     store.save_api_key("default", stage_config.provider, encrypted)
                     stage_config.api_key = ""
                     stage_config.has_api_key = True
+                else:
+                    # No new key provided — preserve existing has_api_key if encrypted key exists
+                    encrypted = store.get_api_key("default", stage_config.provider)
+                    if encrypted:
+                        stage_config.has_api_key = True
 
                 pmc.set_stage_config(stage_name, stage_config)
                 updated_stages.append(stage_name)
+        # Sync build alias
+        pmc.build = pmc.design.model_copy()
         store.save_setting("default", "config_mode", "advanced")
 
     # 保存配置

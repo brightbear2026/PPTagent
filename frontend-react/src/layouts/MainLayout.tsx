@@ -20,29 +20,39 @@ const { Sider, Content } = Layout;
 
 const SIDEBAR_WIDTH = 220;
 
-const navItems: MenuProps['items'] = [
-  {
-    key: '/',
-    icon: <PlusCircleOutlined />,
-    label: '创建PPT',
-  },
-  {
-    key: '/history',
-    icon: <HistoryOutlined />,
-    label: '历史记录',
-  },
-  {
-    key: '/settings',
-    icon: <SettingOutlined />,
-    label: '系统设置',
-  },
-];
+const ActiveDot = () => (
+  <span style={{
+    display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+    background: '#C9A84C', marginLeft: 6, verticalAlign: 'middle',
+  }} />
+);
 
 const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
+
+  // Show active task indicator on sidebar
+  const hasActiveTask = !!localStorage.getItem('ppt_active_task');
+
+  const navItems: MenuProps['items'] = [
+    {
+      key: '/',
+      icon: <PlusCircleOutlined />,
+      label: <span>创建PPT{hasActiveTask ? <ActiveDot /> : null}</span>,
+    },
+    {
+      key: '/history',
+      icon: <HistoryOutlined />,
+      label: '历史记录',
+    },
+    {
+      key: '/settings',
+      icon: <SettingOutlined />,
+      label: '系统设置',
+    },
+  ];
 
   const handleLogout = () => {
     logout();
