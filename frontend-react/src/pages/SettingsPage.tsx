@@ -329,18 +329,23 @@ const UniversalConfigCard: React.FC<UniversalConfigCardProps> = ({
   const [selectedProvider, setSelectedProvider] = useState(stageData?.provider || 'deepseek');
   const [customMode, setCustomMode] = useState(false);
 
+  // Destructure to stable values so useEffect only fires when actual data changes
+  const sdProvider = stageData?.provider;
+  const sdModel = stageData?.model;
+  const sdBaseUrl = stageData?.base_url;
+
   useEffect(() => {
-    const provider = stageData?.provider || 'deepseek';
+    const provider = sdProvider || 'deepseek';
     const isCustom = provider === 'custom' || !PROVIDER_PRESETS[provider];
     setCustomMode(isCustom);
     setSelectedProvider(isCustom ? 'custom' : provider);
     form.setFieldsValue({
       provider: isCustom ? 'custom' : provider,
-      model: stageData?.model || PROVIDER_PRESETS['deepseek'].models[0],
+      model: sdModel || PROVIDER_PRESETS['deepseek'].models[0],
       api_key: '',
-      base_url: stageData?.base_url || PROVIDER_PRESETS['deepseek'].base_url,
+      base_url: sdBaseUrl || PROVIDER_PRESETS['deepseek'].base_url,
     });
-  }, [stageData, form]);
+  }, [sdProvider, sdModel, sdBaseUrl, form]);
 
   const preset = PROVIDER_PRESETS[selectedProvider];
   const modelOptions = preset?.models || [];
@@ -407,9 +412,13 @@ const UniversalConfigCard: React.FC<UniversalConfigCardProps> = ({
               label={<span><ApiOutlined style={{ marginRight: 4 }} />API Base URL (OpenAI兼容)</span>}
               name="base_url"
               style={{ marginBottom: 16 }}
-              rules={[{ required: true, message: '自定义模式需要填写Base URL' }]}
+              rules={[
+                { required: true, message: '自定义模式需要填写Base URL' },
+                { pattern: /\/v1\/?$/, message: 'Base URL 通常以 /v1 结尾，如 https://api.siliconflow.cn/v1' },
+              ]}
+              extra={<span style={{ fontSize: 11, color: '#8B9DAF' }}>OpenAI 兼容接口地址，以 /v1 结尾。例如：https://api.siliconflow.cn/v1</span>}
             >
-              <Input placeholder="https://your-endpoint.com/v1" style={{ maxWidth: 500, borderRadius: 2 }} />
+              <Input placeholder="https://api.siliconflow.cn/v1" style={{ maxWidth: 500, borderRadius: 2 }} />
             </Form.Item>
           </>
         )}
@@ -441,6 +450,9 @@ const UniversalConfigCard: React.FC<UniversalConfigCardProps> = ({
                 if (checked) {
                   setSelectedProvider('custom');
                   form.setFieldValue('provider', 'custom');
+                  if (!form.getFieldValue('base_url')) {
+                    form.setFieldValue('base_url', 'https://api.siliconflow.cn/v1');
+                  }
                 }
               }}
             />
@@ -481,17 +493,21 @@ const StageConfigCard: React.FC<StageConfigCardProps> = ({
 
   const info = STAGE_INFO[stageKey] || { label: stageKey, desc: '' };
 
+  // Destructure to stable values so useEffect only fires when actual data changes,
+  // not when parent re-renders and creates a new stageData object reference
+  const { provider: sdProvider, model: sdModel, base_url: sdBaseUrl } = stageData;
+
   useEffect(() => {
-    const isCustom = stageData.provider === 'custom' || !PROVIDER_PRESETS[stageData.provider];
+    const isCustom = sdProvider === 'custom' || !PROVIDER_PRESETS[sdProvider];
     setCustomMode(isCustom);
-    setSelectedProvider(isCustom ? 'custom' : stageData.provider);
+    setSelectedProvider(isCustom ? 'custom' : sdProvider);
     form.setFieldsValue({
-      provider: isCustom ? 'custom' : stageData.provider,
-      model: stageData.model,
+      provider: isCustom ? 'custom' : sdProvider,
+      model: sdModel,
       api_key: '',
-      base_url: stageData.base_url || '',
+      base_url: sdBaseUrl || '',
     });
-  }, [stageData, form]);
+  }, [sdProvider, sdModel, sdBaseUrl, form]);
 
   const preset = PROVIDER_PRESETS[selectedProvider];
   const modelOptions = preset?.models || [];
@@ -525,6 +541,9 @@ const StageConfigCard: React.FC<StageConfigCardProps> = ({
                 if (checked) {
                   setSelectedProvider('custom');
                   form.setFieldValue('provider', 'custom');
+                  if (!form.getFieldValue('base_url')) {
+                    form.setFieldValue('base_url', 'https://api.siliconflow.cn/v1');
+                  }
                 }
               }}
             />
@@ -590,10 +609,14 @@ const StageConfigCard: React.FC<StageConfigCardProps> = ({
               }
               name="base_url"
               style={{ marginBottom: 16 }}
-              rules={[{ required: true, message: '自定义模式需要填写Base URL' }]}
+              rules={[
+                { required: true, message: '自定义模式需要填写Base URL' },
+                { pattern: /\/v1\/?$/, message: 'Base URL 通常以 /v1 结尾，如 https://api.siliconflow.cn/v1' },
+              ]}
+              extra={<span style={{ fontSize: 11, color: '#8B9DAF' }}>OpenAI 兼容接口地址，以 /v1 结尾。例如：https://api.siliconflow.cn/v1</span>}
             >
               <Input
-                placeholder="https://your-endpoint.com/v1"
+                placeholder="https://api.siliconflow.cn/v1"
                 style={{ maxWidth: 500, borderRadius: 2 }}
               />
             </Form.Item>
