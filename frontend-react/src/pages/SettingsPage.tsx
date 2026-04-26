@@ -4,7 +4,7 @@
    ============================================================ */
 
 import React, { useEffect, useState } from 'react';
-import { Form, Select, Input, Button, message, Card, Space, Typography, Divider, Switch, Radio, Alert } from 'antd';
+import { Form, Select, Input, Button, message, Card, Space, Typography, Switch, Radio, Alert, AutoComplete } from 'antd';
 import { KeyOutlined, SaveOutlined, ApiOutlined, ThunderboltOutlined, ExperimentOutlined, CheckCircleFilled, WarningFilled } from '@ant-design/icons';
 import { getModelConfig, updateModelConfig } from '../api/client';
 import type { PipelineModelConfig, StageModelConfig } from '../types';
@@ -368,11 +368,14 @@ const UniversalConfigCard: React.FC<UniversalConfigCardProps> = ({
               </Select>
             </Form.Item>
             <Form.Item label="模型" name="model" style={{ flex: 1, marginBottom: 16 }}>
-              <Select showSearch allowClear={false}>
-                {modelOptions.map(m => (
-                  <Select.Option key={m} value={m}>{m}</Select.Option>
-                ))}
-              </Select>
+              <AutoComplete
+                options={modelOptions.map(m => ({ value: m }))}
+                placeholder="选择或输入模型名称"
+                filterOption={(input, option) =>
+                  (option?.value as string)?.toLowerCase().includes(input.toLowerCase())
+                }
+                style={{ width: '100%' }}
+              />
             </Form.Item>
           </Space>
         ) : (
@@ -538,23 +541,14 @@ const StageConfigCard: React.FC<StageConfigCardProps> = ({
               </Form.Item>
 
               <Form.Item label="模型" name="model" style={{ flex: 1, marginBottom: 16 }}>
-                <Select
-                  showSearch
-                  allowClear={false}
-                  dropdownRender={(menu) => (
-                    <>
-                      {menu}
-                      <Divider style={{ margin: '4px 0' }} />
-                      <Text style={{ padding: '4px 12px', fontSize: 12, color: '#8B9DAF', display: 'block' }}>
-                        可直接输入未列出的模型名
-                      </Text>
-                    </>
-                  )}
-                >
-                  {modelOptions.map((m) => (
-                    <Select.Option key={m} value={m}>{m}</Select.Option>
-                  ))}
-                </Select>
+                <AutoComplete
+                  options={modelOptions.map(m => ({ value: m }))}
+                  placeholder="选择或输入模型名称"
+                  filterOption={(input, option) =>
+                    (option?.value as string)?.toLowerCase().includes(input.toLowerCase())
+                  }
+                  style={{ width: '100%' }}
+                />
               </Form.Item>
             </Space>
           </>
