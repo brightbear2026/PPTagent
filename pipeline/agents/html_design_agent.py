@@ -702,6 +702,53 @@ class HTMLDesignAgent:
                 "annotations": annotations or ["关键趋势"],
             }
 
+        # 1b. Diagram with structure → map diagram_type to template
+        diagram = slide_data.get("diagram_spec")
+        if isinstance(diagram, dict) and diagram.get("diagram_type"):
+            dt = diagram["diagram_type"]
+            _DIAGRAM_TEMPLATE_MAP = {
+                "process_flow": "timeline_horizontal",
+                "architecture": "architecture_stack",
+                "framework": "quadrant_matrix",
+                "relationship": "role_columns",
+            }
+            tmpl = _DIAGRAM_TEMPLATE_MAP.get(dt, "framework_grid")
+            logger.info("diagram_type=%s → template=%s", dt, tmpl)
+            return self._build_slots_for_template(tmpl, slide_data, body_blocks, bold_blocks, title)
+
+        # 1c. Visual block with data → map type to template
+        vblock = slide_data.get("visual_block")
+        if isinstance(vblock, dict) and vblock.get("type"):
+            vb_type = vblock["type"]
+            items = vblock.get("items", [])
+            if vb_type in ("kpi_cards", "stat_highlight") and items:
+                metrics = []
+                for item in items[:4]:
+                    metrics.append({
+                        "label": item.get("title", item.get("description", "")),
+                        "value": item.get("value", ""),
+                        "unit": "",
+                        "note": item.get("description", item.get("trend", "")),
+                    })
+                logger.info("visual_block type=%s → content_key_metrics (%d items)", vb_type, len(metrics))
+                return "content_key_metrics", {"title": title, "metrics": metrics}
+            elif vb_type == "icon_text_grid" and items:
+                logger.info("visual_block type=icon_text_grid → icon_grid (%d items)", len(items))
+                return "icon_grid", {"title": title, "items": items}
+            elif vb_type == "step_cards" and items:
+                logger.info("visual_block type=step_cards → timeline_horizontal (%d items)", len(items))
+                phases = []
+                for idx, item in enumerate(items[:5]):
+                    phases.append({
+                        "label": item.get("label", f"步骤{idx+1}"),
+                        "title": item.get("title", item.get("name", ""))[:20],
+                        "desc": item.get("description", item.get("desc", ""))[:40],
+                    })
+                return "timeline_horizontal", {"title": title, "phases": phases}
+            elif vb_type == "comparison_columns" and items:
+                logger.info("visual_block type=comparison_columns → content_two_column")
+                return self._build_slots_for_template("content_two_column", slide_data, body_blocks, bold_blocks, title)
+
         n_blocks = len(body_blocks)
 
         # 2. Comparison intent → content_two_column
@@ -848,6 +895,29 @@ class HTMLDesignAgent:
                 content = b.get("content", "") if isinstance(b, dict) else str(b)
                 phases.append({"label": f"阶段{idx+1}", "title": content[:20], "desc": content[:40]})
             return template_id, {"title": title, "phases": phases or [{"label": "阶段1", "title": title, "desc": ""}]}
+
+        if template_id == "architecture_stack":
+            layers = []
+            for idx, b in enumerate(body_blocks[:5]):
+                content = b.get("content", "") if isinstance(b, dict) else str(b)
+                layers.append({"name": content[:15], "desc": content[:40]})
+            return template_id, {"title": title, "layers": layers or [{"name": "Layer 1", "desc": ""}]}
+
+        if template_id == "quadrant_matrix":
+            cells = []
+            for idx, b in enumerate(body_blocks[:4]):
+                content = b.get("content", "") if isinstance(b, dict) else str(b)
+                cells.append({"label": f"象限{idx+1}", "items": [content[:30]]})
+            while len(cells) < 4:
+                cells.append({"label": "", "items": []})
+            return template_id, {"title": title, "x_label": "维度A", "y_label": "维度B", "cells": cells}
+
+        if template_id == "role_columns":
+            roles = []
+            for idx, b in enumerate(body_blocks[:4]):
+                content = b.get("content", "") if isinstance(b, dict) else str(b)
+                roles.append({"name": content[:10], "subtitle": "", "bullets": [content[:30]]})
+            return template_id, {"title": title, "roles": roles or [{"name": "角色1", "subtitle": "", "bullets": []}]}
 
         # Default: content_bullets
         bullets = []

@@ -575,6 +575,16 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
                 entry["error"] = page.get("error", "")
             slides.append(entry)
 
+        # Temporary: dump visual field fill rates
+        total = len(slides)
+        chart_count = sum(1 for s in slides if s.get("chart_suggestion"))
+        diagram_count = sum(1 for s in slides if s.get("diagram_spec"))
+        visual_block_count = sum(1 for s in slides if s.get("visual_block"))
+        logger.info(
+            "CONTENT_VISUAL_RATES total=%d chart=%d diagram=%d visual_block=%d",
+            total, chart_count, diagram_count, visual_block_count,
+        )
+
         return {"slides": slides}
 
 
