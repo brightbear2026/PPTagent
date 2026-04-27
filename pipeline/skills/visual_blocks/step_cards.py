@@ -33,7 +33,8 @@ class StepCardsSkill(RenderingSkill):
         return """**step_cards**（3-6个步骤）
   items字段: title, description
   设计理念: 步骤间视觉间隔清晰，编号+箭头引导视线
-  质量要求: title ≤6字，description ≤20字，步骤之间有因果或时序关系"""
+  质量要求: title ≤6字，description ≤20字，步骤之间有因果或时序关系
+  反模式: 不要用于无顺序关系的并列要点（用icon_text_grid）；不要用于仅2个步骤（用comparison_columns）"""
 
     def design_tokens(self) -> dict:
         return {

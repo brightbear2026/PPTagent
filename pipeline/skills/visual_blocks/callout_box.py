@@ -31,7 +31,8 @@ class CalloutBoxSkill(RenderingSkill):
         return """**callout_box**（关键洞察/金句）
   items字段: title, description
   设计理念: 引用的力量——大引号+斜体+色条，让洞察成为视觉焦点
-  质量要求: description是一个完整的洞察句，不是标题短语"""
+  质量要求: description是一个完整的洞察句，不是标题短语
+  反模式: 不要用于列举多个要点；不要用于数据展示（用kpi_cards或chart）；仅用于单条洞察/金句"""
 
     def design_tokens(self) -> dict:
         return {

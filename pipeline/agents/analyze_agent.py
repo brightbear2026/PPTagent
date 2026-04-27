@@ -30,7 +30,7 @@ class AnalyzeAgent(StructuredLLMAgent):
 
     max_validation_retries = 2
     temperature = 0.4
-    max_tokens = 4096
+    max_tokens = 6144
 
     def __init__(self, llm_client):
         super().__init__(llm_client)
@@ -55,13 +55,23 @@ class AnalyzeAgent(StructuredLLMAgent):
         # 章节标题列表（不铺全文，避免 token 爆炸）
         section_lines = [
             f"  {i+1}. {sp.get('title', '')}（{len(sp.get('content',''))}字）"
-            for i, sp in enumerate(source_pages[:25])
+            for i, sp in enumerate(source_pages[:50])
         ]
         sections_text = "\n".join(section_lines) if section_lines else "（无结构化章节）"
 
-        # 文档前1500字作为内容概要
+        # 智能文档预览：每个章节均匀采样，覆盖全部章节
         raw_text = raw.get("_raw_text", "")
-        doc_preview = raw_text[:1500] if raw_text else ""
+        if source_pages:
+            max_total = 6000
+            per_section = max(300, max_total // max(len(source_pages), 1))
+            parts = []
+            for sp in source_pages:
+                title = sp.get("title", "")
+                content = sp.get("content", "")
+                parts.append(f"【{title}】\n{content[:per_section]}")
+            doc_preview = "\n\n".join(parts)
+        else:
+            doc_preview = raw_text[:6000] if raw_text else ""
 
         # 表格清单（只列表头，不铺行数据）
         table_lines = [
@@ -80,7 +90,7 @@ class AnalyzeAgent(StructuredLLMAgent):
 ## 文档章节结构（共{len(source_pages)}个章节）
 {sections_text}
 
-## 文档内容概要（前1500字）
+## 文档内容概要（按章节均匀采样）
 {doc_preview}
 
 ## 数据表格（共{len(tables)}个）

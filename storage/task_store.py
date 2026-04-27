@@ -434,6 +434,21 @@ class TaskStore:
             conn.commit()
         return True
 
+    def reset_stages_list(self, task_id: str, stage_list: list) -> bool:
+        """Reset only the specified stages (does NOT include from_stage itself)."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                for stage in stage_list:
+                    cur.execute("""
+                        UPDATE pipeline_stages
+                        SET status = 'pending', result = NULL, error = NULL,
+                            started_at = NULL, completed_at = NULL,
+                            generation = 0
+                        WHERE task_id = %s AND stage = %s
+                    """, (task_id, stage))
+            conn.commit()
+        return True
+
     def get_latest_completed_stage(self, task_id: str) -> Optional[str]:
         stages = self.get_stages(task_id)
         latest = None

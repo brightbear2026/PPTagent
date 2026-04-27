@@ -35,7 +35,8 @@ class KpiCardsSkill(RenderingSkill):
         return """**kpi_cards**（2-4个关键指标）
   items字段: title, value, description, trend(up/down/flat)
   设计理念: 少即是多——大字号突出数值，小字号标注含义
-  质量要求: value必须简短（"32%"、"1.56亿"），不写成句子；4个KPI之间要有逻辑关联，不是随机拼凑"""
+  质量要求: value必须简短（"32%"、"1.56亿"），不写成句子；4个KPI之间要有逻辑关联，不是随机拼凑
+  反模式: 不要用于仅1个指标（用stat_highlight）；不要用于超过4个指标（用表格或拆分多页）"""
 
     def design_tokens(self) -> dict:
         return {

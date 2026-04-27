@@ -153,10 +153,10 @@ class ChartSkill(RenderingSkill):
             chart.has_title = False
 
     def _apply_colors(self, chart, spec: ChartSpec, palette: list, theme: VisualTheme):
-        """应用主题配色"""
+        """应用主题配色 — 主色系 + 强调色方案"""
         plot = chart.plots[0]
         if spec.chart_type == ChartType.PIE:
-            self._apply_pie_colors(plot, palette)
+            self._apply_pie_colors(plot, spec, palette)
         else:
             for i, series in enumerate(plot.series):
                 color_str = ""
@@ -168,12 +168,28 @@ class ChartSkill(RenderingSkill):
                     series.format.fill.solid()
                     series.format.fill.fore_color.rgb = parse_color(color_str)
 
-    def _apply_pie_colors(self, plot, palette: list):
-        """饼图逐点着色"""
+    def _apply_pie_colors(self, plot, spec: ChartSpec, palette: list):
+        """饼图逐点着色 — 最大扇区用强调色，其余用主色系变体"""
         try:
             pie_series = plot.series[0]
+            # 找到最大值扇区
+            max_idx = 0
+            max_val = float("-inf")
             for i, point in enumerate(pie_series.points):
-                if i < len(palette):
+                try:
+                    val = point.data_point.value
+                    if val is not None and float(val) > max_val:
+                        max_val = float(val)
+                        max_idx = i
+                except Exception:
+                    pass
+
+            accent = palette[4] if len(palette) > 4 else ""
+            for i, point in enumerate(pie_series.points):
+                if i == max_idx and accent:
+                    point.format.fill.solid()
+                    point.format.fill.fore_color.rgb = parse_color(accent)
+                elif i < len(palette):
                     point.format.fill.solid()
                     point.format.fill.fore_color.rgb = parse_color(palette[i])
         except Exception:
@@ -205,7 +221,8 @@ class ColumnChartSkill(ChartSkill):
     _handles_type = "column"
 
     def prompt_fragment(self) -> str:
-        return """| 多时期对比 | column | 时间从左到右；同比增长用颜色深浅区分 |"""
+        return """| 多时期对比 | column | 时间从左到右；同比增长用颜色深浅区分 |
+  反模式: 不要用于≤3个数据点（用kpi_cards展示更直观）；不要用于排名（用bar）"""
 
     def _customize(self, chart, spec, chart_frame, rect, theme, all_values):
         try:
@@ -219,7 +236,8 @@ class BarChartSkill(ChartSkill):
     _handles_type = "bar"
 
     def prompt_fragment(self) -> str:
-        return """| 跨组排名 | bar | 必须按数值降序排列；用灰色+一个强调色突出关键条 |"""
+        return """| 跨组排名 | bar | 必须按数值降序排列；用灰色+一个强调色突出关键条 |
+  反模式: 不要用于时间序列（用column或line）；不要用于≤3个类别（用kpi_cards）"""
 
     def render(self, slide, data: ChartSpec, rect, theme: VisualTheme) -> bool:
         """bar 图：categories 按数值降序排列"""
@@ -250,7 +268,8 @@ class LineChartSkill(ChartSkill):
     _handles_type = "line"
 
     def prompt_fragment(self) -> str:
-        return """| 时间序列趋势 | line | 趋势是主角；标注拐点和终点，不标每个点 |"""
+        return """| 时间序列趋势 | line | 趋势是主角；标注拐点和终点，不标每个点 |
+  反模式: 不要用于≤3个时间点（用column）；不要用于无序类别（用bar）"""
 
 
 class PieChartSkill(ChartSkill):
@@ -258,7 +277,8 @@ class PieChartSkill(ChartSkill):
     _handles_type = "pie"
 
     def prompt_fragment(self) -> str:
-        return """| 各项占比 | pie | ≤5项用饼图，>5项改bar降序；最大项用强调色 |"""
+        return """| 各项占比 | pie | ≤5项用饼图，>5项改bar降序；最大项用强调色 |
+  反模式: 不要用于>5个类别（必须改用bar降序）；不要用于时间序列（用line或column）"""
 
     def render(self, slide, data: ChartSpec, rect, theme: VisualTheme) -> bool:
         """pie 图：>5 项时合并尾部为"其他" """
@@ -295,10 +315,18 @@ class AreaChartSkill(ChartSkill):
     _xl_chart_type = XL_CHART_TYPE.AREA
     _handles_type = "area"
 
+    def prompt_fragment(self) -> str:
+        return """| 累积量趋势 | area | 适合展示总量变化过程 |
+  反模式: 不要用于离散类别（用column）；数据点少时不如line清晰"""
+
 
 class ScatterChartSkill(ChartSkill):
     _xl_chart_type = XL_CHART_TYPE.XY_SCATTER
     _handles_type = "scatter"
+
+    def prompt_fragment(self) -> str:
+        return """| 相关性分布 | scatter | 适合展示两个变量的相关关系 |
+  反模式: 不要用于≤8个数据点（用column或kpi_cards）；不要用于时间序列（用line）"""
 
 
 class WaterfallChartSkill(ChartSkill):
@@ -307,7 +335,8 @@ class WaterfallChartSkill(ChartSkill):
     _handles_type = "waterfall"
 
     def prompt_fragment(self) -> str:
-        return """| 增减分析 | waterfall | 正值绿、负值红、累计灰；终值单独标注 |"""
+        return """| 增减分析 | waterfall | 正值绿、负值红、累计灰；终值单独标注 |
+  反模式: 不要用于无累计意义的类别（如不同产品线对比，用column）；必须有序列累加逻辑"""
 
     def render(self, slide, data: ChartSpec, rect, theme: VisualTheme) -> bool:
         if not data.series:
@@ -412,7 +441,8 @@ class ComboChartSkill(ChartSkill):
     _handles_type = "combo"
 
     def prompt_fragment(self) -> str:
-        return """| 多指标叠加 | combo | 主指标柱状+次指标折线；图例必须清晰 |"""
+        return """| 多指标叠加 | combo | 主指标柱状+次指标折线；图例必须清晰 |
+  反模式: 不要用于单一指标（用column或line）；不要用于>3个系列（视觉混乱，拆分多页）"""
 
     def _customize(self, chart, spec, chart_frame, rect, theme, all_values):
         # 组合图用区分度更高的配色

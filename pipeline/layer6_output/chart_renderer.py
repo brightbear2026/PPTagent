@@ -113,6 +113,9 @@ class ChartRenderer:
             print("[ChartRenderer] plotly未安装，降级到native渲染")
             return False
 
+        if theme is None:
+            theme = self._default_theme()
+
         chart_type = chart_spec.chart_type
 
         try:
@@ -202,9 +205,7 @@ class ChartRenderer:
         """构建组合图 Plotly figure"""
         import plotly.graph_objects as go
 
-        palette = theme.colors.get("chart_palette", [
-            "#003D6E", "#FF6B35", "#4CAF50", "#9C27B0", "#FF9800"
-        ])
+        palette = theme.colors.get("chart_palette", [])
 
         fig = go.Figure()
 
@@ -243,9 +244,7 @@ class ChartRenderer:
         """通用柱状图 fallback"""
         import plotly.graph_objects as go
 
-        palette = theme.colors.get("chart_palette", [
-            "#003D6E", "#FF6B35", "#4CAF50", "#9C27B0", "#FF9800"
-        ])
+        palette = theme.colors.get("chart_palette", [])
 
         fig = go.Figure()
         for i, series in enumerate(spec.series):
@@ -393,7 +392,7 @@ class ChartRenderer:
                 chart_spec = ChartSpec.from_dict(raw)
             else:
                 continue
-            slide_theme = data.get("theme") or theme
+            slide_theme = data.get("theme") or theme or self._default_theme()
 
             for ph_item in ph_entry.get("items", []):
                 x_in = ph_item.get("x", 1)
@@ -438,6 +437,21 @@ class ChartRenderer:
 
         prs.save(output_path)
         return output_path
+
+    @staticmethod
+    def _default_theme():
+        """当 theme为 None 时提供默认颜色/字体，避免 Plotly 崩溃"""
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            colors={
+                "primary": "#003D6E",
+                "accent": "#FF6B35",
+                "text_primary": "#333333",
+                "text_secondary": "#666666",
+                "chart_palette": ["#003D6E", "#FF6B35", "#70AD47", "#FFC000", "#5B9BD5", "#C00000"],
+            },
+            fonts={"body": "Calibri", "heading": "Calibri"},
+        )
 
     @staticmethod
     def _parse_color(hex_color: str):

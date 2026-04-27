@@ -34,7 +34,8 @@ class StatHighlightSkill(RenderingSkill):
         return """**stat_highlight**（单个震撼数字）
   items字段: value, title, description
   设计理念: 一句话胜千言——超大字号展示唯一数字，其余弱化
-  质量要求: 仅用于全篇最震撼的1个数字；description说明为什么这个数字重要"""
+  质量要求: 仅用于全篇最震撼的1个数字；description说明为什么这个数字重要
+  反模式: 不要用于多个数字并列展示（用kpi_cards）；不要用于普通增幅（如+5%），仅用于戏剧性数字（+200%、亏损转盈利、行业第一）"""
 
     def design_tokens(self) -> dict:
         return {

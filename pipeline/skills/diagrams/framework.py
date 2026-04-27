@@ -30,7 +30,8 @@ class FrameworkSkill(RenderingSkill):
 
     def prompt_fragment(self) -> str:
         return """**framework**（框架图）:
-  约束: matrix_2x2必须4象限全填；pyramid ≤5层；funnel ≤6层且每层宽度要有实际含义"""
+  约束: matrix_2x2必须4象限全填；pyramid ≤5层；funnel ≤6层且每层宽度要有实际含义
+  反模式: 不要用于有明确因果顺序的内容（用process_flow）；matrix象限内容不对称时效果差"""
 
     def design_tokens(self) -> dict:
         return {

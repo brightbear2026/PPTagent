@@ -35,7 +35,8 @@ class IconTextGridSkill(RenderingSkill):
         return """**icon_text_grid**（4-6个并列要点）
   items字段: title, description
   设计理念: 信息平铺——每格一个核心观点，避免长段落
-  质量要求: 所有title等长（字数相近），description控制在15字以内"""
+  质量要求: 所有title等长（字数相近），description控制在15字以内
+  反模式: 不要用于2-3个要点（用callout_box或bullet列表）；不要用于有因果/时序关系的步骤（用step_cards）"""
 
     def design_tokens(self) -> dict:
         return {

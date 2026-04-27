@@ -707,8 +707,18 @@ async def resume_pipeline(
         raise HTTPException(status_code=400, detail=f"任务状态为 {task['status']}，无法恢复")
 
     if from_stage:
-        # 重置从指定阶段开始
-        store.reset_stages_from(task_id, from_stage)
+        # 只重置下游阶段，不重置 from_stage 本身，不启动后台重跑
+        # 用户回到大纲编辑时，大纲数据应保留，等用户编辑完点 confirm 再跑
+        from storage import PIPELINE_STAGES
+        from_idx = PIPELINE_STAGES.index(from_stage) if from_stage in PIPELINE_STAGES else -1
+        downstream = PIPELINE_STAGES[from_idx + 1:] if from_idx >= 0 else []
+        if downstream:
+            store.reset_stages_list(task_id, downstream)
+        return {
+            "task_id": task_id,
+            "message": f"下游阶段已重置",
+            "status_url": f"/api/status/{task_id}"
+        }
     else:
         # 找到第一个pending的阶段
         stages = store.get_stages(task_id)

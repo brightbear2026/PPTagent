@@ -32,7 +32,7 @@ class ContentAgent(StructuredLLMAgent):
 
     MAX_CONCURRENT = 4
     temperature = 0.6
-    max_tokens = 1800  # 单页输出，不触发 finish_reason=length
+    max_tokens = 3000  # 单页输出，足够容纳丰富内容
 
     def __init__(self, llm_client):
         super().__init__(llm_client)
@@ -161,9 +161,10 @@ class ContentAgent(StructuredLLMAgent):
 
             has_chart   = any(s.get("primary_visual") == "chart"   for s in slides)
             has_diagram = any(s.get("primary_visual") == "diagram" for s in slides)
+            has_tables  = bool(raw.get("_tables"))
 
             parts = []
-            if has_chart:
+            if has_chart or has_tables:
                 g = registry.get_prompt_fragments("chart")
                 if g:
                     parts.append(f"### 可用图表类型（chart_suggestion.chart_type）\n{g}")
@@ -180,11 +181,57 @@ class ContentAgent(StructuredLLMAgent):
             logger.debug(f"[ContentAgent] SkillRegistry 加载失败（非致命）: {_e}")
 
         # 始终准备 raw_text fallback（关键词匹配全部失败时的最后保底）
-        raw_text_fallback = (raw.get("raw_text", "") or "")[:4000]
+        raw_text_fallback = (raw.get("_raw_text", "") or "")[:6000]
 
         # chunks：来自 analyze 阶段，带 id 字段，供 chunk_ids 精确查找
         analysis = context.get("analysis", {})
         chunks = analysis.get("chunks", [])
+
+        # 全局叙事上下文（从 PlanAgent outline 提取）
+        narrative_ctx = ""
+        scqa = outline.get("scqa")
+        if scqa and isinstance(scqa, dict):
+            parts = [f"  {k}: {v}" for k, v in scqa.items() if v]
+            if parts:
+                narrative_ctx += "\n## 叙事框架\n" + "\n".join(parts) + "\n"
+
+        # 全局分析上下文（从 AnalyzeAgent strategy 提取）
+        strategy = analysis.get("strategy", {})
+        if strategy.get("core_themes"):
+            narrative_ctx += (
+                "\n## 核心主题\n"
+                + "\n".join(f"  - {t}" for t in strategy["core_themes"][:7])
+                + "\n"
+            )
+        if strategy.get("key_messages"):
+            narrative_ctx += (
+                "\n## 关键信息\n"
+                + "\n".join(f"  - {m}" for m in strategy["key_messages"][:5])
+                + "\n"
+            )
+
+        # 预计算指标（AnalyzeAgent 产出但从未消费的真实数据）
+        metrics_text = ""
+        derived = analysis.get("derived_metrics", [])
+        if derived:
+            lines = []
+            for m in derived[:15]:
+                name = m.get("name", "")
+                val = m.get("formatted_value", m.get("value", ""))
+                src = m.get("source_table", "")
+                if name and val:
+                    lines.append(f"  {name}: {val}" + (f"（来源: {src}）" if src else ""))
+            if lines:
+                metrics_text = "\n## 已验证的真实数据指标（可直接引用，禁止编造类似数字）\n" + "\n".join(lines) + "\n"
+
+        if narrative_ctx or metrics_text:
+            logger.info(
+                f"[ContentAgent] 注入全局叙事上下文: "
+                f"scqa={'yes' if scqa else 'no'}, "
+                f"themes={len(strategy.get('core_themes', []))}, "
+                f"messages={len(strategy.get('key_messages', []))}, "
+                f"derived_metrics={len(derived)}"
+            )
 
         return {
             "task": task,
@@ -194,11 +241,24 @@ class ContentAgent(StructuredLLMAgent):
             "skill_section": skill_section,
             "raw_text_fallback": raw_text_fallback,
             "chunks": chunks,
+            "narrative_ctx": narrative_ctx,
+            "metrics_text": metrics_text,
         }
 
     # ------------------------------------------------------------------
     # 单页生成（线程安全，无共享状态写入）
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _weight_guide(slide: Dict) -> str:
+        w = slide.get("page_weight", "pillar")
+        if w == "hero":
+            return "\n⚠️ 这是全篇核心论点页（hero）。text_blocks 最多3条，必须包含一个震撼数字作为primary_metric。其余数字用stat_highlight呈现，视觉占比≥70%。"
+        elif w == "transition":
+            return "\n这是过渡页。text_blocks 最多2条，极简。不需要chart/diagram/visual_block。"
+        elif w == "evidence":
+            return "\n这是数据展示页。可以信息密集，但必须指定一个primary_metric，其他数字的视觉权重显著低于它。"
+        return ""
 
     def _build_slide_messages(
         self, slide: Dict, prev_slide: Optional[Dict], shared: Dict
@@ -221,12 +281,14 @@ class ContentAgent(StructuredLLMAgent):
                 f"P{prev_slide.get('page_number')}: {prev_title} | {prev_kw}\n"
             )
 
-        # 材料注入：chart 页优先注入表格；无表格或非 chart 页改用章节文本；均无则 raw_text 保底
+        # 材料注入：chart 页优先注入表格；非 chart 页在数据相关时也注入
         material_text = ""
-        if pv == "chart" and shared["tables"]:
+        table_injected = False
+        if shared["tables"]:
             chart_data = self._find_chart_table(slide, shared["tables"])
             if chart_data:
                 material_text = f"\n## 数据表格（直接使用，禁止编造数字）\n{chart_data}\n"
+                table_injected = True
         if not material_text:
             section_text = self._get_slide_context(slide, shared)
             if section_text:
@@ -235,12 +297,26 @@ class ContentAgent(StructuredLLMAgent):
                 material_text = f"\n## 原文材料（节选）\n{shared['raw_text_fallback']}\n"
 
         # 视觉要求
-        has_table_data = bool(pv == "chart" and shared["tables"] and material_text.startswith("\n## 数据表格"))
+        has_table_data = bool(table_injected)
         if pv == "chart":
             visual_req = (
                 "⚠️ chart_suggestion 必须填写（使用上方表格数据，chart_type 使用合法值）"
                 if has_table_data
-                else "⚠️ chart_suggestion 必须填写（从原文材料中提炼数据，chart_type 使用合法值）"
+                else (
+                    "⚠️ chart_suggestion 必须填写。请从上方原文材料中提炼可量化的数据构建图表。\n"
+                    "提炼方法：找出文本中的具体数字（百分比、金额、数量、增长率等），"
+                    "组织为 categories（分类/时间）+ series（指标名 + 数值）。\n"
+                    "如果原文确实无数值可提炼，chart_suggestion.categories 和 series.values "
+                    "可以用定性等级（高/中/低→3/2/1）构建对比图。\n"
+                    "禁止编造不存在的数字——只使用原文明确提及的数据。"
+                )
+            )
+        elif has_table_data:
+            visual_req = (
+                "上游已标记本页为 text_only，但下方注入了相关数据表格——上游可能漏判了图表机会。\n"
+                "请你判断：表格数据是否包含明确的对比/趋势/占比关系？\n"
+                "- 如果是：填写 chart_suggestion（chart_type 使用合法值）\n"
+                "- 如果否（数据是参考性的，不是论点支撑）：设为 null"
             )
         elif pv == "diagram":
             visual_req = "⚠️ diagram_spec 必须填写（diagram_type 使用合法值）"
@@ -249,20 +325,16 @@ class ContentAgent(StructuredLLMAgent):
         else:
             visual_req = "chart_suggestion、diagram_spec、visual_block 均设为 null"
 
-        # Layout hint guidance
-        layout_hint = slide.get("layout_hint", "")
-        layout_guide = ""
-        if layout_hint:
-            _LAYOUT_GUIDES = {
-                "comparison": "本页为两方对比布局，text_blocks 应分为两组（如：前半部分描述方案A，后半部分描述方案B），每组各含2-4条要点。",
-                "metrics": "本页为数据指标布局，text_blocks 应包含3-4个含具体数字的要点（百分比、金额、倍数等），每条一句话。",
-                "chart_focus": "本页以图表为主，text_blocks 应提供2-3条图表解读/标注（每条≤80字），补充 chart_suggestion。",
-                "quote_emphasis": "本页强调单一核心结论，第1条 text_block 应为核心结论（≤60字），后续2-3条为支撑论据。",
-                "framework_grid": "本页为2×2象限/分层架构布局，text_blocks 应按象限或层级组织，每部分1-2条描述。",
-                "narrative": "本页为时间线/流程布局，text_blocks 应按阶段/步骤顺序排列，每阶段1-2条要点。",
-                "parallel_points": "本页为并列论据布局，text_blocks 应包含3-5条独立并列的论据，每条一句话。",
-            }
-            layout_guide = f"\n## 布局指导（layout_hint={layout_hint}）\n{_LAYOUT_GUIDES.get(layout_hint, '')}\n"
+        # Layout hint guidance — from shared capacity model
+        from models.template_capacity import LAYOUT_CAPACITIES, DEFAULT_LAYOUT
+        layout_hint = slide.get("layout_hint", DEFAULT_LAYOUT)
+        cap = LAYOUT_CAPACITIES.get(layout_hint, LAYOUT_CAPACITIES[DEFAULT_LAYOUT])
+        layout_guide = (
+            f"\n## 显示容量约束（必须遵守）\n"
+            f"- 布局: {cap['description']}\n"
+            f"- {cap['content_instruction']}\n"
+            f"- 严格遵守上述数量和字数限制，超出部分无法显示\n"
+        )
 
         user_msg = f"""请为以下单个PPT页面生成内容。
 
@@ -270,8 +342,10 @@ class ContentAgent(StructuredLLMAgent):
 - 页码: P{pn} | 类型: {st} | 视觉: {pv}
 - 标题: {title}
 - 核心观点: {takeaway}
+- 叙事角色: {slide.get('narrative_arc', '未指定')}
+- 所属章节: {slide.get('section', '未指定')}
 - 目标受众: {task.get('target_audience', '管理层')}
-{prev_ctx}{material_text}{shared.get('skill_section', '')}{layout_guide}---
+{self._weight_guide(slide)}{prev_ctx}{material_text}{shared.get('narrative_ctx', '')}{shared.get('metrics_text', '')}{shared.get('skill_section', '')}{layout_guide}---
 {visual_req}
 text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
 
@@ -352,7 +426,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         if bound_ids:
             relevant = [c for c in shared.get("chunks", []) if c.get("id") in bound_ids]
             if relevant:
-                return "\n\n".join(c.get("text", c.get("content", "")) for c in relevant[:3])
+                return "\n\n".join(c.get("text", c.get("content", "")) for c in relevant[:5])
         # 降级：bigram 搜索
         return ContentAgent._find_best_section(slide, shared["source_pages"])
 
@@ -385,7 +459,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         if hint:
             for sp in source_pages:
                 if (sp.get("title") or "").strip() == hint.strip():
-                    return sp.get("content", "")[:1500]
+                    return sp.get("content", "")[:3000]
 
         kw_list = ContentAgent._extract_kw(f"{title} {section} {takeaway} {hint}")
         if not kw_list:
@@ -406,9 +480,9 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
         best_score, best = scored[0]
         threshold = best_score * 0.6
 
-        parts = [best.get("content", "")[:1500]]
+        parts = [best.get("content", "")[:3000]]
         if len(scored) > 1 and scored[1][0] >= threshold:
-            parts.append(scored[1][1].get("content", "")[:800])
+            parts.append(scored[1][1].get("content", "")[:1500])
 
         return "\n---\n".join(parts)
 
@@ -430,9 +504,22 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
             scored.append((score, i, t))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+        best_score, best_idx, t1 = scored[0]
+
+        if best_score == 0:
+            logger.info(
+                f"[ChartTable] 无关键词匹配（任意选取） | slide={slide.get('page_number')} "
+                f"data_source={data_source!r} title={title!r}"
+            )
+        else:
+            logger.debug(
+                f"[ChartTable] 匹配成功 | slide={slide.get('page_number')} "
+                f"score={best_score} tables={len(tables)} best_idx={best_idx}"
+            )
+
         result_parts = []
 
-        _, _, t1 = scored[0]
+        _, _, t1 = scored[0]  # best_idx, t1 already unpacked above
         headers1 = t1.get("headers", [])
         rows1 = t1.get("rows", [])
         lines = [f"📊 主表格「{t1.get('source_sheet', '')}」({len(rows1)}行，直接使用以下数字，禁止编造):"]
@@ -522,7 +609,7 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
             "visual_block": None,
             "visual_hint": "",
             "is_failed": True,
-            "error": "content_generation_failed",
+            "error_message": "content_generation_failed",
         }
 
     def _build_content_result(self) -> Dict:
@@ -569,10 +656,11 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
                 "visual_block": page.get("visual_block"),
                 "source_note": page.get("visual_hint", ""),
                 "layout_hint": outline_page.get("layout_hint", ""),
+                "page_weight": outline_page.get("page_weight", "pillar"),
             }
             if page.get("is_failed"):
                 entry["is_failed"] = True
-                entry["error"] = page.get("error", "")
+                entry["error_message"] = page.get("error_message", page.get("error", ""))
             slides.append(entry)
 
         # Temporary: dump visual field fill rates

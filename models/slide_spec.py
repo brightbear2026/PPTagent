@@ -932,6 +932,7 @@ class OutlineItem:
     narrative_arc: str = ""             # NarrativeRole值，由 PlanAgent LLM 直接填写
     chunk_ids: list = field(default_factory=list)  # 精确绑定的原文 chunk id 列表
     layout_hint: str = ""  # 布局建议: parallel_points/comparison/metrics/chart_focus/quote_emphasis/framework_grid/narrative
+    page_weight: str = "pillar"         # hero/pillar/evidence/transition — 视觉节奏权重
 
 
 @dataclass
@@ -952,7 +953,8 @@ class OutlineResult:
                  "primary_visual": i.primary_visual,
                  "narrative_arc": i.narrative_arc,
                  "chunk_ids": i.chunk_ids,
-                 "layout_hint": i.layout_hint}
+                 "layout_hint": i.layout_hint,
+                 "page_weight": i.page_weight}
                 for i in self.items
             ],
             "data_gap_suggestions": self.data_gap_suggestions,
@@ -971,7 +973,8 @@ class OutlineResult:
                     primary_visual=i.get("primary_visual", ""),
                     narrative_arc=i.get("narrative_arc", ""),
                     chunk_ids=i.get("chunk_ids", []),
-                    layout_hint=i.get("layout_hint", ""))
+                    layout_hint=i.get("layout_hint", ""),
+                    page_weight=i.get("page_weight", "pillar"))
                 for i in data.get("items", [])
             ],
             data_gap_suggestions=data.get("data_gap_suggestions", []),
@@ -1000,9 +1003,13 @@ class ChartSuggestion:
 class DiagramType(str, Enum):
     """内容驱动型图表类型"""
     PROCESS_FLOW = "process_flow"       # 流程/步骤图
-    ARCHITECTURE = "architecture"       # 架构/层级图
+    ARCHITECTURE = "architecture"       # 架构/层级图（通用/业务）
     RELATIONSHIP = "relationship"       # 关系/因果图
     FRAMEWORK = "framework"             # 框架/矩阵图
+    TECH_ARCHITECTURE = "tech_architecture"      # 分层技术架构（含技术组件名）
+    COMPONENT_TOPOLOGY = "component_topology"    # 微服务/组件拓扑
+    DATA_FLOW = "data_flow"                      # 数据流管线
+    TECH_STACK_MATRIX = "tech_stack_matrix"      # 技术选型矩阵
 
 
 @dataclass
@@ -1065,6 +1072,40 @@ class FrameworkSpec:
 
 
 @dataclass
+class TechArchitectureSpec:
+    """技术分层架构图规格"""
+    layers: list[dict] = field(default_factory=list)
+    # [{"label": "接入层", "items": ["Nginx", "CDN"], "color": "#5B9BD5"}]
+    protocols: list[dict] = field(default_factory=list)
+    # [{"from_layer": "接入层", "to_layer": "业务层", "label": "HTTP/gRPC"}]
+
+
+@dataclass
+class ComponentTopologySpec:
+    """组件/微服务拓扑图规格"""
+    groups: list[dict] = field(default_factory=list)
+    # [{"name": "API Gateway", "components": ["Auth Svc", "Rate Limiter"]}]
+    connections: list[dict] = field(default_factory=list)
+    # [{"from": "Auth Svc", "to": "User DB", "label": "TCP"}]
+
+
+@dataclass
+class DataFlowSpec:
+    """数据流管线图规格"""
+    stages: list[dict] = field(default_factory=list)
+    # [{"id": "src", "label": "MySQL CDC", "type": "source"}]
+    flows: list[dict] = field(default_factory=list)
+    # [{"from": "src", "to": "etl", "label": "Binlog", "volume": "10GB/d"}]
+
+
+@dataclass
+class TechStackMatrixSpec:
+    """技术选型矩阵规格"""
+    categories: list[dict] = field(default_factory=list)
+    # [{"name": "前端", "options": [{"name": "React", "selected": true}]}]
+
+
+@dataclass
 class ContentDiagramSpec:
     """内容驱动型图表统一规格（content阶段LLM输出）"""
     diagram_type: DiagramType
@@ -1075,6 +1116,10 @@ class ContentDiagramSpec:
     architecture: Optional[ArchitectureSpec] = None
     relationship: Optional[RelationshipSpec] = None
     framework: Optional[FrameworkSpec] = None
+    tech_architecture: Optional[TechArchitectureSpec] = None
+    component_topology: Optional[ComponentTopologySpec] = None
+    data_flow: Optional[DataFlowSpec] = None
+    tech_stack_matrix: Optional[TechStackMatrixSpec] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> ContentDiagramSpec:
@@ -1091,6 +1136,13 @@ class ContentDiagramSpec:
                 "comparison": DiagramType.FRAMEWORK,
                 "matrix": DiagramType.FRAMEWORK,
                 "causal": DiagramType.RELATIONSHIP,
+                # IT type aliases
+                "layered_arch": DiagramType.TECH_ARCHITECTURE,
+                "service_map": DiagramType.COMPONENT_TOPOLOGY,
+                "microservice": DiagramType.COMPONENT_TOPOLOGY,
+                "data_pipeline": DiagramType.DATA_FLOW,
+                "etl": DiagramType.DATA_FLOW,
+                "tech_matrix": DiagramType.TECH_STACK_MATRIX,
             }
             dtype = _alias.get(raw, DiagramType.PROCESS_FLOW)
         spec = cls(diagram_type=dtype, title=data.get("title", ""))
@@ -1129,6 +1181,25 @@ class ContentDiagramSpec:
                 circles=data.get("circles", []),
                 intersection=data.get("intersection", []),
             )
+        elif dtype == DiagramType.TECH_ARCHITECTURE:
+            spec.tech_architecture = TechArchitectureSpec(
+                layers=data.get("layers", []),
+                protocols=data.get("protocols", []),
+            )
+        elif dtype == DiagramType.COMPONENT_TOPOLOGY:
+            spec.component_topology = ComponentTopologySpec(
+                groups=data.get("groups", []),
+                connections=data.get("connections", []),
+            )
+        elif dtype == DiagramType.DATA_FLOW:
+            spec.data_flow = DataFlowSpec(
+                stages=data.get("stages", []),
+                flows=data.get("flows", []),
+            )
+        elif dtype == DiagramType.TECH_STACK_MATRIX:
+            spec.tech_stack_matrix = TechStackMatrixSpec(
+                categories=data.get("categories", []),
+            )
         return spec
 
     def to_dict(self) -> dict:
@@ -1166,6 +1237,25 @@ class ContentDiagramSpec:
                 "funnel_stages": self.framework.funnel_stages,
                 "circles": self.framework.circles,
                 "intersection": self.framework.intersection,
+            })
+        elif self.tech_architecture:
+            result.update({
+                "layers": self.tech_architecture.layers,
+                "protocols": self.tech_architecture.protocols,
+            })
+        elif self.component_topology:
+            result.update({
+                "groups": self.component_topology.groups,
+                "connections": self.component_topology.connections,
+            })
+        elif self.data_flow:
+            result.update({
+                "stages": self.data_flow.stages,
+                "flows": self.data_flow.flows,
+            })
+        elif self.tech_stack_matrix:
+            result.update({
+                "categories": self.tech_stack_matrix.categories,
             })
         return result
 

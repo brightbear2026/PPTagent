@@ -30,7 +30,8 @@ class RelationshipSkill(RenderingSkill):
 
     def prompt_fragment(self) -> str:
         return """**relationship**（关系图）:
-  约束: edges数量 ≤ nodes × 2（超过则关系图会变得混乱不可读）；每个edge必须有label说明关系类型"""
+  约束: edges数量 ≤ nodes × 2（超过则关系图会变得混乱不可读）；每个edge必须有label说明关系类型
+  反模式: 不要用于≤3个节点（用bullet列表文字说明）；不要用于层级关系（用architecture）"""
 
     def design_tokens(self) -> dict:
         return {

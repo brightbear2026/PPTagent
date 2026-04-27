@@ -111,7 +111,7 @@ class PlanAgent:
     4. 内置 rule-based 验证 + 最多1次 LLM 修复
     """
 
-    MAX_TOKENS = 6000
+    MAX_TOKENS = 16000
     TEMPERATURE = 0.5
     MAX_VERIFY_RETRIES = 1
 
@@ -254,10 +254,10 @@ class PlanAgent:
         # 章节结构（source_pages 摘要）
         source_pages = raw.get("source_pages", [])
         section_lines = []
-        for i, sp in enumerate(source_pages[:20]):
+        for i, sp in enumerate(source_pages[:40]):
             sec_title = sp.get("title", "")
             content = sp.get("content", "")
-            excerpt = content[:120].replace("\n", " ").strip()
+            excerpt = content[:300].replace("\n", " ").strip()
             excerpt_str = f"：{excerpt}…" if excerpt else ""
             section_lines.append(f"  [{i+1}] {sec_title}（{len(content)}字）{excerpt_str}")
         sections_text = "\n".join(section_lines) if section_lines else "（无结构化章节）"
@@ -274,7 +274,7 @@ class PlanAgent:
         # Chunk ID 参考列表（按 section 均匀采样，防止长文档后半段被截断）
         sampled_chunks = self._sample_chunks(chunks)
         chunk_ref_lines = [
-            f"  [{c['id']}] [{c['section']}] {c['text'][:100]}…"
+            f"  [{c['id']}] [{c['section']}] {c['text'][:200]}…"
             for c in sampled_chunks
         ]
         chunks_text = "\n".join(chunk_ref_lines) if chunk_ref_lines else "（无 chunk 数据）"
@@ -320,7 +320,7 @@ class PlanAgent:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _sample_chunks(chunks: List[Dict], max_per_section: int = 5) -> List[Dict]:
+    def _sample_chunks(chunks: List[Dict], max_per_section: int = 8) -> List[Dict]:
         """按 section 均匀采样 chunks，每 section 最多 max_per_section 个。"""
         from collections import defaultdict
         section_buckets: dict = defaultdict(list)
@@ -383,6 +383,11 @@ class PlanAgent:
         last_key = struct["keys"][-1]
         if not scqa.get(last_key):
             issues.append(f"scqa.{last_key}（顶层结论）为空")
+
+        # page_weight 验证
+        hero_count = sum(1 for s in slides if s.get("page_weight") == "hero")
+        if hero_count > 3:
+            issues.append(f"hero 页过多（{hero_count}页），最多3页。请将部分 hero 降级为 pillar。")
 
         return issues
 
@@ -482,11 +487,16 @@ class PlanAgent:
         for s in slides:
             s.setdefault("supporting_hint", "")
             s.setdefault("data_source", "")
-            s.setdefault("primary_visual", "text_only")
+            if not s.get("primary_visual"):
+                ds = (s.get("data_source") or "").strip().lower()
+                non_trivial = ds and ds not in {"无", "n/a", "-", ""}
+                has_data_kw = any(kw in ds for kw in ["表", "table", "数据", "data"])
+                s.setdefault("primary_visual", "chart" if (non_trivial and has_data_kw) else "text_only")
             s.setdefault("narrative_arc", "evidence")
             s.setdefault("section", "")
             s.setdefault("title", s.get("takeaway_message", ""))
             s.setdefault("layout_hint", "")
+            s.setdefault("page_weight", "pillar")
             # section dividers have no takeaway
             if s.get("slide_type") == "section_divider":
                 s["takeaway_message"] = s.get("takeaway_message") or s.get("title", "")
@@ -515,7 +525,7 @@ class PlanAgent:
             agenda_slide = {
                 "slide_type": "agenda", "title": "目录", "takeaway_message": "目录",
                 "supporting_hint": "", "data_source": "", "primary_visual": "text_only",
-                "narrative_arc": "opening", "section": "",
+                "narrative_arc": "opening", "section": "", "page_weight": "transition",
             }
 
             rebuilt: list = []
@@ -523,7 +533,7 @@ class PlanAgent:
                 rebuilt.append({
                     "slide_type": "section_divider", "title": sec, "takeaway_message": sec,
                     "supporting_hint": "", "data_source": "", "primary_visual": "text_only",
-                    "narrative_arc": "context", "section": sec,
+                    "narrative_arc": "context", "section": sec, "page_weight": "transition",
                 })
                 rebuilt.extend(s for s in content_slides if s.get("section", "").strip() == sec)
 
@@ -535,6 +545,9 @@ class PlanAgent:
         # Final page renumber after all injections
         for i, s in enumerate(slides, 1):
             s["page_number"] = i
+            # Structural slides (title/agenda/section_divider) should be transition weight
+            if s.get("slide_type") in ("title", "agenda", "section_divider"):
+                s["page_weight"] = "transition"
 
         return {
             "narrative_logic": narrative_logic,

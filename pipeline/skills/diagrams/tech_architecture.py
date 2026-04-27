@@ -1,11 +1,9 @@
 """
-Architecture Diagram Skill
+Tech Architecture Diagram Skill
 
-层级架构图：按 group 分层渲染。
-
-质量修复（相比原 diagram_renderer.py）：
-1. 层与层之间增加分隔线
-2. 层标签增加背景色条
+技术分层架构图：IT 语义色板 + 协议标签。
+与通用 architecture skill 的区别：层内 items 含具体技术组件名（Nginx/Kafka/MySQL 等），
+使用 IT 语义色板而非主题色轮转。
 """
 
 from pptx.util import Pt, Emu
@@ -18,23 +16,48 @@ from pipeline.skills.base import RenderingSkill, SkillDescriptor
 from pipeline.skills._utils import theme_color
 
 
-class ArchitectureSkill(RenderingSkill):
+# IT 语义色板：按层级类型分配颜色
+_IT_LAYER_COLORS = {
+    "接入": "#5B9BD5",
+    "网关": "#5B9BD5",
+    "前端": "#5B9BD5",
+    "展示": "#5B9BD5",
+    "业务": "#70AD47",
+    "应用": "#70AD47",
+    "服务": "#70AD47",
+    "逻辑": "#70AD47",
+    "数据": "#FFC000",
+    "存储": "#FFC000",
+    "缓存": "#FFC000",
+    "基础设施": "#A5A5A5",
+    "infra": "#A5A5A5",
+    "运维": "#A5A5A5",
+    "外部": "#7030A0",
+    "第三方": "#7030A0",
+    "安全": "#C00000",
+    "认证": "#C00000",
+}
+_DEFAULT_IT_COLOR = "#48A9E6"
+
+
+class TechArchitectureSkill(RenderingSkill):
 
     def descriptor(self) -> SkillDescriptor:
         return SkillDescriptor(
-            skill_id="diagram_architecture",
+            skill_id="diagram_tech_architecture",
             skill_type="diagram",
-            handles_types=["architecture"],
+            handles_types=["tech_architecture"],
         )
 
     def prompt_fragment(self) -> str:
-        return """**architecture**（架构图）:
-  约束: 最多4层，每层items ≤5个；层与层之间要有逻辑依赖关系
-  反模式: 不要用于流程/步骤（用process_flow）；不要用于并列对比（用comparison_columns）"""
+        return """**tech_architecture**（技术分层架构图）:
+  约束: 3-7层，每层items ≤6个；层按从底到顶排列；protocols标注层间通信协议
+  判别: 如果层内items含具体技术组件名（Nginx/Kafka/MySQL/Kubernetes/Docker/Redis等），用 tech_architecture；如果层内是业务概念/组织架构/抽象分类，用 architecture
+  反模式: 不要用于微服务调用关系（用component_topology）；不要用于流程步骤（用process_flow）"""
 
     def design_tokens(self) -> dict:
         return {
-            "separator_height_emu": 18288,  # ~2px 分隔线
+            "separator_height_emu": 18288,
             "separator_color": "#FFFFFF",
             "label_bg_width_emu": 1828800,
             "label_bg_height_emu": 228600,
@@ -51,9 +74,13 @@ class ArchitectureSkill(RenderingSkill):
 
         # 按 group 分层
         layers = {}
+        layer_colors_map = {}
         for node in nodes:
             group = node.group or "default"
             layers.setdefault(group, []).append(node)
+            # 尝试匹配 IT 语义色板
+            if group not in layer_colors_map:
+                layer_colors_map[group] = self._match_layer_color(group)
 
         layer_names = list(layers.keys())
         num_layers = len(layer_names)
@@ -61,17 +88,12 @@ class ArchitectureSkill(RenderingSkill):
             return False
 
         layer_h = rect.height // num_layers
-        layer_colors = [
-            RGBColor(0x1A, 0x47, 0x8A),
-            RGBColor(0x00, 0x5B, 0x96),
-            RGBColor(0x00, 0x7B, 0xC0),
-            RGBColor(0x48, 0xA9, 0xE6),
-        ]
 
         for li, layer_name in enumerate(layer_names):
             layer_nodes = layers[layer_name]
             y = rect.top + li * layer_h
-            color = layer_colors[li % len(layer_colors)]
+            hex_color = layer_colors_map[layer_name]
+            color = self._hex_to_rgb(hex_color)
 
             # 层背景
             bg = slide.shapes.add_shape(
@@ -83,7 +105,7 @@ class ArchitectureSkill(RenderingSkill):
             bg.fill.fore_color.rgb = color
             bg.line.fill.background()
 
-            # 层标签（左侧色条 + 标签名）
+            # 层标签
             label_w = tokens["label_bg_width_emu"]
             label_h = tokens["label_bg_height_emu"]
             label_bg = slide.shapes.add_shape(
@@ -106,7 +128,7 @@ class ArchitectureSkill(RenderingSkill):
             p_label.font.name = font
             p_label.alignment = PP_ALIGN.CENTER
 
-            # 分隔线（层与层之间）
+            # 分隔线
             if li > 0:
                 sep_h = tokens["separator_height_emu"]
                 sep = slide.shapes.add_shape(
@@ -133,6 +155,20 @@ class ArchitectureSkill(RenderingSkill):
                                 white, node.label, color, font, 10)
 
         return True
+
+    @staticmethod
+    def _match_layer_color(group_name: str) -> str:
+        """根据层名匹配 IT 语义色板"""
+        g = group_name.lower()
+        for keyword, color in _IT_LAYER_COLORS.items():
+            if keyword in g:
+                return color
+        return _DEFAULT_IT_COLOR
+
+    @staticmethod
+    def _hex_to_rgb(hex_color: str):
+        hex_color = hex_color.lstrip("#")
+        return RGBColor(int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16))
 
     @staticmethod
     def _add_shape(slide, shape_type, x, y, w, h, fill_color, text, text_color, font_name, font_size):

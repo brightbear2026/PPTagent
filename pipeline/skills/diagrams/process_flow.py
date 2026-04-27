@@ -31,7 +31,8 @@ class ProcessFlowSkill(RenderingSkill):
 
     def prompt_fragment(self) -> str:
         return """**process_flow**（流程图）:
-  约束: 节点3-7个（超过7个则分层或分页）；每个desc ≤15字；节点间必须有明确的因果/时序关系"""
+  约束: 节点3-7个（超过7个则分层或分页）；每个desc ≤15字；节点间必须有明确的因果/时序关系
+  反模式: 不要用于并列无顺序的要点（用icon_text_grid）；不要用于仅2个节点（直接文字描述）"""
 
     def design_tokens(self) -> dict:
         return {

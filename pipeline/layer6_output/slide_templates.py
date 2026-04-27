@@ -252,15 +252,63 @@ TEMPLATES: dict[str, str] = {
     "timeline_horizontal": _T_TIMELINE_HORIZONTAL,
     "quadrant_matrix": _T_QUADRANT_MATRIX,
     "role_columns": _T_ROLE_COLUMNS,
+    "hero_splash": """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:50px 80px;box-sizing:border-box;">
+  <p style="color:<<MUTED>>;font-size:18px;font-weight:400;text-align:center;margin-bottom:24px;line-height:1.4;max-width:700px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<HEADLINE>></p>
+  <h1 style="color:<<PRIMARY>>;font-size:72px;font-weight:700;text-align:center;line-height:1.1;letter-spacing:-2px;margin:8px 0;"><<BIG_NUMBER>></h1>
+  <p style="color:<<ACCENT>>;font-size:16px;font-weight:500;text-align:center;margin-top:8px;margin-bottom:24px;"><<NUMBER_CAPTION>></p>
+  <p style="color:<<MUTED>>;font-size:14px;text-align:center;line-height:1.5;max-width:600px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<SUBTITLE>></p>
+</div>
+<div style="position:absolute;bottom:16px;right:32px;color:<<MUTED>>;font-size:10px;opacity:0.5;"><p style="color:<<MUTED>>;font-size:10px;margin:0;">P<<PAGE_NUMBER>>/<<TOTAL_SLIDES>></p></div>
+</body></html>""",
+    # ── IT diagram templates ────────────────────────────────────────────
+    "tech_stack_layers": """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:40px;top:52px;width:880px;"><<STACK_LAYERS_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+</body></html>""",
+    "component_network": """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:40px;top:56px;width:880px;height:440px;"><<COMPONENT_GROUPS_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+</body></html>""",
+    "data_pipeline": """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:40px;top:60px;width:880px;height:420px;"><<PIPELINE_STAGES_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+</body></html>""",
+    "tech_comparison": """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:40px;top:56px;width:880px;"><<MATRIX_TABLE_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+</body></html>""",
 }
 
 # Schema used to generate the LLM system prompt
 TEMPLATE_SCHEMAS: dict[str, dict] = {
     "content_bullets": {
-        "description": "标准要点列表，适合3-5个并列论据/证据。",
+        "description": "标准要点列表，适合4-8个并列论据/证据。",
         "required_slots": {
             "title": "str — 核心论点句（来自 takeaway_message）",
-            "bullets": "list[str] — 要点列表，最多5条，每条≤40字",
+            "bullets": "list[str] — 要点列表，最多8条，每条≤80字",
         },
         "optional_slots": {
             "has_chart": "bool — true 则右侧留图表占位（默认 false）",
@@ -271,9 +319,9 @@ TEMPLATE_SCHEMAS: dict[str, dict] = {
         "required_slots": {
             "title": "str — 核心论点句",
             "left_label": "str — 左栏标题（≤12字）",
-            "left_bullets": "list[str] — 左栏要点，最多4条",
+            "left_bullets": "list[str] — 左栏要点，最多6条",
             "right_label": "str — 右栏标题（≤12字）",
-            "right_bullets": "list[str] — 右栏要点，最多4条",
+            "right_bullets": "list[str] — 右栏要点，最多6条",
         },
     },
     "content_key_metrics": {
@@ -290,15 +338,15 @@ TEMPLATE_SCHEMAS: dict[str, dict] = {
         "description": "图表主页，适合趋势/分布/对比图，文字辅助标注关键发现。需要 chart_suggestion 数据。",
         "required_slots": {
             "title": "str — 核心论点句",
-            "annotations": "list[str] — 图表关键发现标注，最多4条，每条≤35字",
+            "annotations": "list[str] — 图表关键发现标注，最多6条，每条≤80字",
         },
     },
     "quote_highlight": {
         "description": "核心结论强调页，适合最重要的一句话 + 支撑论点。",
         "required_slots": {
             "title": "str — 页面标题",
-            "quote_text": "str — 需强调的核心句（≤60字）",
-            "sub_bullets": "list[str] — 支撑论点，最多4条",
+            "quote_text": "str — 需强调的核心句（≤120字）",
+            "sub_bullets": "list[str] — 支撑论点，最多5条",
         },
     },
     "icon_grid": {
@@ -312,14 +360,14 @@ TEMPLATE_SCHEMAS: dict[str, dict] = {
         "description": "N层堆叠架构图，适合基础设施→平台→应用等分层结构，从下到上堆叠。",
         "required_slots": {
             "title": "str — 核心论点句",
-            "layers": "list[{name:str, desc:str}] — 堆叠层2-5层，从底层到顶层排列",
+            "layers": "list[{name:str, desc:str}] — 堆叠层2-6层，从底层到顶层排列",
         },
     },
     "timeline_horizontal": {
         "description": "横向时间线/路线图，适合多阶段计划、里程碑节点。",
         "required_slots": {
             "title": "str — 核心论点句",
-            "phases": "list[{label:str, title:str, desc:str}] — 阶段2-5个，label为时间标签如'90天'",
+            "phases": "list[{label:str, title:str, desc:str}] — 阶段2-6个，label为时间标签如'90天'",
         },
     },
     "quadrant_matrix": {
@@ -338,6 +386,49 @@ TEMPLATE_SCHEMAS: dict[str, dict] = {
             "roles": "list[{name:str, subtitle:str, bullets:list[str]}] — 角色3-4个，bullets最多4条",
         },
     },
+    "hero_splash": {
+        "description": "核心论点页，超大数字+极简文字+大量留白，用于hero页。",
+        "required_slots": {
+            "headline": "str — 核心论点一行（takeaway_message）",
+            "big_number": "str — 最震撼的数字（如'15.6亿'、'+32%'）",
+            "number_caption": "str — 数字说明（如'同比增长'）",
+            "subtitle": "str — 一句支撑论点（≤40字）",
+        },
+    },
+    "tech_stack_layers": {
+        "description": "技术分层架构图，3-7层堆叠，使用IT语义色板。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "layers": "list[{name:str, desc:str, color:str}] — 堆叠层3-7层，color可选（#hex）",
+        },
+    },
+    "component_network": {
+        "description": "组件/微服务拓扑图，分组容器+简化连线，≤6节点。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "groups": "list[{name:str, components:list[str]}] — 服务分组2-4组",
+        },
+        "optional_slots": {
+            "connections": "list[{from:str, to:str, label:str}] — 组间调用关系",
+        },
+    },
+    "data_pipeline": {
+        "description": "数据流管线图，水平pipeline，source→transform→store→consume。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "stages": "list[{label:str, type:str, desc:str}] — 管线阶段3-8个，type: source/transform/store/consume",
+        },
+        "optional_slots": {
+            "flows": "list[{from:str, to:str, label:str}] — 数据流标注",
+        },
+    },
+    "tech_comparison": {
+        "description": "技术选型矩阵，行=类别，列=选项，选中项高亮。",
+        "required_slots": {
+            "title": "str — 核心论点句",
+            "categories": "list[{name:str, options:list[{name:str, selected:bool}]}] — 类别3-6个",
+        },
+    },
 }
 
 
@@ -351,6 +442,7 @@ def render_template(
     theme_colors: dict[str, str],
     page_number: int = 1,
     total_slides: int = 1,
+    page_weight: str = "",
 ) -> str:
     """
     Fill template <<SLOT_NAME>> placeholders with slot values and theme colors.
@@ -372,6 +464,8 @@ def render_template(
     result = result.replace("<<PRIMARY>>", primary)
     result = result.replace("<<ACCENT>>", accent)
     result = result.replace("<<BG>>", bg)
+    result = result.replace("<<MUTED>>", muted)
+    result = result.replace("<<TEXT_COLOR>>", text_color)
     result = result.replace("<<FOOTER>>", footer)
     result = result.replace("<<TITLE>>", title)
 
@@ -437,6 +531,35 @@ def render_template(
         result = result.replace("<<ROLE_COLUMNS_HTML>>",
                                 _render_role_columns(slots.get("roles", []), primary, accent, bg, text_color, muted))
 
+    elif template_id == "hero_splash":
+        result = result.replace("<<HEADLINE>>", _html.escape(str(slots.get("headline", ""))))
+        result = result.replace("<<BIG_NUMBER>>", _html.escape(str(slots.get("big_number", ""))))
+        result = result.replace("<<NUMBER_CAPTION>>", _html.escape(str(slots.get("number_caption", ""))))
+        result = result.replace("<<SUBTITLE>>", _html.escape(str(slots.get("subtitle", ""))))
+        result = result.replace("<<PAGE_NUMBER>>", str(page_number))
+        result = result.replace("<<TOTAL_SLIDES>>", str(total_slides))
+
+    elif template_id == "tech_stack_layers":
+        result = result.replace("<<STACK_LAYERS_HTML>>",
+                                _render_stack_layers(slots.get("layers", []), primary, accent, bg, text_color, muted))
+
+    elif template_id == "component_network":
+        result = result.replace("<<COMPONENT_GROUPS_HTML>>",
+                                _render_component_groups(slots.get("groups", []),
+                                                         slots.get("connections", []),
+                                                         primary, accent, bg, text_color, muted))
+
+    elif template_id == "data_pipeline":
+        result = result.replace("<<PIPELINE_STAGES_HTML>>",
+                                _render_pipeline_stages(slots.get("stages", []),
+                                                        slots.get("flows", []),
+                                                        primary, accent, bg, text_color, muted))
+
+    elif template_id == "tech_comparison":
+        result = result.replace("<<MATRIX_TABLE_HTML>>",
+                                _render_tech_matrix(slots.get("categories", []),
+                                                    primary, accent, bg, text_color, muted))
+
     return result
 
 
@@ -446,7 +569,7 @@ def render_template(
 
 def _render_bullets(bullets: list, text_color: str, primary: str, font_size: int = 13) -> str:
     parts = []
-    for b in bullets[:6]:
+    for b in bullets[:8]:
         text = _html.escape(str(b))
         parts.append(
             f'<p style="font-size:{font_size}px; color:{text_color}; margin-bottom:14px; line-height:1.55;">'
@@ -510,7 +633,7 @@ def _render_metrics(
 
 def _render_annotations(annotations: list, primary: str, accent: str, muted: str) -> str:
     parts = []
-    for i, ann in enumerate(annotations[:4]):
+    for i, ann in enumerate(annotations[:6]):
         text = _html.escape(str(ann))
         top = i * 96
         parts.append(
@@ -559,7 +682,7 @@ def _render_stack_layers(
     layers: list, primary: str, accent: str, bg: str, text_color: str, muted: str,
 ) -> str:
     """Render N-layer stack (bottom to top)."""
-    n = min(len(layers), 5)
+    n = min(len(layers), 6)
     if n == 0:
         return ""
     layer_h = min(80, (420 - (n - 1) * 6) // n)
@@ -588,7 +711,7 @@ def _render_timeline(
     phases: list, primary: str, accent: str, bg: str, text_color: str, muted: str,
 ) -> str:
     """Render horizontal timeline with phase cards below a line."""
-    n = min(len(phases), 5)
+    n = min(len(phases), 6)
     if n == 0:
         return ""
     phase_w = min(200, (880 - (n - 1) * 20) // n)
@@ -725,3 +848,199 @@ def _lighten(hex_color: str, factor: float) -> str:
     g = int(g + (255 - g) * factor)
     b = int(b + (255 - b) * factor)
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+# ── IT diagram HTML builders ────────────────────────────────────────────
+
+def _render_component_groups(
+    groups: list, connections: list,
+    primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render grouped component topology — vertical stacked groups with ↓ connectors."""
+    if not groups:
+        return ""
+    n = len(groups)
+    group_h = min(140, (420 - (n - 1) * 30) // n)
+    total_h = n * group_h + (n - 1) * 30
+    top_start = 10 + (430 - total_h) // 2
+    parts = []
+    for i, group in enumerate(groups[:6]):
+        name = _html.escape(str(group.get("name", f"Group {i+1}")))
+        components = group.get("components", [])
+        top = top_start + i * (group_h + 30)
+        # 组间箭头
+        if i > 0:
+            arrow_top = top - 28
+            parts.append(
+                f'<div style="position:absolute;left:440px;top:{arrow_top}px;width:80px;text-align:center;">'
+                f'<p style="color:{muted};font-size:20px;margin:0;">↓</p></div>'
+            )
+            # 连线标签
+            if i - 1 < len(connections):
+                conn = connections[i - 1]
+                label = _html.escape(str(conn.get("label", "")))
+                if label:
+                    parts.append(
+                        f'<div style="position:absolute;left:530px;top:{arrow_top}px;">'
+                        f'<p style="color:{accent};font-size:9px;margin:0;">{label}</p></div>'
+                    )
+        # 分组框
+        parts.append(
+            f'<div style="position:absolute;left:40px;top:{top}px;width:800px;height:{group_h}px;'
+            f'border:2px solid {primary};border-radius:4px;background:rgba(255,255,255,0.6);">'
+            f'<p style="position:absolute;left:12px;top:4px;font-size:11px;font-weight:bold;color:{primary};margin:0;">{name}</p>'
+            f'</div>'
+        )
+        # 组件标签
+        comp_strs = [_html.escape(str(c)) for c in components[:6]]
+        if comp_strs:
+            comp_html = ""
+            comp_w = min(180, (780 - 10) // max(len(comp_strs), 1))
+            for ci, comp in enumerate(comp_strs):
+                comp_html += (
+                    f'<div style="display:inline-block;margin:0 5px;padding:4px 10px;'
+                    f'background:{accent};border-radius:3px;">'
+                    f'<p style="color:#FFFFFF;font-size:10px;font-weight:bold;margin:0;">{comp}</p></div>'
+                )
+            parts.append(
+                f'<div style="position:absolute;left:60px;top:{top + 30}px;width:760px;'
+                f'display:flex;flex-wrap:wrap;align-items:center;gap:4px;">{comp_html}</div>'
+            )
+    return "\n".join(parts)
+
+
+def _render_pipeline_stages(
+    stages: list, flows: list,
+    primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render horizontal data pipeline — source→transform→store→consume."""
+    if not stages:
+        return ""
+    n = min(len(stages), 8)
+    stage_w = min(150, (850 - (n - 1) * 40) // n)
+    stage_h = 120
+    total_w = n * stage_w + (n - 1) * 40
+    start_x = (880 - total_w) // 2
+    cy = 200
+
+    _type_colors = {
+        "source": primary,
+        "transform": accent,
+        "store": "#FFC000",
+        "consume": "#70AD47",
+    }
+
+    parts = []
+    for i, stage in enumerate(stages[:n]):
+        label = _html.escape(str(stage.get("label", f"Stage {i+1}")))
+        stype = str(stage.get("type", "")).lower()
+        desc = _html.escape(str(stage.get("desc", "")))
+        color = _type_colors.get(stype, primary)
+
+        x = start_x + i * (stage_w + 40)
+
+        # 箭头
+        if i > 0:
+            arrow_x = x - 35
+            parts.append(
+                f'<div style="position:absolute;left:{arrow_x}px;top:{cy + stage_h // 2 - 8}px;'
+                f'width:30px;text-align:center;">'
+                f'<p style="color:{muted};font-size:16px;margin:0;">→</p></div>'
+            )
+            # flow label
+            if i - 1 < len(flows):
+                flow_label = _html.escape(str(flows[i - 1].get("label", "")))
+                if flow_label:
+                    parts.append(
+                        f'<div style="position:absolute;left:{arrow_x - 20}px;top:{cy + stage_h // 2 + 12}px;width:70px;">'
+                        f'<p style="color:{accent};font-size:8px;margin:0;text-align:center;">{flow_label}</p></div>'
+                    )
+
+        # stage 形状
+        border_style = f"border:2px solid {color}"
+        bg_style = f"background:{color}"
+        if stype == "source":
+            border_style = f"border-left:6px solid {color};border:2px solid {color}"
+        elif stype == "store":
+            border_style = f"border-bottom:5px solid {color};border:2px solid {color}"
+
+        parts.append(
+            f'<div style="position:absolute;left:{x}px;top:{cy}px;width:{stage_w}px;height:{stage_h}px;'
+            f'{bg_style};border-radius:4px;">'
+            f'<p style="color:#FFFFFF;font-size:11px;font-weight:bold;text-align:center;margin:8px 4px 2px;">{label}</p>'
+            f'<p style="color:rgba(255,255,255,0.8);font-size:8px;text-align:center;margin:0 4px;">{desc[:30]}</p>'
+            f'</div>'
+        )
+        # type 标签
+        if stype:
+            parts.append(
+                f'<div style="position:absolute;left:{x}px;top:{cy + stage_h + 6}px;width:{stage_w}px;">'
+                f'<p style="color:{muted};font-size:8px;text-align:center;margin:0;">{stype.upper()}</p></div>'
+            )
+    return "\n".join(parts)
+
+
+def _render_tech_matrix(
+    categories: list,
+    primary: str, accent: str, bg: str, text_color: str, muted: str,
+) -> str:
+    """Render tech stack comparison as HTML table."""
+    if not categories:
+        return ""
+    # 收集所有唯一选项名
+    all_options = []
+    for cat in categories:
+        for opt in cat.get("options", []):
+            name = opt.get("name", "")
+            if name and name not in all_options:
+                all_options.append(name)
+    if not all_options:
+        return ""
+
+    n_cols = len(all_options) + 1
+    col_w = min(200, 860 // n_cols)
+    cat_w = 860 - col_w * len(all_options)
+
+    rows = []
+    # 表头
+    header = (
+        f'<tr>'
+        f'<td style="background:{primary};color:#FFFFFF;font-size:10px;font-weight:bold;padding:6px 8px;text-align:center;border:1px solid {primary};">类别</td>'
+    )
+    for opt in all_options:
+        header += (
+            f'<td style="background:{primary};color:#FFFFFF;font-size:10px;font-weight:bold;padding:6px 8px;text-align:center;border:1px solid {primary};">'
+            f'{_html.escape(opt)}</td>'
+        )
+    header += '</tr>'
+    rows.append(header)
+
+    # 数据行
+    for cat in categories[:6]:
+        cat_name = _html.escape(str(cat.get("name", "")))
+        cat_options = {opt.get("name", ""): opt.get("selected", False) for opt in cat.get("options", [])}
+        row = (
+            f'<tr>'
+            f'<td style="background:rgba(0,61,110,0.08);color:{primary};font-size:10px;font-weight:bold;padding:6px 8px;border-left:4px solid {primary};border:1px solid #e0e0e0;">{cat_name}</td>'
+        )
+        for opt_name in all_options:
+            selected = cat_options.get(opt_name, False)
+            if selected:
+                row += (
+                    f'<td style="background:{primary};color:#FFFFFF;font-size:10px;font-weight:bold;padding:6px 8px;text-align:center;border:1px solid {primary};">'
+                    f'■ {_html.escape(opt_name)}</td>'
+                )
+            else:
+                row += (
+                    f'<td style="background:#f8f8f8;color:{muted};font-size:10px;padding:6px 8px;text-align:center;border:1px solid #e0e0e0;">'
+                    f'□</td>'
+                )
+        row += '</tr>'
+        rows.append(row)
+
+    table_html = (
+        f'<table style="border-collapse:collapse;width:{cat_w + col_w * len(all_options)}px;font-family:\'Microsoft YaHei\',Arial,sans-serif;">'
+        + "\n".join(rows)
+        + '</table>'
+    )
+    return table_html

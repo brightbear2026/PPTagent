@@ -33,7 +33,8 @@ class ComparisonColumnsSkill(RenderingSkill):
         return """**comparison_columns**（A vs B 对比）
   items字段: title, description
   设计理念: 对比要鲜明——对比色区分两列，标题栏突出差异核心
-  质量要求: 每列title是一个立场/选项名，description分点列出关键差异"""
+  质量要求: 每列title是一个立场/选项名，description分点列出关键差异
+  反模式: 不要用于多于两方的对比（用表格）；不要用于单方面描述（没有对立面时用bullet列表）"""
 
     def design_tokens(self) -> dict:
         return {

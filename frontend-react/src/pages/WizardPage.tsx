@@ -220,13 +220,13 @@ const WizardPage: React.FC = () => {
     setCurrent(1);
   };
 
-  // Step 3 → back to Step 2 (re-edit outline, re-run from outline stage)
+  // Step 3 → back to Step 2 (re-edit outline, downstream stages will be reset)
   const handleBackToOutline = async () => {
     const tid = taskIdRef.current;
     if (!tid) return;
     try {
+      // Backend resets downstream stages (content/design/render) but keeps outline intact
       await resumePipeline(tid, 'outline');
-      // Refresh outline + generation after reset so saved edits use the new generation=0
       await fetchOutline(tid);
       setContent(null);
       setContentGeneration(0);

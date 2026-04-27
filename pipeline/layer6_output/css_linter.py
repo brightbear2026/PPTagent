@@ -172,7 +172,7 @@ class CSSLinter:
 
         return font_re.sub(replacer, html)
 
-    def validate(self, html: str) -> List[str]:
+    def validate(self, html: str, page_weight: str = "") -> List[str]:
         """
         Check HTML for issues without modifying. Returns list of error messages.
         Empty list means the HTML should pass html2pptx.js validation.
@@ -201,4 +201,55 @@ class CSSLinter:
         if text_with_bg.search(html):
             errors.append("Text element has background (must be on <div> only)")
 
+        # Content density check
+        density_err = self._check_content_density(html, page_weight)
+        if density_err:
+            errors.append(density_err)
+
         return errors
+
+    def _check_content_density(self, html: str, page_weight: str = "") -> str | None:
+        """粗估内容面积占比。使用最大元素面积避免重复计数。超过阈值则 reject。"""
+        total_area = self.body_width * self.body_height
+
+        # Determine threshold by page_weight
+        if page_weight == "hero":
+            threshold = 0.45
+        elif page_weight == "transition":
+            threshold = 0.35
+        else:
+            threshold = 0.75
+
+        # Strip body tag to avoid counting body dimensions
+        inner = re.sub(r'<body[^>]*>', '', html, flags=re.IGNORECASE)
+        inner = re.sub(r'</body>', '', inner, flags=re.IGNORECASE)
+
+        # Collect all element areas, use the largest as content estimate
+        max_area = 0
+        for m in re.finditer(
+            r'style=["\'][^"\']*?width\s*:\s*(\d+)\s*px[^"\']*?height\s*:\s*(\d+)\s*px',
+            inner, re.IGNORECASE,
+        ):
+            w, h = int(m.group(1)), int(m.group(2))
+            if w * h > max_area:
+                max_area = w * h
+        for m in re.finditer(
+            r'style=["\'][^"\']*?height\s*:\s*(\d+)\s*px[^"\']*?width\s*:\s*(\d+)\s*px',
+            inner, re.IGNORECASE,
+        ):
+            w, h = int(m.group(2)), int(m.group(1))
+            if w * h > max_area:
+                max_area = w * h
+
+        # Fallback: estimate from character count
+        if max_area == 0:
+            text_chars = len(re.sub(r'<[^>]+>', '', inner).strip())
+            if text_chars > 0:
+                est_lines = (text_chars * 10) / self.body_width
+                max_area = int(est_lines * 20 * self.body_width)
+
+        ratio = max_area / total_area if total_area > 0 else 0
+        if ratio > threshold:
+            return f"Content density {ratio:.0%} exceeds {threshold:.0%} limit for {page_weight or 'default'} page"
+
+        return None

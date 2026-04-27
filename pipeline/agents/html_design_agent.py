@@ -18,6 +18,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from llm_client.base import ChatMessage
+
 logger = logging.getLogger(__name__)
 
 # Fixed chrome template injected into every slide
@@ -292,6 +294,18 @@ class HTMLDesignAgent:
             template_id = data.get("template_id", "content_bullets")
             slots = data.get("slots", {})
 
+            # Enforce chart_focus when chart_suggestion has data
+            if self._chart_has_data(slide_data) and template_id != "chart_focus":
+                logger.warning(
+                    "Slide %d: LLM picked %s but chart_suggestion exists, forcing chart_focus",
+                    slide_index, template_id,
+                )
+                template_id = "chart_focus"
+                slots = {
+                    "title": slide_data.get("takeaway_message", ""),
+                    "annotations": slots.get("annotations", []),
+                }
+
             from pipeline.layer6_output.slide_templates import render_template
             return render_template(
                 template_id=template_id,
@@ -306,6 +320,20 @@ class HTMLDesignAgent:
                 logger.error("Slide %d: code error in slot generation: %s", slide_index, e, exc_info=True)
                 raise
             logger.warning("Slot generation failed for slide %d: %s, using heuristic fallback", slide_index, e)
+            # Even in fallback, enforce chart_focus if chart data exists
+            if self._chart_has_data(slide_data):
+                logger.info("Slide %d: heuristic fallback with chart data, forcing chart_focus", slide_index)
+                from pipeline.layer6_output.slide_templates import render_template
+                return render_template(
+                    template_id="chart_focus",
+                    slots={
+                        "title": slide_data.get("takeaway_message", ""),
+                        "annotations": [],
+                    },
+                    theme_colors=theme_colors,
+                    page_number=slide_index + 1,
+                    total_slides=total_slides,
+                )
             return self._heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
 
     def _inspect_and_fix(
@@ -317,7 +345,8 @@ class HTMLDesignAgent:
         all_errors = []
 
         # 1. CSS lint check (fast, no browser)
-        lint_errors = linter.validate(html)
+        pw = slide_data.get("page_weight", "")
+        lint_errors = linter.validate(html, page_weight=pw)
         all_errors.extend(lint_errors)
 
         # 2. Real Node.js dry-run render check
@@ -378,7 +407,7 @@ class HTMLDesignAgent:
                     max_tokens=4000,
                 )
 
-                fixed_html = (response.content if hasattr(response, "content") else str(response) or "").strip()
+                fixed_html = (response.content if hasattr(response, "content") and response.content else str(response) or "").strip()
                 if fixed_html.startswith("```"):
                     fixed_html = fixed_html.split("\n", 1)[-1]
                 if fixed_html.endswith("```"):
@@ -386,7 +415,7 @@ class HTMLDesignAgent:
 
                 # Re-validate the fix
                 fixed_html, _ = linter.fix(fixed_html)
-                remaining_lint = linter.validate(fixed_html)
+                remaining_lint = linter.validate(fixed_html, page_weight=pw)
 
                 # Re-run Node validation on fix
                 remaining_render = []
@@ -411,6 +440,14 @@ class HTMLDesignAgent:
                         "Slide %d: fix reduced errors %d→%d",
                         slide_index, len(all_errors), len(remaining),
                     )
+                    # Preserve chart placeholder if original had one but fix removed it
+                    if '<div class="placeholder"' in html and '<div class="placeholder"' not in fixed_html:
+                        logger.warning("Slide %d: LLM fix removed chart placeholder, restoring", slide_index)
+                        # Re-inject the original placeholder into fixed_html before </body>
+                        import re as _re
+                        orig_ph = _re.search(r'<div class="placeholder"[^>]*>.*?</div>', html, _re.DOTALL)
+                        if orig_ph:
+                            fixed_html = fixed_html.replace('</body>', orig_ph.group(0) + '</body>')
                     return fixed_html
                 else:
                     logger.warning("Slide %d: LLM fix didn't help (%d→%d), using heuristic fallback",
@@ -680,7 +717,13 @@ class HTMLDesignAgent:
     ) -> Tuple[str, Dict]:
         """Decision tree → (template_id, slots)."""
 
-        # 0. layout_hint short-circuit: if set, trust it directly
+        # 0. hero pages → force hero_splash template
+        if slide_data.get("page_weight") == "hero":
+            return self._build_slots_for_template(
+                "hero_splash", slide_data, body_blocks, bold_blocks, title
+            )
+
+        # 1. layout_hint short-circuit: if set, trust it directly
         hint = slide_data.get("layout_hint", "")
         if hint and hint in self._LAYOUT_HINT_MAP:
             forced_template = self._LAYOUT_HINT_MAP[hint]
@@ -693,7 +736,7 @@ class HTMLDesignAgent:
         # 1. Chart with real data → chart_focus
         if self._chart_has_data(slide_data):
             annotations = []
-            for b in body_blocks[:4]:
+            for b in body_blocks[:6]:
                 c = b.get("content", "") if isinstance(b, dict) else str(b)
                 if c:
                     annotations.append(c[:80])
@@ -711,6 +754,11 @@ class HTMLDesignAgent:
                 "architecture": "architecture_stack",
                 "framework": "quadrant_matrix",
                 "relationship": "role_columns",
+                # IT diagram types
+                "tech_architecture": "tech_stack_layers",
+                "component_topology": "component_network",
+                "data_flow": "data_pipeline",
+                "tech_stack_matrix": "tech_comparison",
             }
             tmpl = _DIAGRAM_TEMPLATE_MAP.get(dt, "framework_grid")
             logger.info("diagram_type=%s → template=%s", dt, tmpl)
@@ -738,11 +786,11 @@ class HTMLDesignAgent:
             elif vb_type == "step_cards" and items:
                 logger.info("visual_block type=step_cards → timeline_horizontal (%d items)", len(items))
                 phases = []
-                for idx, item in enumerate(items[:5]):
+                for idx, item in enumerate(items[:6]):
                     phases.append({
                         "label": item.get("label", f"步骤{idx+1}"),
-                        "title": item.get("title", item.get("name", ""))[:20],
-                        "desc": item.get("description", item.get("desc", ""))[:40],
+                        "title": item.get("title", item.get("name", ""))[:30],
+                        "desc": item.get("description", item.get("desc", ""))[:60],
                     })
                 return "timeline_horizontal", {"title": title, "phases": phases}
             elif vb_type == "comparison_columns" and items:
@@ -778,7 +826,7 @@ class HTMLDesignAgent:
                     if b not in numeric_blocks:
                         c = b.get("content", "") if isinstance(b, dict) else str(b)
                         if c:
-                            sub_bullets.append(c[:40])
+                            sub_bullets.append(c[:60])
                 return "content_key_metrics", {
                     "title": title,
                     "metrics": metrics,
@@ -806,16 +854,16 @@ class HTMLDesignAgent:
                         items.append({
                             "icon": icon,
                             "title": content[:mid].rstrip("：:—-，, "),
-                            "desc": content[mid:].lstrip("：:—-，, ")[:40],
+                            "desc": content[mid:].lstrip("：:—-，, ")[:60],
                         })
                 return "icon_grid", {"title": title, "items": items}
 
         # 5. Everything else → content_bullets
         bullets = []
-        for b in body_blocks[:5]:
+        for b in body_blocks[:8]:
             c = b.get("content", "") if isinstance(b, dict) else str(b)
             if c:
-                bullets.append(c[:40])
+                bullets.append(c[:80])
         return "content_bullets", {
             "title": title,
             "bullets": bullets,
@@ -833,7 +881,7 @@ class HTMLDesignAgent:
         """Build minimal slots for a forced template_id (layout_hint path)."""
         if template_id == "chart_focus":
             annotations = []
-            for b in body_blocks[:4]:
+            for b in body_blocks[:6]:
                 c = b.get("content", "") if isinstance(b, dict) else str(b)
                 if c:
                     annotations.append(c[:80])
@@ -860,12 +908,12 @@ class HTMLDesignAgent:
             return template_id, {"title": title, "metrics": metrics}
 
         if template_id == "quote_highlight":
-            quote = body_blocks[0].get("content", "")[:60] if body_blocks else title[:60]
+            quote = body_blocks[0].get("content", "")[:120] if body_blocks else title[:120]
             sub_bullets = []
-            for b in body_blocks[1:5]:
+            for b in body_blocks[1:6]:
                 c = b.get("content", "") if isinstance(b, dict) else str(b)
                 if c:
-                    sub_bullets.append(c[:40])
+                    sub_bullets.append(c[:60])
             return template_id, {"title": title, "quote_text": quote, "sub_bullets": sub_bullets}
 
         if template_id == "icon_grid":
@@ -873,41 +921,41 @@ class HTMLDesignAgent:
             for idx, b in enumerate(body_blocks[:6]):
                 content = b.get("content", "") if isinstance(b, dict) else str(b)
                 icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
-                if len(content) <= 15:
+                if len(content) <= 20:
                     items.append({"icon": icon, "title": content, "desc": ""})
                 else:
-                    mid = min(len(content), 20)
+                    mid = min(len(content), 30)
                     for sep in ["：", ":", "—", "-"]:
                         pos = content.find(sep)
-                        if 0 < pos < 40:
+                        if 0 < pos < 50:
                             mid = pos
                             break
                     items.append({
                         "icon": icon,
                         "title": content[:mid].rstrip("：:—-，, "),
-                        "desc": content[mid:].lstrip("：:—-，, ")[:40],
+                        "desc": content[mid:].lstrip("：:—-，, ")[:60],
                     })
             return template_id, {"title": title, "items": items or [{"icon": "📊", "title": title, "desc": ""}]}
 
         if template_id == "timeline_horizontal":
             phases = []
-            for idx, b in enumerate(body_blocks[:5]):
+            for idx, b in enumerate(body_blocks[:6]):
                 content = b.get("content", "") if isinstance(b, dict) else str(b)
-                phases.append({"label": f"阶段{idx+1}", "title": content[:20], "desc": content[:40]})
+                phases.append({"label": f"阶段{idx+1}", "title": content[:30], "desc": content[:60]})
             return template_id, {"title": title, "phases": phases or [{"label": "阶段1", "title": title, "desc": ""}]}
 
         if template_id == "architecture_stack":
             layers = []
-            for idx, b in enumerate(body_blocks[:5]):
+            for idx, b in enumerate(body_blocks[:6]):
                 content = b.get("content", "") if isinstance(b, dict) else str(b)
-                layers.append({"name": content[:15], "desc": content[:40]})
+                layers.append({"name": content[:20], "desc": content[:60]})
             return template_id, {"title": title, "layers": layers or [{"name": "Layer 1", "desc": ""}]}
 
         if template_id == "quadrant_matrix":
             cells = []
             for idx, b in enumerate(body_blocks[:4]):
                 content = b.get("content", "") if isinstance(b, dict) else str(b)
-                cells.append({"label": f"象限{idx+1}", "items": [content[:30]]})
+                cells.append({"label": f"象限{idx+1}", "items": [content[:50]]})
             while len(cells) < 4:
                 cells.append({"label": "", "items": []})
             return template_id, {"title": title, "x_label": "维度A", "y_label": "维度B", "cells": cells}
@@ -916,15 +964,115 @@ class HTMLDesignAgent:
             roles = []
             for idx, b in enumerate(body_blocks[:4]):
                 content = b.get("content", "") if isinstance(b, dict) else str(b)
-                roles.append({"name": content[:10], "subtitle": "", "bullets": [content[:30]]})
+                roles.append({"name": content[:20], "subtitle": "", "bullets": [content[:50]]})
             return template_id, {"title": title, "roles": roles or [{"name": "角色1", "subtitle": "", "bullets": []}]}
+
+        if template_id == "hero_splash":
+            # Extract the most impactful number from text blocks
+            import re
+            all_text = " ".join(
+                b.get("content", "") if isinstance(b, dict) else str(b)
+                for b in body_blocks
+            )
+            # Find numbers with units (亿, 万, %, etc.)
+            num_match = re.search(r'(\d+\.?\d*)\s*(亿|万|%|亿元|万元|个|家|人|美元)', all_text)
+            big_number = ""
+            number_caption = ""
+            if num_match:
+                big_number = num_match.group(1) + num_match.group(2)
+                # Try to find context before the number
+                prefix = all_text[:num_match.start()].rstrip("，。、：: ")
+                # Find last meaningful phrase
+                for sep in ["，", "。", "、", "：", "："]:
+                    idx = prefix.rfind(sep)
+                    if idx >= 0:
+                        prefix = prefix[idx+1:]
+                        break
+                number_caption = prefix[:30] if prefix else ""
+            if not big_number:
+                big_number = title[:10] if title else "—"
+            # Subtitle: second text block or takeaway
+            subtitle = ""
+            if len(body_blocks) > 1:
+                subtitle = (body_blocks[1].get("content", "") if isinstance(body_blocks[1], dict) else str(body_blocks[1]))[:40]
+            if not subtitle:
+                subtitle = slide_data.get("takeaway_message", "")[:40]
+            return template_id, {
+                "headline": slide_data.get("takeaway_message", title),
+                "big_number": big_number,
+                "number_caption": number_caption,
+                "subtitle": subtitle,
+            }
+
+        # ── IT diagram slot builders (prefer diagram_spec data, fallback body_blocks) ──
+
+        if template_id == "tech_stack_layers":
+            diagram = slide_data.get("diagram_spec", {})
+            layers_raw = diagram.get("layers", [])
+            if layers_raw:
+                layers = []
+                for l in layers_raw[:7]:
+                    items = l.get("items", [])
+                    desc = ", ".join(str(i) for i in items) if isinstance(items, list) else str(items)
+                    layer = {"name": str(l.get("label", ""))[:20], "desc": desc[:60]}
+                    if l.get("color"):
+                        layer["color"] = l["color"]
+                    layers.append(layer)
+            else:
+                layers = [{"name": b.get("content", "")[:20] if isinstance(b, dict) else str(b)[:20], "desc": ""}
+                          for b in body_blocks[:7]]
+            return template_id, {"title": title, "layers": layers or [{"name": "Layer 1", "desc": ""}]}
+
+        if template_id == "component_network":
+            diagram = slide_data.get("diagram_spec", {})
+            groups_raw = diagram.get("groups", [])
+            if groups_raw:
+                groups = []
+                for g in groups_raw[:6]:
+                    comps = g.get("components", [])
+                    groups.append({"name": str(g.get("name", ""))[:20],
+                                   "components": [str(c) for c in comps[:6]]})
+            else:
+                groups = [{"name": b.get("content", "")[:20] if isinstance(b, dict) else str(b)[:20],
+                           "components": []} for b in body_blocks[:6]]
+            connections = diagram.get("connections", []) if isinstance(diagram, dict) else []
+            return template_id, {"title": title, "groups": groups, "connections": connections}
+
+        if template_id == "data_pipeline":
+            diagram = slide_data.get("diagram_spec", {})
+            stages_raw = diagram.get("stages", [])
+            if stages_raw:
+                stages = []
+                for s in stages_raw[:8]:
+                    stages.append({"label": str(s.get("label", ""))[:20],
+                                   "type": str(s.get("type", "")),
+                                   "desc": str(s.get("desc", ""))[:30]})
+            else:
+                stages = [{"label": b.get("content", "")[:20] if isinstance(b, dict) else str(b)[:20],
+                           "type": "", "desc": ""} for b in body_blocks[:8]]
+            flows = diagram.get("flows", []) if isinstance(diagram, dict) else []
+            return template_id, {"title": title, "stages": stages, "flows": flows}
+
+        if template_id == "tech_comparison":
+            diagram = slide_data.get("diagram_spec", {})
+            cats_raw = diagram.get("categories", [])
+            if cats_raw:
+                categories = []
+                for c in cats_raw[:6]:
+                    opts = c.get("options", [])
+                    categories.append({"name": str(c.get("name", ""))[:15],
+                                       "options": opts})
+            else:
+                categories = [{"name": b.get("content", "")[:15] if isinstance(b, dict) else str(b)[:15],
+                               "options": []} for b in body_blocks[:6]]
+            return template_id, {"title": title, "categories": categories}
 
         # Default: content_bullets
         bullets = []
-        for b in body_blocks[:5]:
+        for b in body_blocks[:8]:
             c = b.get("content", "") if isinstance(b, dict) else str(b)
             if c:
-                bullets.append(c[:40])
+                bullets.append(c[:80])
         return template_id, {
             "title": title,
             "bullets": bullets,
@@ -991,7 +1139,7 @@ class HTMLDesignAgent:
 
         # Build text content
         body_parts = []
-        for block in text_blocks[:6]:
+        for block in text_blocks[:10]:
             content = block.get("content", "") if isinstance(block, dict) else str(block)
             is_bold = block.get("is_bold", False) if isinstance(block, dict) else False
             if is_bold:
@@ -1099,6 +1247,12 @@ class HTMLDesignAgent:
                 )
                 if lh:
                     slide_data["layout_hint"] = lh
+                # page_weight: prefer ContentAgent's pass-through, fall back to outline item
+                pw = content.get("page_weight", "") or (
+                    item.get("page_weight", "") if isinstance(item, dict) else getattr(item, "page_weight", "")
+                )
+                if pw:
+                    slide_data["page_weight"] = pw
             elif hasattr(content, "text_blocks"):
                 # Convert dataclass objects to plain dicts for template/JSON consumption
                 from dataclasses import asdict as _asdict
@@ -1123,6 +1277,17 @@ class HTMLDesignAgent:
                 slide_data["chart_suggestion"] = _to_dict(getattr(content, "chart_suggestion", None))
                 slide_data["diagram_spec"] = _to_dict(getattr(content, "diagram_spec", None))
                 slide_data["visual_block"] = _to_dict(getattr(content, "visual_block", None))
+                # layout_hint & page_weight: prefer ContentAgent pass-through, fall back to outline item
+                lh = getattr(content, "layout_hint", "") or (
+                    item.get("layout_hint", "") if isinstance(item, dict) else getattr(item, "layout_hint", "")
+                )
+                if lh:
+                    slide_data["layout_hint"] = lh
+                pw = getattr(content, "page_weight", "") or (
+                    item.get("page_weight", "") if isinstance(item, dict) else getattr(item, "page_weight", "")
+                )
+                if pw:
+                    slide_data["page_weight"] = pw
 
             slides_data.append(slide_data)
 

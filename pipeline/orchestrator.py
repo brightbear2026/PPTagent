@@ -182,7 +182,7 @@ class Orchestrator:
             "content": content,
         }
 
-        llm = self._get_llm()
+        llm = self._get_llm("content")
         agent = ContentAgent(llm)
 
         # 只生成目标页
@@ -191,13 +191,20 @@ class Orchestrator:
         if not target:
             raise RuntimeError(f"大纲中找不到第{page_number}页")
 
+        # Find previous slide for narrative continuity
+        prev_slide = None
+        for idx, item in enumerate(outline_slides):
+            if item.get("page_number") == page_number and idx > 0:
+                prev_slide = outline_slides[idx - 1]
+                break
+
         # 临时替换大纲只含该页，重跑填充
         single_context = dict(context)
         single_context["outline"] = {"items": [target]}
         single_context["_user_feedback"] = user_feedback
 
         new_slides = await asyncio.to_thread(
-            self._rerun_single_slide, agent, target, single_context, user_feedback
+            self._rerun_single_slide, agent, target, single_context, user_feedback, prev_slide
         )
 
         # 合并到 content result
@@ -210,10 +217,10 @@ class Orchestrator:
         self.store.save_stage_result(task_id, "content", updated_content)
 
     @staticmethod
-    def _rerun_single_slide(agent, target_slide: dict, context: dict, user_feedback: str) -> list:
+    def _rerun_single_slide(agent, target_slide: dict, context: dict, user_feedback: str, prev_slide=None) -> list:
         """在线程中执行单页重跑，传入 user_feedback。"""
         shared = agent._build_shared_context(context)
-        result = agent._generate_one_slide(target_slide, None, shared, user_feedback=user_feedback)
+        result = agent._generate_one_slide(target_slide, prev_slide, shared, user_feedback=user_feedback)
         if result is None:
             result = agent._make_placeholder(target_slide)
         # Normalize to content result format (mirrors _build_content_result logic for one slide)
@@ -227,18 +234,23 @@ class Orchestrator:
                     "is_bold": b.get("type") == "heading",
                 })
         pn = result.get("page_number", target_slide.get("page_number"))
+        takeaway = result.get("takeaway_message") or target_slide.get("takeaway_message", "")
         entry = {
             "page_number": pn,
             "slide_type": target_slide.get("slide_type", "content"),
-            "takeaway_message": target_slide.get("takeaway_message", ""),
+            "takeaway_message": takeaway,
             "primary_visual": target_slide.get("primary_visual", "text"),
             "text_blocks": text_blocks,
             "chart_suggestion": result.get("chart_suggestion"),
             "diagram_spec": result.get("diagram_spec"),
             "visual_block": result.get("visual_block"),
             "source_note": result.get("visual_hint", ""),
+            "layout_hint": target_slide.get("layout_hint", ""),
             "revision_notes": result.get("revision_notes"),
         }
+        if result.get("is_failed"):
+            entry["is_failed"] = True
+            entry["error_message"] = result.get("error_message", result.get("error", ""))
         return [entry]
 
     # ------------------------------------------------------------------
