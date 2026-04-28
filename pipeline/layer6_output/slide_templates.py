@@ -258,13 +258,11 @@ TEMPLATES: dict[str, str] = {
     "hero_splash": """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:50px 80px;box-sizing:border-box;">
-  <p style="color:<<MUTED>>;font-size:18px;font-weight:400;text-align:center;margin-bottom:24px;line-height:1.4;max-width:700px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<HEADLINE>></p>
-  <h1 style="color:<<PRIMARY>>;font-size:72px;font-weight:700;text-align:center;line-height:1.1;letter-spacing:-2px;margin:8px 0;"><<BIG_NUMBER>></h1>
-  <p style="color:<<ACCENT>>;font-size:16px;font-weight:500;text-align:center;margin-top:8px;margin-bottom:24px;"><<NUMBER_CAPTION>></p>
-  <p style="color:<<MUTED>>;font-size:14px;text-align:center;line-height:1.5;max-width:600px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<SUBTITLE>></p>
-</div>
-<div style="position:absolute;bottom:16px;right:32px;color:<<MUTED>>;font-size:10px;opacity:0.5;"><p style="color:<<MUTED>>;font-size:10px;margin:0;">P<<PAGE_NUMBER>>/<<TOTAL_SLIDES>></p></div>
+  <p style="position:absolute;left:130px;top:130px;width:700px;height:60px;color:<<MUTED>>;font-size:18px;text-align:center;line-height:1.4;margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<HEADLINE>></p>
+  <h1 style="position:absolute;left:130px;top:210px;width:700px;height:90px;color:<<PRIMARY>>;font-size:72px;font-weight:700;text-align:center;line-height:1.1;letter-spacing:-2px;margin:0;"><<BIG_NUMBER>></h1>
+  <p style="position:absolute;left:130px;top:320px;width:700px;height:30px;color:<<ACCENT>>;font-size:16px;font-weight:500;text-align:center;margin:0;"><<NUMBER_CAPTION>></p>
+  <p style="position:absolute;left:180px;top:370px;width:600px;height:50px;color:<<MUTED>>;font-size:14px;text-align:center;line-height:1.5;margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<SUBTITLE>></p>
+  <div style="position:absolute;bottom:16px;right:32px;color:<<MUTED>>;font-size:10px;opacity:0.5;"><p style="color:<<MUTED>>;font-size:10px;margin:0;">P<<PAGE_NUMBER>>/<<TOTAL_SLIDES>></p></div>
 </body></html>""",
     # ── IT diagram templates ────────────────────────────────────────────
     "tech_stack_layers": """<!DOCTYPE html>
@@ -581,6 +579,19 @@ def _render_bullets(bullets: list, text_color: str, primary: str, font_size: int
     return "\n".join(parts)
 
 
+def _weighted_len(text: str) -> float:
+    """Weighted character length: CJK/full-width=1.0, digit=0.6, other=0.75."""
+    total = 0.0
+    for ch in text:
+        if '一' <= ch <= '鿿' or '　' <= ch <= '〿' or '＀' <= ch <= '￯':
+            total += 1.0
+        elif ch.isdigit():
+            total += 0.6
+        else:
+            total += 0.75
+    return total
+
+
 def _render_metrics(
     metrics: list,
     primary: str,
@@ -616,12 +627,12 @@ def _render_metrics(
         unit = _html.escape(str(m.get("unit", "")))
         note = _html.escape(str(m.get("note", "")))
         left = starts[i]
-        # Shrink font further if value text is long
-        v_len = len(str(m.get("value", "")))
-        if v_len > 4:
-            value_font_cur = max(20, value_font - (v_len - 4) * 4)
-        else:
-            value_font_cur = value_font
+        # Shrink font based on weighted character width (CJK wider than digits)
+        raw_text = str(m.get("value", "")) + str(m.get("unit", ""))
+        w_len = _weighted_len(raw_text)
+        max_font_by_width = int((box_w - 28) / max(w_len, 1) * 0.95)
+        value_font_cur = min(value_font, max_font_by_width)
+        value_font_cur = max(value_font_cur, 18)  # floor protection
         parts.append(
             f'<div style="position:absolute; left:{left}px; top:{box_top}px; width:{box_w}px; height:{box_h}px; background-color:{bg};">'
             f'<div style="position:absolute; top:0; left:0; width:{box_w}px; height:4px; background-color:{accent};"></div>'

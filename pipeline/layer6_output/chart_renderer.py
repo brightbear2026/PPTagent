@@ -162,7 +162,7 @@ class ChartRenderer:
                 p.font.italic = True
                 text_color = self._parse_color(theme.colors.get("text_secondary", "#666666"))
                 p.font.color.rgb = text_color
-                p.font.name = theme.fonts.get("body", "Calibri")
+                p.font.name = theme.fonts.get("body", "Microsoft YaHei")
                 p.alignment = PP_ALIGN.CENTER
 
             return True
@@ -259,14 +259,19 @@ class ChartRenderer:
 
     def _apply_fig_style(self, fig, spec: ChartSpec, theme):
         """应用通用 Plotly 样式（白底、无网格线、字体）"""
-        font_family = theme.fonts.get("body", "Calibri")
+        font_family = theme.fonts.get("body", "Microsoft YaHei")
         text_color = theme.colors.get("text_primary", "#333333")
+
+        # Hide legend when single series
+        show_legend = spec.show_legend
+        if show_legend and len(spec.series) <= 1:
+            show_legend = False
 
         fig.update_layout(
             plot_bgcolor="white",
             paper_bgcolor="white",
             font=dict(family=font_family, size=12, color=text_color),
-            showlegend=spec.show_legend,
+            showlegend=show_legend,
             margin=dict(l=60, r=30, t=50 if spec.title else 20, b=60),
             xaxis=dict(
                 showgrid=False,
@@ -280,7 +285,17 @@ class ChartRenderer:
             ),
         )
 
+        # Dedup axis_title vs series_name
         if spec.title:
+            for axis_key in ("xaxis", "yaxis"):
+                axis_cfg = fig.layout.get(axis_key, {})
+                if hasattr(axis_cfg, "title") and axis_cfg.title:
+                    axis_title = axis_cfg.title.text if hasattr(axis_cfg.title, "text") else str(axis_cfg.title)
+                    for s in spec.series:
+                        if s.name and s.name == axis_title:
+                            fig.layout[axis_key].title = None
+                            break
+
             fig.update_layout(title=dict(
                 text=spec.title,
                 font=dict(size=16, color=text_color),
@@ -450,7 +465,7 @@ class ChartRenderer:
                 "text_secondary": "#666666",
                 "chart_palette": ["#003D6E", "#FF6B35", "#70AD47", "#FFC000", "#5B9BD5", "#C00000"],
             },
-            fonts={"body": "Calibri", "heading": "Calibri"},
+            fonts={"body": "Microsoft YaHei", "heading": "Microsoft YaHei"},
         )
 
     @staticmethod

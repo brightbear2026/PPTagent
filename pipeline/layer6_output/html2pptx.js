@@ -102,6 +102,14 @@ async function addBackground(slideData, targetSlide, tmpDir) {
 }
 
 function addElements(slideData, targetSlide, pres) {
+  const CJK_RE = /[一-鿿　-〿＀-￯]/;
+
+  function safeCjkFont(originalFont, text) {
+    if (!text || typeof text !== 'string') return originalFont;
+    if (!CJK_RE.test(text)) return originalFont;
+    return 'Microsoft YaHei';  // English name for cross-platform Office
+  }
+
   for (const el of slideData.elements) {
     if (el.type === 'image') {
       let imagePath = el.src.startsWith('file://') ? el.src.replace('file://', '') : el.src;
@@ -131,17 +139,19 @@ function addElements(slideData, targetSlide, pres) {
       if (el.shape.shadow) shapeOptions.shadow = el.shape.shadow;
       targetSlide.addText(el.text || '', shapeOptions);
     } else if (el.type === 'list') {
+      const listFont = safeCjkFont(el.style.fontFace, el.items.map(r => r.text || '').join(''));
       const listOptions = {
         x: el.position.x, y: el.position.y,
         w: el.position.w, h: el.position.h,
         fontSize: el.style.fontSize,
-        fontFace: el.style.fontFace,
+        fontFace: listFont,
         color: el.style.color,
         align: el.style.align,
         valign: 'top',
         lineSpacing: el.style.lineSpacing,
         paraSpaceBefore: el.style.paraSpaceBefore,
-        paraSpaceAfter: el.style.paraSpaceAfter
+        paraSpaceAfter: el.style.paraSpaceAfter,
+        autoFit: true
       };
       if (el.style.margin) listOptions.margin = el.style.margin;
       targetSlide.addText(el.items, listOptions);
@@ -165,11 +175,13 @@ function addElements(slideData, targetSlide, pres) {
         }
       }
 
+      const elText = typeof el.text === 'string' ? el.text : (Array.isArray(el.text) ? el.text.map(r => r.text || '').join('') : '');
+      const elFont = safeCjkFont(el.style.fontFace, elText);
       const textOptions = {
         x: adjustedX, y: el.position.y,
         w: adjustedW, h: el.position.h,
         fontSize: el.style.fontSize,
-        fontFace: el.style.fontFace,
+        fontFace: elFont,
         color: el.style.color,
         bold: el.style.bold,
         italic: el.style.italic,
@@ -178,7 +190,8 @@ function addElements(slideData, targetSlide, pres) {
         lineSpacing: el.style.lineSpacing,
         paraSpaceBefore: el.style.paraSpaceBefore,
         paraSpaceAfter: el.style.paraSpaceAfter,
-        inset: 0
+        inset: 0,
+        autoFit: true
       };
       if (el.style.align) textOptions.align = el.style.align;
       if (el.style.margin) textOptions.margin = el.style.margin;

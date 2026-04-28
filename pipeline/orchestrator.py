@@ -194,9 +194,13 @@ class Orchestrator:
 
         # Find previous slide for narrative continuity
         prev_slide = None
+        next_slide = None
         for idx, item in enumerate(outline_slides):
-            if item.get("page_number") == page_number and idx > 0:
-                prev_slide = outline_slides[idx - 1]
+            if item.get("page_number") == page_number:
+                if idx > 0:
+                    prev_slide = outline_slides[idx - 1]
+                if idx < len(outline_slides) - 1:
+                    next_slide = outline_slides[idx + 1]
                 break
 
         # 临时替换大纲只含该页，重跑填充
@@ -205,7 +209,7 @@ class Orchestrator:
         single_context["_user_feedback"] = user_feedback
 
         new_slides = await asyncio.to_thread(
-            self._rerun_single_slide, agent, target, single_context, user_feedback, prev_slide
+            self._rerun_single_slide, agent, target, single_context, user_feedback, prev_slide, next_slide
         )
 
         # 合并到 content result
@@ -218,10 +222,10 @@ class Orchestrator:
         self.store.save_stage_result(task_id, "content", updated_content)
 
     @staticmethod
-    def _rerun_single_slide(agent, target_slide: dict, context: dict, user_feedback: str, prev_slide=None) -> list:
+    def _rerun_single_slide(agent, target_slide: dict, context: dict, user_feedback: str, prev_slide=None, next_slide=None) -> list:
         """在线程中执行单页重跑，传入 user_feedback。"""
         shared = agent._build_shared_context(context)
-        result = agent._generate_one_slide(target_slide, prev_slide, shared, user_feedback=user_feedback)
+        result = agent._generate_one_slide(target_slide, prev_slide, next_slide, shared, user_feedback=user_feedback)
         if result is None:
             result = agent._make_placeholder(target_slide)
         # Normalize to content result format (mirrors _build_content_result logic for one slide)
@@ -297,6 +301,10 @@ class Orchestrator:
 
             self._sync_task_fields(task_id, stage, result)
             self._emit_field_metrics(stage, result)
+
+            # Render post-check: detect text truncation in generated PPTX
+            if stage == "render":
+                self._render_post_check(task_id, result, _logger)
 
             _duration = _time.monotonic() - _stage_start
             _logger.info("stage_completed stage=%s task=%s duration=%.2fs", stage, task_id, _duration)
@@ -384,10 +392,27 @@ class Orchestrator:
             from pipeline.agents.content_agent import ContentAgent
             llm = self._get_llm(stage)
             agent = ContentAgent(llm)
-            return agent.run(context), agent
+            outline_for_content = context.get("outline", {})
+            outline_items = outline_for_content.get("items", outline_for_content.get("slides", []))
+            logger.info(
+                "STAGE_PAGE_COUNT stage=content outline_pages=%d (structural=%d, content=%d)",
+                len(outline_items),
+                sum(1 for s in outline_items if s.get("slide_type") in ("title", "agenda", "section_divider")),
+                sum(1 for s in outline_items if s.get("slide_type") not in ("title", "agenda", "section_divider")),
+            )
+            result = agent.run(context)
+            content_slides = result.get("slides", []) if isinstance(result, dict) else []
+            logger.info(
+                "STAGE_PAGE_COUNT stage=content_output output_pages=%d",
+                len(content_slides),
+            )
+            return result, agent
 
         elif stage == "design":
             render_mode = os.environ.get("RENDER_MODE", "html")
+            content_input = context.get("content", {})
+            input_slides = content_input.get("slides", []) if isinstance(content_input, dict) else []
+            logger.info("STAGE_PAGE_COUNT stage=design input_content_pages=%d", len(input_slides))
             if render_mode == "html":
                 from pipeline.layer6_output.node_bridge import is_node_available
                 if is_node_available():
@@ -397,7 +422,10 @@ class Orchestrator:
                     except ValueError:
                         llm = None
                     agent = HTMLDesignAgent(llm)
-                    return agent.run(context), agent
+                    result = agent.run(context)
+                    design_slides = result.get("slides", []) if isinstance(result, dict) else []
+                    logger.info("STAGE_PAGE_COUNT stage=design_output output_pages=%d", len(design_slides))
+                    return result, agent
             # Fallback to legacy render path
             from pipeline.agents.design_agent import DesignAgent
             try:
@@ -610,3 +638,84 @@ class Orchestrator:
             output_file = result.get("output_file", "")
             if output_file:
                 self.store.update_task(task_id, output_file=output_file)
+
+    def _render_post_check(self, task_id: str, render_result: Dict, _logger) -> None:
+        """Re-extract text from generated PPTX and check for truncation."""
+        output_file = render_result.get("output_file", "")
+        if not output_file or not os.path.isfile(output_file):
+            return
+
+        try:
+            from markitdown import MarkItDown
+            md = MarkItDown()
+            converted = md.convert(output_file)
+            actual_text = converted.text_content if hasattr(converted, 'text_content') else str(converted)
+        except ImportError:
+            _logger.debug("[RenderPostCheck] markitdown未安装，跳过渲染后检查")
+            return
+        except Exception as e:
+            _logger.warning(f"[RenderPostCheck] 无法提取PPTX文本: {e}")
+            return
+
+        # Load expected content
+        content = self.store.get_stage_result(task_id, "content") or {}
+        expected_slides = content.get("slides", [])
+        if not expected_slides or not actual_text:
+            return
+
+        warnings = []
+        # Split actual text by slide markers (markitdown uses --- or Slide N)
+        import re
+        actual_slides = re.split(r'(?:---|Slide\s+\d+)', actual_text)
+
+        for slide in expected_slides:
+            pn = slide.get("page_number", "?")
+            blocks = slide.get("text_blocks", [])
+            for block in blocks:
+                expected = block.get("content", "").strip()
+                if not expected or len(expected) < 10:
+                    continue
+                # Find this text in actual output
+                found = False
+                for actual_chunk in actual_slides:
+                    if expected[:20] in actual_chunk or expected[-20:] in actual_chunk:
+                        # Check for truncation
+                        if self._check_truncation(expected, actual_chunk):
+                            warnings.append(f"P{pn}: 文本可能被截断 — '{expected[:30]}...'")
+                        found = True
+                        break
+                if not found and len(expected) > 30:
+                    # Text completely missing from output
+                    _logger.debug(f"[RenderPostCheck] P{pn} 文本未在PPTX中找到: '{expected[:40]}...'")
+
+        if warnings:
+            _logger.warning("[RenderPostCheck] 检测到%d处可能的文本截断: %s",
+                          len(warnings), "; ".join(warnings))
+            # Store warnings in pipeline_stages metadata
+            stage_info = self.store.get_stage(task_id, "render")
+            if stage_info:
+                meta = stage_info.get("metadata", {})
+                meta["truncation_warnings"] = warnings
+                self.store.update_stage(task_id, "render", metadata=meta)
+        else:
+            _logger.info("[RenderPostCheck] 未检测到文本截断问题")
+
+    @staticmethod
+    def _check_truncation(expected: str, actual: str) -> bool:
+        """True if actual appears to be a truncated version of expected."""
+        if not expected or actual in expected:
+            return False
+        # Check if a prefix of expected appears in actual (truncation)
+        # Find where expected starts in actual
+        idx = actual.find(expected[:20])
+        if idx < 0:
+            return False
+        # Extract the portion after the match point
+        actual_portion = actual[idx:idx + len(expected) + 10]
+        if expected.startswith(actual_portion[:len(expected)]) and len(actual_portion) < len(expected) * 0.85:
+            return True
+        # Check if actual contains expected start but not end
+        expected_end = expected[-20:]
+        if expected[:30] in actual_portion and expected_end not in actual_portion:
+            return True
+        return False

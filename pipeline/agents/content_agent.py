@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
@@ -40,9 +41,15 @@ class ContentAgent(StructuredLLMAgent):
         self._page_contents: Dict[int, Dict] = {}
         self._lock = threading.Lock()
 
+    PROMPT_VERSION = os.getenv("CONTENT_AGENT_PROMPT_VERSION", "v2")
+
     @property
     def system_prompt(self) -> str:
-        return load_prompt("content_agent", "v1")
+        return load_prompt("content_agent", self.PROMPT_VERSION)
+
+    @property
+    def _is_v2(self) -> bool:
+        return self.PROMPT_VERSION != "v1"
 
     # ------------------------------------------------------------------
     # 主执行入口（完全覆盖基类 run，不进 ReAct 循环）
@@ -85,7 +92,8 @@ class ContentAgent(StructuredLLMAgent):
                 if slide.get("slide_type") in _STRUCTURAL_TYPES:
                     continue
                 prev_slide = all_slides[i - 1] if i > 0 else None
-                futures[executor.submit(self._generate_one_slide, slide, prev_slide, shared)] = slide
+                next_slide = all_slides[i + 1] if i < len(all_slides) - 1 else None
+                futures[executor.submit(self._generate_one_slide, slide, prev_slide, next_slide, shared)] = slide
 
             for fut in as_completed(futures):
                 slide = futures[fut]
@@ -117,6 +125,55 @@ class ContentAgent(StructuredLLMAgent):
             raise ValueError("内容填充失败：所有页面均未生成内容")
 
         result = self._build_content_result()
+
+        # Chart table routing stats
+        total_slides_with_tables = sum(1 for s in all_slides if s.get("primary_visual") == "chart")
+        slides_with_chart_data = sum(
+            1 for s in result.get("slides", [])
+            if s.get("chart_suggestion") and s.get("chart_suggestion") is not None
+        )
+        logger.info(
+            "[ChartTable] 路由统计: chart_pages=%d, chart_filled=%d, total=%d",
+            total_slides_with_tables, slides_with_chart_data, len(result.get("slides", [])),
+        )
+
+        # 2-pass chart dedup: rerun duplicate pages with charts forbidden
+        dupes = self._dedupe_charts(result)
+        if dupes:
+            logger.info(f"[ChartDedup] 检测到{len(dupes)}页重复图表，开始重跑: {dupes}")
+            dupe_slides_by_pn = {s["page_number"]: s for s in all_slides if s.get("page_number") in dupes}
+            for pn in dupes:
+                slide = dupe_slides_by_pn.get(pn)
+                if not slide:
+                    continue
+                idx = next((i for i, s in enumerate(all_slides) if s.get("page_number") == pn), None)
+                if idx is None:
+                    continue
+                prev_s = all_slides[idx - 1] if idx > 0 else None
+                next_s = all_slides[idx + 1] if idx < len(all_slides) - 1 else None
+                # Tag slide to forbid charts in _build_slide_messages
+                slide["_forbid_charts"] = True
+                try:
+                    rerun_result = self._generate_one_slide(slide, prev_s, next_s, shared)
+                    if rerun_result:
+                        with self._lock:
+                            self._page_contents[rerun_result.get("page_number", pn)] = rerun_result
+                        logger.info(f"[ChartDedup] P{pn} 重跑成功")
+                    else:
+                        logger.warning(f"[ChartDedup] P{pn} 重跑失败，保留原内容但清除图表")
+                        with self._lock:
+                            existing = self._page_contents.get(pn, {})
+                            existing["chart_suggestion"] = None
+                            self._page_contents[pn] = existing
+                except Exception as e:
+                    logger.error(f"[ChartDedup] P{pn} 重跑异常: {e}")
+                finally:
+                    slide.pop("_forbid_charts", None)
+
+            # Rebuild result after dedup rerun
+            result = self._build_content_result()
+            logger.info(f"[ChartDedup] 重跑完成，最终chart数=%d", sum(1 for s in result.get("slides", []) if s.get("chart_suggestion")))
+
         validation = self.validate(result)
         if not validation.valid:
             logger.warning(f"[ContentAgent] 验证警告: {validation.errors}")
@@ -210,6 +267,13 @@ class ContentAgent(StructuredLLMAgent):
                 + "\n"
             )
 
+        # 受众分析（v2 only, truncated to 80 chars to control token cost）
+        audience_ctx = ""
+        if self._is_v2:
+            audience_analysis = strategy.get("audience_analysis", "")
+            if audience_analysis:
+                audience_ctx = f"\n## 受众分析\n  {audience_analysis[:80]}\n"
+
         # 预计算指标（AnalyzeAgent 产出但从未消费的真实数据）
         metrics_text = ""
         derived = analysis.get("derived_metrics", [])
@@ -224,13 +288,14 @@ class ContentAgent(StructuredLLMAgent):
             if lines:
                 metrics_text = "\n## 已验证的真实数据指标（可直接引用，禁止编造类似数字）\n" + "\n".join(lines) + "\n"
 
-        if narrative_ctx or metrics_text:
+        if narrative_ctx or metrics_text or audience_ctx:
             logger.info(
                 f"[ContentAgent] 注入全局叙事上下文: "
                 f"scqa={'yes' if scqa else 'no'}, "
                 f"themes={len(strategy.get('core_themes', []))}, "
                 f"messages={len(strategy.get('key_messages', []))}, "
-                f"derived_metrics={len(derived)}"
+                f"derived_metrics={len(derived)}, "
+                f"audience_analysis={'yes' if audience_ctx else 'no'}"
             )
 
         return {
@@ -243,6 +308,7 @@ class ContentAgent(StructuredLLMAgent):
             "chunks": chunks,
             "narrative_ctx": narrative_ctx,
             "metrics_text": metrics_text,
+            "audience_ctx": audience_ctx,
         }
 
     # ------------------------------------------------------------------
@@ -261,7 +327,7 @@ class ContentAgent(StructuredLLMAgent):
         return ""
 
     def _build_slide_messages(
-        self, slide: Dict, prev_slide: Optional[Dict], shared: Dict
+        self, slide: Dict, prev_slide: Optional[Dict], next_slide: Optional[Dict], shared: Dict
     ) -> List[ChatMessage]:
         """为单个页面构建 LLM 消息（无状态，可多线程并发调用）。"""
         pn = slide.get("page_number", "?")
@@ -281,6 +347,17 @@ class ContentAgent(StructuredLLMAgent):
                 f"P{prev_slide.get('page_number')}: {prev_title} | {prev_kw}\n"
             )
 
+        # 下一页叙事预告（v2 only）
+        # TODO: Future risk — if user edits takeaway at checkpoint 1, this becomes stale
+        next_ctx = ""
+        if next_slide and self._is_v2:
+            next_kw = next_slide.get("takeaway_message", next_slide.get("takeaway", ""))
+            if next_kw:
+                next_ctx = (
+                    f"\n## 下一页预告（本页结论应自然引出）\n"
+                    f"P{next_slide.get('page_number')}: {next_kw}\n"
+                )
+
         # 材料注入：chart 页优先注入表格；非 chart 页在数据相关时也注入
         material_text = ""
         table_injected = False
@@ -298,7 +375,14 @@ class ContentAgent(StructuredLLMAgent):
 
         # 视觉要求
         has_table_data = bool(table_injected)
-        if pv == "chart":
+        if slide.get("_forbid_charts"):
+            visual_req = (
+                "本页 chart_suggestion 必须为 null。\n"
+                "为补偿失去的图表区域，text_blocks 必须扩展到 4-6 个 bullet，"
+                "每个 bullet 长度 30-50 字，需包含具体数字或案例。\n"
+                "可选：填写 visual_block（type=kpi_cards）展示关键数据。"
+            )
+        elif pv == "chart":
             visual_req = (
                 "⚠️ chart_suggestion 必须填写（使用上方表格数据，chart_type 使用合法值）"
                 if has_table_data
@@ -345,22 +429,23 @@ class ContentAgent(StructuredLLMAgent):
 - 叙事角色: {slide.get('narrative_arc', '未指定')}
 - 所属章节: {slide.get('section', '未指定')}
 - 目标受众: {task.get('target_audience', '管理层')}
-{self._weight_guide(slide)}{prev_ctx}{material_text}{shared.get('narrative_ctx', '')}{shared.get('metrics_text', '')}{shared.get('skill_section', '')}{layout_guide}---
+{self._weight_guide(slide)}{prev_ctx}{next_ctx}{material_text}{shared.get('narrative_ctx', '')}{shared.get('metrics_text', '')}{shared.get('audience_ctx', '')}{shared.get('skill_section', '')}{layout_guide}---
 {visual_req}
-text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
+bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_weight 策略执行（见系统提示）。
 
 请直接输出 JSON 对象，放在 ```json ... ``` 代码块中。"""
 
         return [ChatMessage(role="user", content=user_msg)]
 
     def _generate_one_slide(
-        self, slide: Dict, prev_slide: Optional[Dict], shared: Dict, user_feedback: str = ""
+        self, slide: Dict, prev_slide: Optional[Dict], next_slide: Optional[Dict],
+        shared: Dict, user_feedback: str = ""
     ) -> Optional[Dict]:
         """调用 LLM 生成单页内容，含截断检测和一次重试。线程安全（无写共享状态）。"""
         pn = slide.get("page_number", "?")
         messages = [
             ChatMessage(role="system", content=self.system_prompt),
-            *self._build_slide_messages(slide, prev_slide, shared),
+            *self._build_slide_messages(slide, prev_slide, next_slide, shared),
         ]
 
         if user_feedback:
@@ -508,14 +593,15 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
 
         if best_score == 0:
             logger.info(
-                f"[ChartTable] 无关键词匹配（任意选取） | slide={slide.get('page_number')} "
+                f"[ChartTable] 无关键词匹配，跳过表格注入 | slide={slide.get('page_number')} "
                 f"data_source={data_source!r} title={title!r}"
             )
-        else:
-            logger.debug(
-                f"[ChartTable] 匹配成功 | slide={slide.get('page_number')} "
-                f"score={best_score} tables={len(tables)} best_idx={best_idx}"
-            )
+            return ""
+
+        logger.debug(
+            f"[ChartTable] 匹配成功 | slide={slide.get('page_number')} "
+            f"score={best_score} tables={len(tables)} best_idx={best_idx}"
+        )
 
         result_parts = []
 
@@ -611,6 +697,27 @@ text_blocks 至少2个 bullet 项，内容来自原文材料，不要编造。
             "is_failed": True,
             "error_message": "content_generation_failed",
         }
+
+    def _dedupe_charts(self, result: Dict) -> List[int]:
+        """Detect duplicate chart_suggestion signatures across slides."""
+        seen: Dict = {}
+        dupes: List[int] = []
+        for s in result.get("slides", []):
+            chart = s.get("chart_suggestion")
+            if not chart or not isinstance(chart, dict):
+                continue
+            try:
+                sig = (chart.get("chart_type", ""),
+                       tuple(round(v, 1) for v in chart.get("series", [{}])[0].get("values", [])))
+            except (IndexError, TypeError, ValueError):
+                continue
+            pn = s.get("page_number")
+            if sig in seen:
+                dupes.append(pn)
+                logger.info(f"[ChartDedup] 重复图表 P{pn} 与 P{seen[sig]}: type={sig[0]} values={sig[1]}")
+            else:
+                seen[sig] = pn
+        return dupes
 
     def _build_content_result(self) -> Dict:
         """将收集的页面内容组装为 ContentResult.to_dict() 格式。"""
