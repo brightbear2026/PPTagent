@@ -582,24 +582,31 @@ async function extractSlideData(page) {
 }
 
 async function html2pptx(htmlFile, pres, options = {}) {
-  const { tmpDir = process.env.TMPDIR || '/tmp', slide = null } = options;
+  const { tmpDir = process.env.TMPDIR || '/tmp', slide = null, browser = null } = options;
+
+  const ownBrowser = !browser;
+  let launchedBrowser = browser;
+
   try {
-    const launchOptions = { env: { TMPDIR: tmpDir } };
-    if (process.platform === 'darwin') launchOptions.channel = 'chrome';
-    const browser = await chromium.launch(launchOptions);
+    if (!launchedBrowser) {
+      const launchOptions = { env: { TMPDIR: tmpDir } };
+      if (process.platform === 'darwin') launchOptions.channel = 'chrome';
+      launchedBrowser = await chromium.launch(launchOptions);
+    }
 
     let bodyDimensions, slideData;
     const filePath = path.isAbsolute(htmlFile) ? htmlFile : path.join(process.cwd(), htmlFile);
     const validationErrors = [];
 
+    let page;
     try {
-      const page = await browser.newPage();
+      page = await launchedBrowser.newPage();
       await page.goto(`file://${filePath}`);
       bodyDimensions = await getBodyDimensions(page);
       await page.setViewportSize({ width: Math.round(bodyDimensions.width), height: Math.round(bodyDimensions.height) });
       slideData = await extractSlideData(page);
     } finally {
-      await browser.close();
+      if (page) await page.close().catch(() => {});
     }
 
     if (bodyDimensions.errors?.length) validationErrors.push(...bodyDimensions.errors);
@@ -623,6 +630,8 @@ async function html2pptx(htmlFile, pres, options = {}) {
   } catch (error) {
     if (!error.message.startsWith(htmlFile)) throw new Error(`${htmlFile}: ${error.message}`);
     throw error;
+  } finally {
+    if (ownBrowser && launchedBrowser) await launchedBrowser.close().catch(() => {});
   }
 }
 

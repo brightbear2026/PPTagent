@@ -1,4 +1,7 @@
 """
+DEPRECATED: Legacy design agent. Only used when RENDER_MODE != "html" or Node.js is unavailable.
+See HTMLDesignAgent for the primary rendering path.
+
 DesignAgent — 混合 CodeAgent + ReActAgent
 将 ContentResult + OutlineResult 转换为完整的 PresentationSpec（SlideSpec 列表）。
 

@@ -1,4 +1,7 @@
 """
+DEPRECATED: Legacy PPT builder. Only used when RENDER_MODE != "html".
+See html2pptx.js + ChartRenderer for the primary rendering path.
+
 PPT Builder: 将SlideSpec转换为.pptx文件
 使用python-pptx构建专业级PPT，支持图表和视觉主题
 """

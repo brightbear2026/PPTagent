@@ -1,4 +1,7 @@
 """
+DEPRECATED: Legacy render agent. Only used when RENDER_MODE != "html".
+See html2pptx.js + ChartRenderer for the primary rendering path.
+
 RenderAgent — CodeAgent，无 LLM，纯代码渲染。
 包装现有 PPTBuilder 逻辑，输出 .pptx 文件路径。
 """

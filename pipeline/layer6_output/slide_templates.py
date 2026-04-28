@@ -1,4 +1,7 @@
 """
+DEPRECATED: Legacy slide templates. Referenced only by fallback builder.
+Primary path uses LLM-generated HTML.
+
 slide_templates.py — Pre-designed slide templates for HTMLDesignAgent.
 
 Instead of LLM generating free HTML, the LLM picks a template_id and fills

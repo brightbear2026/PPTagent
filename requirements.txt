@@ -17,6 +17,12 @@ python-multipart==0.0.12
 # JWT认证
 PyJWT>=2.8.0
 
+# 密码哈希
+bcrypt>=4.0.0
+
+# API速率限制
+slowapi>=0.1.9
+
 # 加密
 cryptography>=42.0.0
 
@@ -41,3 +47,6 @@ Pillow>=10.0.0
 # HTML渲染管线: CSS linting
 beautifulsoup4>=4.12
 tinycss2>=1.2
+
+# 结构化日志
+structlog>=24.0.0

@@ -10,6 +10,10 @@ const html2pptx = require('./html2pptx');
 const pptxgen = require('pptxgenjs');
 const fs = require('fs');
 const path = require('path');
+const { chromium } = require('playwright');
+
+const RECYCLE_PAGES = parseInt(process.env.CHROMIUM_RECYCLE_PAGES || '50', 10);
+const RECYCLE_SECONDS = parseInt(process.env.CHROMIUM_RECYCLE_SECONDS || '1800', 10);
 
 async function renderSlides(htmlDir, outputPath, layout) {
     const pptx = new pptxgen();
@@ -25,10 +29,29 @@ async function renderSlides(htmlDir, outputPath, layout) {
         throw new Error(`No HTML files found in ${htmlDir}`);
     }
 
+    const launchOptions = {};
+    if (process.platform === 'darwin') launchOptions.channel = 'chrome';
+
+    let browser = await chromium.launch(launchOptions);
+    let browserStartTime = Date.now();
+    let pagesSinceLaunch = 0;
+
     for (let i = 0; i < files.length; i++) {
+        // Recycle browser if we've rendered too many pages or it's been too long
+        if (pagesSinceLaunch >= RECYCLE_PAGES ||
+            (Date.now() - browserStartTime) / 1000 >= RECYCLE_SECONDS) {
+            await browser.close().catch(() => {});
+            browser = await chromium.launch(launchOptions);
+            browserStartTime = Date.now();
+            pagesSinceLaunch = 0;
+        }
+
         const htmlPath = path.join(htmlDir, files[i]);
         try {
-            const result = await html2pptx(htmlPath, pptx, { tmpDir: htmlDir });
+            const result = await html2pptx(htmlPath, pptx, {
+                tmpDir: htmlDir,
+                browser: browser,
+            });
             if (result.placeholders && result.placeholders.length > 0) {
                 allPlaceholders.push({
                     slide_index: i,
@@ -39,8 +62,10 @@ async function renderSlides(htmlDir, outputPath, layout) {
         } catch (err) {
             errors.push({ slide_index: i, file: files[i], error: err.message });
         }
+        pagesSinceLaunch++;
     }
 
+    await browser.close().catch(() => {});
     await pptx.writeFile({ fileName: outputPath });
 
     const result = {
@@ -49,7 +74,6 @@ async function renderSlides(htmlDir, outputPath, layout) {
         placeholders: allPlaceholders,
         errors: errors
     };
-
     process.stdout.write(JSON.stringify(result));
 }
 

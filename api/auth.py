@@ -3,18 +3,24 @@
 JWT-based authentication with password hashing
 """
 
-from __future__ import annotations
-
 import os
 import uuid
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import logging
+
+import bcrypt
+
+logger = logging.getLogger(__name__)
+
 import jwt
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from storage import get_store
 
@@ -22,7 +28,9 @@ from storage import get_store
 # JWT Configuration
 # ============================================================
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "pptagent_dev_secret_change_in_production")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is required")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 72  # 3 days
 
@@ -33,6 +41,7 @@ JWT_EXPIRATION_HOURS = 72  # 3 days
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 security = HTTPBearer(auto_error=False)
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ============================================================
@@ -66,13 +75,26 @@ class UserInfo(BaseModel):
 # ============================================================
 
 def hash_password(password: str) -> str:
-    """Hash a password using SHA-256 with a fixed salt scheme."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    """Hash a password using bcrypt."""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    """Verify a plain password against its hash."""
-    return hash_password(plain_password) == password_hash
+    """Verify a plain password against its hash.
+
+    Supports bcrypt (prefix $2) and legacy SHA-256.
+    """
+    if password_hash.startswith("$2"):
+        return bcrypt.checkpw(plain_password.encode("utf-8"), password_hash.encode("utf-8"))
+
+    # Legacy SHA-256 fallback
+    sha256_hash = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+    return sha256_hash == password_hash
+
+
+def is_legacy_hash(password_hash: str) -> bool:
+    """Check if a hash is legacy SHA-256 (needs upgrade)."""
+    return not password_hash.startswith("$2")
 
 
 # ============================================================
@@ -187,7 +209,8 @@ async def register(body: RegisterRequest):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest):
     """Login with username and password, returns JWT token."""
     username = body.username.strip()
     password = body.password.strip()
@@ -203,6 +226,14 @@ async def login(body: LoginRequest):
 
     if not verify_password(password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Upgrade legacy SHA-256 hash to bcrypt
+    if is_legacy_hash(user["password_hash"]):
+        try:
+            new_hash = hash_password(password)
+            store.update_user_password_hash(user["user_id"], new_hash)
+        except Exception:
+            logger.warning("Failed to rehash password for user %s", user["user_id"])
 
     token, expires_at = create_token(user["user_id"], user["username"])
 

@@ -1,100 +1,61 @@
+<div align="center">
+
 # PPT Agent
 
-输入文本或文档，自动生成咨询级 `.pptx` 演示文稿。
+**AI-Powered Consulting-Grade Presentation Generator**
 
-系统对标四大咨询公司的信息密度和视觉规范，强调透明可控：每个关键决策节点暂停，用户审阅确认后再继续。
+输入文本或文档，自动生成咨询级 `.pptx` 演示文稿
 
-## 效果预览
+[English](#english) | [中文](#中文)
 
-### Step 1：上传材料
+---
 
-上传文档（DOCX/XLSX/Markdown/TXT）或直接粘贴文本，选择汇报场景和目标受众。
+</div>
 
-<p align="center">
-  <img src="docs/screenshots/step1_upload.png" width="800" alt="Step 1 上传材料">
-</p>
+<a id="中文"></a>
 
-### Step 2：审阅大纲
+## 中文
 
-AI 根据场景自动选择叙事框架（SCQA / SCR / AIDA 等），生成论证型大纲。用户可编辑每页的核心观点、调整页序、删除页面。
+### PPT Agent 是什么？
 
-<p align="center">
-  <img src="docs/screenshots/step2_outline.png" width="800" alt="Step 2 审阅大纲">
-</p>
+PPT Agent 是一个自托管的 AI 演示文稿生成系统。输入一份业务文档或粘贴文本，系统通过 6 个 AI Agent 串行处理，生成信息密度对标咨询公司的专业 PPT。
 
-### Step 3：审阅内容
+与直接让 LLM "写一份 PPT" 不同，PPT Agent 的核心理念是**透明可控**：
 
-每页内容独立生成，右侧实时预览。可编辑文本、修改图表数据、对单页重跑（附反馈）。
+- **论证型大纲** — 基于金字塔原理（Pyramid Principle），根据汇报场景自动选择叙事框架（SCQA/SCR/AIDA 等），每页有明确论点和叙事角色
+- **2 个强制检查点** — 大纲和内容生成后必须经过用户审阅确认，可编辑任意字段后继续
+- **图表数据来自原文** — 优先从上传文件的真实表格提取，不会编造数字
+- **原生矢量图表** — 生成 PowerPoint 原生图表对象，可二次编辑，不是截图
 
-<p align="center">
-  <img src="docs/screenshots/step3_content.png" width="800" alt="Step 3 审阅内容">
-</p>
+### 效果预览
 
-### Step 4：下载 PPT
+| Step 1：上传材料 | Step 2：审阅大纲 |
+|:---:|:---:|
+| <img src="docs/screenshots/step1_upload.png" width="400"> | <img src="docs/screenshots/step2_outline.png" width="400"> |
 
-确认后自动渲染生成 `.pptx`，下载即用。
+| Step 3：审阅内容 | Step 4：下载 PPT |
+|:---:|:---:|
+| <img src="docs/screenshots/step3_content.png" width="400"> | <img src="docs/screenshots/step4_download.png" width="400"> |
 
-<p align="center">
-  <img src="docs/screenshots/step4_download.png" width="800" alt="Step 4 下载 PPT">
-</p>
-
-### 生成效果
-
-原生矢量图表、专业配色、结构完整——打开即可演示或二次编辑。
+**生成效果** — 原生矢量图表、专业配色、结构完整：
 
 <p align="center">
   <img src="docs/screenshots/ppt_result.png" width="800" alt="生成效果">
 </p>
 
----
+### 核心特性
 
-## 核心特性
+- **信息不丢失** — 为每页幻灯片单独注入最相关的原文段落，核心数据和关键结论完整保留
+- **图表数据来自原文** — 优先从真实表格提取，纯文本文档则从文本中提炼可量化论据
+- **原生矢量图表** — PowerPoint 原生图表对象，可直接编辑数据、换色、调字体
+- **论证型大纲** — 叙事框架驱动（SCQA/SCR/AIDA 等），不是章节堆砌
+- **流水线透明** — 6 个 Agent 串行执行，每步输出可审阅、可编辑、可回退
+- **任意 LLM** — 支持 DeepSeek、SiliconFlow、阿里云百炼、智谱、Moonshot 等所有 OpenAI 兼容接口，每个阶段可独立配置模型
+- **用户认证与配额** — JWT 认证，可配置每用户并发任务上限
+- **API Key 加密存储** — Fernet + PBKDF2HMAC 加密，不自托管 LLM 时密钥安全有保障
+- **完全自托管** — Docker 一键部署，所有数据留在本地
 
-### 信息不丢失
-
-大多数工具在把文章"喂给" LLM 时会大幅压缩，生成出来的 PPT 泛泛而谈。PPT Agent 为每页幻灯片单独注入最相关的原文段落，核心数据、关键结论、具体数字，该出现的都会出现。
-
-### 图表数据来自原文，不是编造的
-
-LLM 生成图表时常会"发明"数字。PPT Agent 的图表数据优先**来源于上传文件中的真实表格**（Excel/CSV 行列直接提取），对于没有结构化表格的纯文本文档，系统会从文本中**提炼可量化的论据**（百分比、增长趋势、对比数据等）构建图表。LLM 负责选择图表类型和写结论，不编造不存在的数字。
-
-### 原生矢量图表，不是截图
-
-生成的图表是 PowerPoint **原生图表对象**——可以直接点击修改数据、换颜色、调字体，和手工插入的图表没有区别。缩放不失真，支持二次编辑。
-
-### 流水线透明，每步可审阅
-
-6 个 Agent 串行执行，每个 Agent 的输出都持久化并暴露给用户：
-- 看到 AI 理解了哪些章节结构
-- 看到它规划的叙事框架是否符合你的汇报场景
-- 在内容生成前审阅并修改每页大纲
-- 在构建 PPT 前审阅并修改每页具体内容
-
-任意一步不满意，可以回退到那一步重新生成，**不需要从头来**。
-
-### 叙事结构而非堆砌信息
-
-PlanAgent 根据汇报场景（季度汇报 / 战略提案 / 竞标 Pitch 等）选择叙事框架（SCR / SCQA / AIDA 等），每页幻灯片都有明确的叙事角色（context / evidence / solution / closing），整个演示文稿有起承转合，不是 bullet 点的罗列。
-
-### 可接入任意 LLM
-
-只要支持 OpenAI 兼容协议都可以用——DeepSeek、SiliconFlow、阿里云百炼、智谱、Moonshot，或者自部署的 Ollama / vLLM。每个流水线阶段可以独立配置不同的模型。
-
-系统设置支持两种配置模式：
-- **通用模式**：一个模型 + API Key 覆盖全部阶段，适合快速上手
-- **分阶段模式**：每个阶段独立配置，适合进阶用户（如大纲用 DeepSeek-R1 做推理，内容用长文本模型）
-
-### 进度自动恢复
-
-创建 PPT 过程中随时可以切换页面——去查看历史记录或修改系统设置，再切回来时自动恢复到之前的步骤和编辑内容。侧边栏会用金色圆点提示有正在进行的任务。
-
-### 完全自托管
-
-所有处理在你自己的服务器上完成，API Key 使用 Fernet + PBKDF2HMAC 加密存储。
-
----
-
-## 技术栈
+### 技术栈
 
 | 组件 | 技术 |
 |---|---|
@@ -103,14 +64,12 @@ PlanAgent 根据汇报场景（季度汇报 / 战略提案 / 竞标 Pitch 等）
 | 数据库 | PostgreSQL（Alembic 管理迁移） |
 | LLM | 任意 OpenAI 兼容接口 |
 | PPT 渲染 | Node.js + Playwright + pptxgenjs（HTML → PPTX） |
-| 图表注入 | python-pptx 原生图表 + Plotly PNG |
-| 视觉技能 | 可扩展 Skill Registry（图表 / 图示 / 视觉块） |
+| 图表注入 | python-pptx 原生矢量图表 |
+| 视觉技能 | 可扩展 Skill Registry（图表/图示/视觉块） |
 | 加密 | Fernet + PBKDF2HMAC |
 | 部署 | Docker + docker-compose |
 
-## 架构
-
-### Agent 流水线
+### 架构
 
 ```
 用户输入（文本/文件）
@@ -127,66 +86,49 @@ PlanAgent 根据汇报场景（季度汇报 / 战略提案 / 竞标 Pitch 等）
   ◆ 检查点 1：用户审阅大纲，可编辑后确认
        │
        ▼
-  ContentAgent        ── per-slide 并行生成每页内容 + 图表/图示/视觉块规格
+  ContentAgent        ── per-slide 并行生成每页内容 + 图表/图示规格
        │
   ◆ 检查点 2：用户审阅内容，可单页重跑 + 反馈
        │
        ▼
-  HTMLDesignAgent     ── LLM 选择模板槽位 + CSS 校验，生成结构化 HTML 幻灯片
+  HTMLDesignAgent     ── LLM 选择模板槽位 + CSS 校验，生成结构化 HTML
        │
        ▼
   html2pptx.js        ── Playwright 渲染 HTML → pptxgenjs 输出 .pptx
   chart_renderer.py   ── 注入原生 python-pptx 矢量图表
 ```
 
-### 2 个必经检查点
+### 快速开始
 
-| 检查点 | 审阅内容 | 可操作 |
-|---|---|---|
-| **大纲确认** | 叙事框架、章节划分、每页核心观点 | 编辑任意字段、调整页序、删除页面 |
-| **内容确认** | 每页的文本块、图表数据、图示规格 | 编辑文本、修改图表数据、单页重跑 |
-
-### 场景 → 叙事框架映射
-
-| 场景 | 框架 | 结构 |
-|---|---|---|
-| 季度汇报 | SCR | situation → complication → resolution |
-| 战略提案 | SCQA | situation → complication → question → answer |
-| 竞标 Pitch | AIDA | attention → interest → desire → action |
-| 内部分析 | Issue Tree | MECE 分解 |
-| 培训材料 | Explanation | objective → gap → solution → evaluation |
-| 项目汇报 | STAR | situation → task → action → result |
-
-## 快速开始
-
-### 前置要求
+#### 前置要求
 
 - Docker & docker-compose
-- 至少一个 OpenAI 兼容的 LLM API Key
+- 至少一个 OpenAI 兼容的 LLM API Key（DeepSeek / SiliconFlow / 阿里云百炼 / 智谱等）
 
-### 1. 克隆并配置
+#### 1. 克隆并配置
 
 ```bash
 git clone https://github.com/brightbear2026/PPTagent.git
 cd PPTagent
 
-# 复制环境变量模板
 cp .env.example .env
 ```
 
 编辑 `.env`：
 
 ```env
-# 加密主密钥：用下面的命令生成，把输出结果粘贴到这里
+# 加密主密钥（生成方式如下）
 # python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# 会生成类似 gAAAAABhxxxxx... 的一串字符
-MASTER_ENCRYPTION_KEY=<粘贴上面命令的输出>
+MASTER_ENCRYPTION_KEY=<粘贴生成结果>
 
-# 数据库密码：自己定一个就行，本地开发随便填
+# JWT 认证密钥（推荐 32+ 字符随机字符串）
+JWT_SECRET=<随机字符串>
+
+# 数据库密码
 POSTGRES_PASSWORD=mypassword123
 ```
 
-### 2. 启动服务
+#### 2. 启动服务
 
 ```bash
 # 开发模式（支持热重载）
@@ -202,58 +144,32 @@ docker-compose up -d --build
 | 后端 API | http://localhost:8000 |
 | API 文档 | http://localhost:8000/docs |
 
-### 3. 配置 LLM
+#### 3. 配置 LLM
 
-打开 http://localhost:3000 → 右上角 **系统设置** → 填入 API Key 和模型名称。
+打开 http://localhost:3000 → 注册账号 → 右上角 **系统设置** → 填入 API Key 和模型名称。
 
 例如使用 DeepSeek：
 - Base URL: `https://api.deepseek.com/v1`
 - Model: `deepseek-chat`
 - API Key: 你的 key
 
-或使用 SiliconFlow / 阿里云百炼等兼容平台，只需切换 Base URL 和 Model 即可。
-
-### 4. 开始生成
+#### 4. 开始生成
 
 回到首页 → 填写标题和材料 → 点击「开始生成」。
 
-## 项目结构
+### 场景 → 叙事框架映射
 
-```
-PPTagent/
-├── api/
-│   └── main.py                   # FastAPI 端点 + 任务调度
-├── pipeline/
-│   ├── agents/
-│   │   ├── parse_agent.py        # 多格式文档解析
-│   │   ├── analyze_agent.py      # 文档策略分析 + chunk 生成
-│   │   ├── plan_agent.py         # 金字塔原则大纲
-│   │   ├── content_agent.py      # per-slide 并发内容生成
-│   │   ├── html_design_agent.py  # HTML 幻灯片设计（模板槽位系统）
-│   │   └── base.py               # 基类 + prompt 加载
-│   ├── prompts/                  # 版本化 prompt 文件
-│   ├── skills/                   # 可扩展视觉技能注册表
-│   │   ├── charts/               # 8 种图表类型（柱/折/饼/面积/散点/瀑布/组合/雷达）
-│   │   ├── diagrams/             # 8 种图示类型（流程/架构/关系/框架 + IT 图）
-│   │   └── visual_blocks/        # 7 种视觉块（KPI/对比/步骤/引用等）
-│   ├── layer6_output/
-│   │   ├── html2pptx.js          # Playwright → pptxgenjs 渲染核心
-│   │   ├── slide_templates.py    # 内容模板槽位渲染器
-│   │   ├── chart_renderer.py     # 原生矢量图表 + Plotly PNG 注入
-│   │   ├── css_linter.py         # CSS 白名单校验 + LLM 自动修复
-│   │   └── ppt_builder.py        # Legacy python-pptx 构建器
-│   └── orchestrator.py           # Agent 编排 + 检查点管理
-├── models/
-│   ├── slide_spec.py             # SlideSpec 核心数据模型
-│   └── model_config.py           # 多阶段模型配置
-├── llm_client/                   # 多 Provider LLM 客户端
-├── storage/                      # PostgreSQL 存储层 + 加密
-├── frontend-react/               # React 18 向导式前端
-├── docs/screenshots/             # 效果截图
-└── docker-compose.yml
-```
+| 场景 | 框架 | 结构 |
+|---|---|---|
+| 季度汇报 | SCR | situation → complication → resolution |
+| 战略提案 | SCQA | situation → complication → question → answer |
+| 竞标 Pitch | AIDA | attention → interest → desire → action |
+| 内部分析 | Issue Tree | MECE 分解 |
+| 培训材料 | Explanation | objective → gap → solution → evaluation |
+| 项目汇报 | STAR | situation → task → action → result |
+| 产品发布 | Problem-Solution | 问题树 + 方案树 |
 
-## 支持的输入格式
+### 支持的输入格式
 
 | 格式 | 扩展名 | 提取内容 |
 |---|---|---|
@@ -264,16 +180,245 @@ PPTagent/
 | CSV | `.csv` | 单表数据 |
 | PowerPoint | `.pptx` | 逐页文本 + 表格 |
 
-## 开发
+### 项目结构
+
+```
+PPTagent/
+├── api/                            # FastAPI 端点 + 认证 + 任务调度
+├── pipeline/
+│   ├── agents/                     # 6 个 AI Agent
+│   │   ├── parse_agent.py          # 多格式文档解析
+│   │   ├── analyze_agent.py        # 文档策略分析 + chunk 生成
+│   │   ├── plan_agent.py           # 金字塔原则大纲
+│   │   ├── content_agent.py        # per-slide 并发内容生成
+│   │   ├── html_design_agent.py    # HTML 幻灯片设计（模板槽位系统）
+│   │   └── base.py                 # Agent 基类
+│   ├── prompts/                    # 版本化 prompt 文件
+│   ├── skills/                     # 可扩展视觉技能注册表
+│   ├── layer6_output/              # 渲染层
+│   │   ├── html2pptx.js            # Playwright → pptxgenjs
+│   │   ├── chart_renderer.py       # 原生矢量图表注入
+│   │   └── css_linter.py           # CSS 白名单校验
+│   └── orchestrator.py             # Agent 编排 + 检查点管理
+├── models/                         # SlideSpec 核心数据模型
+├── llm_client/                     # 多 Provider LLM 客户端
+├── storage/                        # PostgreSQL 存储层 + 加密
+├── frontend-react/                 # React 18 向导式前端
+├── migrations/                     # Alembic 数据库迁移
+└── docker-compose.yml
+```
+
+### 开发
 
 ```bash
 # 仅重建后端
 docker-compose -f docker-compose.dev.yml up --build -d backend
 
+# 仅重建前端
+docker-compose -f docker-compose.dev.yml up --build -d frontend
+
 # 查看后端日志
 docker-compose logs -f backend
 
 # 数据库迁移
+docker-compose exec backend alembic upgrade head
+```
+
+---
+
+<a id="english"></a>
+
+## English
+
+### What is PPT Agent?
+
+PPT Agent is a self-hosted AI presentation generator. Feed it a business document or paste text, and it produces consulting-grade `.pptx` files through a 6-agent pipeline.
+
+Unlike simply asking an LLM to "write a PPT," PPT Agent is built on **transparency and control**:
+
+- **Argument-driven outlines** — Based on the Pyramid Principle, auto-selects narrative frameworks (SCQA/SCR/AIDA) per presentation scenario, with clear claims and narrative roles per slide
+- **2 mandatory checkpoints** — Users must review and approve the outline and content before proceeding; every field is editable
+- **Charts from real data** — Prioritizes actual tables from uploaded files; never fabricates numbers
+- **Native vector charts** — Generates PowerPoint native chart objects (editable, not screenshots)
+
+### Core Features
+
+- **No information loss** — Each slide gets the most relevant source paragraphs injected; key data and conclusions are preserved
+- **Charts from source data** — Extracts from real tables in Excel/CSV, or quantifies evidence from plain text
+- **Native vector charts** — PowerPoint native chart objects: editable data, colors, and fonts
+- **Argument-driven outlines** — Narrative framework-driven (SCQA/SCR/AIDA), not chapter stacking
+- **Transparent pipeline** — 6 agents run sequentially; every stage output is reviewable, editable, and reversible
+- **Any LLM provider** — DeepSeek, SiliconFlow, Alibaba Cloud, Zhipu, Moonshot, or self-hosted Ollama/vLLM. Per-stage model configuration supported
+- **Authentication & quotas** — JWT auth with configurable per-user concurrency limits
+- **Encrypted API keys** — Fernet + PBKDF2HMAC encryption at rest
+- **Fully self-hosted** — Docker one-command deployment, all data stays local
+
+### Tech Stack
+
+| Component | Technology |
+|---|---|
+| Backend | FastAPI + Uvicorn |
+| Frontend | React 18 + TypeScript + Vite + Ant Design |
+| Database | PostgreSQL (Alembic migrations) |
+| LLM | Any OpenAI-compatible API |
+| PPT Rendering | Node.js + Playwright + pptxgenjs (HTML → PPTX) |
+| Chart Injection | python-pptx native vector charts |
+| Visual Skills | Extensible Skill Registry (charts/diagrams/visual blocks) |
+| Encryption | Fernet + PBKDF2HMAC |
+| Deployment | Docker + docker-compose |
+
+### Architecture
+
+```
+User Input (text/file)
+       │
+       ▼
+  ParseAgent          ── Parse document structure, identify sections/tables/images
+       │
+       ▼
+  AnalyzeAgent        ── Analyze audience & scenario, generate narrative strategy + chunks
+       │
+       ▼
+  PlanAgent           ── Pyramid Principle outline (SCQA/SCR/AIDA + slide claim sequence)
+       │
+  ◆ Checkpoint 1: User reviews outline, can edit any field then confirm
+       │
+       ▼
+  ContentAgent        ── Per-slide parallel content generation + chart/diagram specs
+       │
+  ◆ Checkpoint 2: User reviews content, can rerun single slide with feedback
+       │
+       ▼
+  HTMLDesignAgent     ── LLM picks template slots + CSS validation, generates structured HTML
+       │
+       ▼
+  html2pptx.js        ── Playwright renders HTML → pptxgenjs outputs .pptx
+  chart_renderer.py   ── Injects native python-pptx vector charts
+```
+
+### Quick Start
+
+#### Prerequisites
+
+- Docker & docker-compose
+- At least one OpenAI-compatible LLM API key (DeepSeek / SiliconFlow / Alibaba Cloud / Zhipu, etc.)
+
+#### 1. Clone & Configure
+
+```bash
+git clone https://github.com/brightbear2026/PPTagent.git
+cd PPTagent
+
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```env
+# Encryption master key (generate with:)
+# python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+MASTER_ENCRYPTION_KEY=<paste generated key>
+
+# JWT authentication secret (recommended: 32+ char random string)
+JWT_SECRET=<random-string>
+
+# Database password
+POSTGRES_PASSWORD=mypassword123
+```
+
+#### 2. Start Services
+
+```bash
+# Development mode (hot reload)
+docker-compose -f docker-compose.dev.yml up --build
+
+# Production mode
+docker-compose up -d --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
+
+#### 3. Configure LLM
+
+Open http://localhost:3000 → Register → **Settings** (top right) → Enter API Key and model name.
+
+Example with DeepSeek:
+- Base URL: `https://api.deepseek.com/v1`
+- Model: `deepseek-chat`
+- API Key: your key
+
+#### 4. Generate
+
+Go to the home page → Enter title and content → Click "Start Generation".
+
+### Scenario → Framework Mapping
+
+| Scenario | Framework | Structure |
+|---|---|---|
+| Quarterly Review | SCR | situation → complication → resolution |
+| Strategy Proposal | SCQA | situation → complication → question → answer |
+| Sales Pitch | AIDA | attention → interest → desire → action |
+| Internal Analysis | Issue Tree | MECE decomposition |
+| Training Material | Explanation | objective → gap → solution → evaluation |
+| Project Report | STAR | situation → task → action → result |
+| Product Launch | Problem-Solution | Problem tree + Solution tree |
+
+### Supported Input Formats
+
+| Format | Extension | Extracted Content |
+|---|---|---|
+| Plain Text | `.txt` | Full text + auto section detection |
+| Markdown | `.md` | Heading hierarchy, lists, tables, code blocks |
+| Word | `.docx` | Paragraphs, tables, embedded images |
+| Excel | `.xlsx` | Multi-sheet table data |
+| CSV | `.csv` | Single table data |
+| PowerPoint | `.pptx` | Per-slide text + tables |
+
+### Project Structure
+
+```
+PPTagent/
+├── api/                            # FastAPI endpoints + auth + task dispatch
+├── pipeline/
+│   ├── agents/                     # 6 AI Agents
+│   │   ├── parse_agent.py          # Multi-format document parser
+│   │   ├── analyze_agent.py        # Strategy analysis + chunk generation
+│   │   ├── plan_agent.py           # Pyramid Principle outline
+│   │   ├── content_agent.py        # Per-slide parallel content generation
+│   │   ├── html_design_agent.py    # HTML slide design (template slot system)
+│   │   └── base.py                 # Agent base classes
+│   ├── prompts/                    # Versioned prompt files
+│   ├── skills/                     # Extensible visual skill registry
+│   ├── layer6_output/              # Rendering layer
+│   │   ├── html2pptx.js            # Playwright → pptxgenjs
+│   │   ├── chart_renderer.py       # Native vector chart injection
+│   │   └── css_linter.py           # CSS whitelist validation
+│   └── orchestrator.py             # Agent orchestration + checkpoint management
+├── models/                         # SlideSpec core data models
+├── llm_client/                     # Multi-provider LLM client
+├── storage/                        # PostgreSQL storage + encryption
+├── frontend-react/                 # React 18 wizard UI
+├── migrations/                     # Alembic database migrations
+└── docker-compose.yml
+```
+
+### Development
+
+```bash
+# Rebuild backend only
+docker-compose -f docker-compose.dev.yml up --build -d backend
+
+# Rebuild frontend only
+docker-compose -f docker-compose.dev.yml up --build -d frontend
+
+# View backend logs
+docker-compose logs -f backend
+
+# Database migration
 docker-compose exec backend alembic upgrade head
 ```
 

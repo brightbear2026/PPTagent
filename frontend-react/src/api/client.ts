@@ -31,8 +31,19 @@ http.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+      // Don't redirect on auth endpoints — let the login/register page handle errors
+      const url = err.config?.url || '';
+      const isAuthEndpoint = url.startsWith('/auth/');
+      if (!isAuthEndpoint) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+    }
+    if (err.response?.status === 429) {
+      const detail = err.response?.data?.detail || '任务数已达上限，请等待当前任务完成';
+      import('antd').then(({ message }) => {
+        message.warning(detail);
+      });
     }
     return Promise.reject(err);
   },
@@ -193,7 +204,8 @@ export async function updateModelConfig(stages: Record<string, any>) {
 // ── Download ──
 
 export function getDownloadUrl(taskId: string): string {
-  return `${API_BASE}/download/${taskId}`;
+  const token = localStorage.getItem('token');
+  return `${API_BASE}/download/${taskId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 }
 
 // ── History ──
@@ -207,5 +219,38 @@ export async function getHistory(limit = 20): Promise<{ total: number; items: Hi
 
 export async function deleteTask(taskId: string) {
   const { data } = await http.delete(`/task/${taskId}`);
+  return data;
+}
+
+// ── Quota ──
+
+export interface UserQuota {
+  running_count: number;
+  max_concurrent: number;
+  can_create: boolean;
+}
+
+export async function getUserQuota(): Promise<UserQuota> {
+  const { data } = await http.get('/user/quota');
+  return data;
+}
+
+// ── Task Cost ──
+
+export interface TaskCost {
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  by_stage: Record<string, {
+    tokens_in: number;
+    tokens_out: number;
+    tokens_total: number;
+    cost_usd: number;
+  }>;
+}
+
+export async function getTaskCost(taskId: string): Promise<TaskCost> {
+  const { data } = await http.get(`/task/${taskId}/cost`);
   return data;
 }

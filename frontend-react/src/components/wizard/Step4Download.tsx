@@ -2,14 +2,14 @@
    Step4Download — Success + download + actions
    ============================================================ */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Typography, Card, Space, Alert } from 'antd';
+import { Button, Typography, Card, Space, Alert, Descriptions, Statistic } from 'antd';
 import {
   CheckCircleOutlined, DownloadOutlined, PlusOutlined, HistoryOutlined,
-  FilePptOutlined,
+  FilePptOutlined, DollarOutlined,
 } from '@ant-design/icons';
-import { getDownloadUrl } from '../../api/client';
+import { getDownloadUrl, getTaskCost, type TaskCost } from '../../api/client';
 import type { TaskInfo, SkippedPage } from '../../types';
 
 const { Paragraph } = Typography;
@@ -24,6 +24,11 @@ interface Step4Props {
 const Step4Download: React.FC<Step4Props> = ({ taskId, taskInfo, skippedPages = [], onNew }) => {
   const navigate = useNavigate();
   const downloadUrl = getDownloadUrl(taskId);
+  const [cost, setCost] = useState<TaskCost | null>(null);
+
+  useEffect(() => {
+    getTaskCost(taskId).then(setCost).catch(() => {});
+  }, [taskId]);
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 40 }}>
@@ -83,6 +88,51 @@ const Step4Download: React.FC<Step4Props> = ({ taskId, taskInfo, skippedPages = 
               </span>
             }
           />
+        )}
+
+        {/* Token cost summary */}
+        {cost && cost.total_tokens > 0 && (
+          <div style={{
+            background: '#F7F8FA',
+            borderRadius: 2,
+            padding: '16px 20px',
+            marginBottom: 24,
+            textAlign: 'left',
+          }}>
+            <div style={{ fontSize: 12, color: '#8B9DAF', marginBottom: 8, fontWeight: 500 }}>
+              AI 资源消耗
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-around' }}>
+              <Statistic
+                title="总 Token"
+                value={cost.total_tokens}
+                formatter={(v) => `${((v as number) / 1000).toFixed(1)}K`}
+                valueStyle={{ fontSize: 16, color: '#003D6E' }}
+              />
+              <Statistic
+                title="预估成本"
+                value={cost.estimated_cost_usd}
+                  prefix={<DollarOutlined />}
+                precision={4}
+                valueStyle={{ fontSize: 16, color: '#C9A84C' }}
+              />
+            </div>
+            {Object.keys(cost.by_stage).length > 0 && (
+              <Descriptions
+                size="small"
+                column={2}
+                style={{ marginTop: 12 }}
+                contentStyle={{ fontSize: 12, color: '#595959' }}
+                labelStyle={{ fontSize: 12, color: '#8B9DAF' }}
+              >
+                {Object.entries(cost.by_stage).map(([stage, s]) => (
+                  <Descriptions.Item key={stage} label={stage}>
+                    {(s.tokens_total / 1000).toFixed(1)}K tokens / ${s.cost_usd.toFixed(4)}
+                  </Descriptions.Item>
+                ))}
+              </Descriptions>
+            )}
+          </div>
         )}
 
         {/* Download button */}

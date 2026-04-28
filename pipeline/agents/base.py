@@ -109,6 +109,7 @@ class ReActAgent(ABC):
         """
         self.llm = llm_client
         self._iteration_count = 0
+        self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     @property
     @abstractmethod
@@ -170,6 +171,11 @@ class ReActAgent(ABC):
                 max_tokens=getattr(self, "max_tokens", 4096),
             )
             elapsed = time.time() - t0
+            # Accumulate token usage
+            usage = response.usage or {}
+            self._token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+            self._token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+            self._token_usage["total_tokens"] += response.total_tokens
             logger.info(f"[{self.__class__.__name__}] LLM耗时 {elapsed:.1f}s | finish={response.finish_reason} | tokens={response.total_tokens}")
 
             if not response.success:
@@ -305,6 +311,7 @@ class StructuredLLMAgent(CodeAgent):
 
     def __init__(self, llm_client):
         self.llm = llm_client
+        self._token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def _call_llm(self, messages: List[ChatMessage], **kwargs) -> str:
         """调用 LLM，返回文本内容。失败时抛出 RuntimeError。"""
@@ -316,6 +323,11 @@ class StructuredLLMAgent(CodeAgent):
             max_tokens=kwargs.get("max_tokens", getattr(self, "max_tokens", 4096)),
         )
         elapsed = time.time() - t0
+        # Accumulate token usage
+        usage = response.usage or {}
+        self._token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+        self._token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+        self._token_usage["total_tokens"] += response.total_tokens
         logger.info(
             "[%s] LLM耗时 %.1fs | finish=%s | tokens=%s",
             self.__class__.__name__, elapsed,

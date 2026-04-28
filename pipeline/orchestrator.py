@@ -18,7 +18,8 @@ from typing import Any, Dict, Optional
 
 from storage import get_store, PIPELINE_STAGES
 
-logger = logging.getLogger(__name__)
+from api.logging_config import get_logger
+logger = get_logger(__name__)
 
 # 检查点：在这两个 agent 完成后暂停，等待用户确认
 CHECKPOINT_AGENTS = {"outline", "content"}
@@ -259,7 +260,15 @@ class Orchestrator:
 
     async def _execute_stage(self, task_id: str, stage: str) -> bool:
         """执行单个 pipeline 阶段，返回是否成功"""
+        import time as _time
+        from api.exceptions import (
+            LLMRateLimitError, LLMSchemaError, LLMTimeoutError,
+            LLMAuthError, RenderError, PipelineError,
+        )
+        _logger = get_logger("pptagent.pipeline")
+
         progress_start, progress_end, step_name = STAGE_PROGRESS.get(stage, (0, 0, stage))
+        _stage_start = _time.monotonic()
 
         self.store.update_stage(task_id, stage,
             status="running",
@@ -272,7 +281,11 @@ class Orchestrator:
 
         try:
             task = self.store.get_task(task_id)
-            result = await asyncio.to_thread(self._run_agent, task_id, stage, task)
+            result, agent = await asyncio.to_thread(self._run_agent, task_id, stage, task)
+
+            # Inject token usage from agent into result for cost tracking
+            if agent and hasattr(agent, "_token_usage") and isinstance(result, dict):
+                result["_token_usage"] = agent._token_usage
 
             self.store.save_stage_result(task_id, stage, result)
             self.store.update_stage(task_id, stage,
@@ -284,9 +297,45 @@ class Orchestrator:
 
             self._sync_task_fields(task_id, stage, result)
             self._emit_field_metrics(stage, result)
+
+            _duration = _time.monotonic() - _stage_start
+            _logger.info("stage_completed stage=%s task=%s duration=%.2fs", stage, task_id, _duration)
             return True
 
+        except (LLMAuthError, LLMRateLimitError) as e:
+            # Auth errors: user must fix API key. Rate limit: retries already exhausted.
+            _duration = _time.monotonic() - _stage_start
+            _logger.error("stage_failed stage=%s task=%s error_type=%s duration=%.2fs",
+                          stage, task_id, type(e).__name__, _duration)
+            user_msg = f"{step_name}失败: {e}" if isinstance(e, LLMAuthError) else f"{step_name}失败: LLM 调用过于频繁，请稍后重试"
+            self.store.update_stage(task_id, stage, status="failed", error=str(e), completed_at=self._now())
+            self.store.update_task(task_id, status="failed", error=str(e), message=user_msg)
+            return False
+
+        except (LLMSchemaError, LLMTimeoutError) as e:
+            # Schema errors: LLM output unparseable. Timeout: request took too long.
+            _duration = _time.monotonic() - _stage_start
+            _logger.error("stage_failed stage=%s task=%s error_type=%s duration=%.2fs",
+                          stage, task_id, type(e).__name__, _duration)
+            self.store.update_stage(task_id, stage, status="failed", error=str(e), completed_at=self._now())
+            self.store.update_task(task_id, status="failed", error=str(e),
+                                   message=f"{step_name}失败: {'输出格式异常，请重试' if isinstance(e, LLMSchemaError) else 'LLM 响应超时，请重试'}")
+            return False
+
+        except RenderError as e:
+            _duration = _time.monotonic() - _stage_start
+            _logger.error("stage_failed stage=%s task=%s error_type=RenderError duration=%.2fs",
+                          stage, task_id, _duration)
+            self.store.update_stage(task_id, stage, status="failed", error=str(e), completed_at=self._now())
+            self.store.update_task(task_id, status="failed", error=str(e),
+                                   message=f"{step_name}失败: 渲染错误，请检查 HTML 输出")
+            return False
+
         except Exception as e:
+            _duration = _time.monotonic() - _stage_start
+            _error_type = type(e).__name__
+            _logger.error("stage_failed stage=%s task=%s error_type=%s duration=%.2fs error=%s",
+                          stage, task_id, _error_type, _duration, str(e)[:200])
             traceback.print_exc()
             self.store.update_stage(task_id, stage,
                 status="failed",
@@ -298,10 +347,10 @@ class Orchestrator:
                 message=f"{step_name}失败: {e}")
             return False
 
-    def _run_agent(self, task_id: str, stage: str, task: Dict) -> Dict:
+    def _run_agent(self, task_id: str, stage: str, task: Dict) -> tuple:
         """
         在线程中运行对应的 Agent（避免阻塞 asyncio 事件循环）。
-        每个 agent 的 run() 方法是同步的（LLM调用用 requests，非 async）。
+        返回 (result, agent) 元组。
         """
         context = self._build_context(task_id, stage, task)
 
@@ -317,25 +366,25 @@ class Orchestrator:
         if stage == "parse":
             from pipeline.agents.parse_agent import ParseAgent
             agent = ParseAgent()
-            return agent.run(context)
+            return agent.run(context), agent
 
         elif stage == "analyze":
             from pipeline.agents.analyze_agent import AnalyzeAgent
             llm = self._get_llm(stage)
             agent = AnalyzeAgent(llm)
-            return agent.run(context)
+            return agent.run(context), agent
 
         elif stage == "outline":
             from pipeline.agents.plan_agent import PlanAgent
             llm = self._get_llm(stage)
             agent = PlanAgent(llm)
-            return agent.run(context)
+            return agent.run(context), agent
 
         elif stage == "content":
             from pipeline.agents.content_agent import ContentAgent
             llm = self._get_llm(stage)
             agent = ContentAgent(llm)
-            return agent.run(context)
+            return agent.run(context), agent
 
         elif stage == "design":
             render_mode = os.environ.get("RENDER_MODE", "html")
@@ -348,7 +397,7 @@ class Orchestrator:
                     except ValueError:
                         llm = None
                     agent = HTMLDesignAgent(llm)
-                    return agent.run(context)
+                    return agent.run(context), agent
             # Fallback to legacy render path
             from pipeline.agents.design_agent import DesignAgent
             try:
@@ -356,18 +405,18 @@ class Orchestrator:
             except ValueError:
                 llm = None
             agent = DesignAgent(llm)
-            return agent.run(context)
+            return agent.run(context), agent
 
         elif stage == "render":
             # When using HTML rendering, design stage handles both design+render.
             # This stage becomes a no-op pass-through.
             design_result = context.get("design") or self.store.get_stage_result(task_id, "design")
             if design_result and design_result.get("output_file"):
-                return design_result
+                return design_result, None
             # Legacy path
             from pipeline.agents.render_agent import RenderAgent
             agent = RenderAgent()
-            return agent.run(context)
+            return agent.run(context), agent
 
         else:
             raise ValueError(f"未知阶段: {stage}")

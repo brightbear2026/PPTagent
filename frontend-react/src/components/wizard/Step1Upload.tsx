@@ -2,15 +2,15 @@
    Step1Upload — Input params + file/text upload
    ============================================================ */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Form, Input, Select, Button, Upload, Radio, Divider, message,
+  Card, Form, Input, Select, Button, Upload, Radio, Divider, message, Alert,
 } from 'antd';
 import {
   UploadOutlined, FileTextOutlined, InboxOutlined, RocketOutlined,
   CheckCircleFilled, LoadingOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
-import { generateFromText, generateFromFile } from '../../api/client';
+import { generateFromText, generateFromFile, getUserQuota } from '../../api/client';
 import type { GenerateParams } from '../../types';
 
 // parse:5-15%, analyze:15-30%, outline:30-50%（到50%时已跳到Step2）
@@ -115,6 +115,19 @@ const Step1Upload: React.FC<Step1Props> = ({ onStart, loading, progress }) => {
   const [inputMode, setInputMode] = useState<'text' | 'file'>('text');
   const [fileList, setFileList] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [canCreate, setCanCreate] = useState(true);
+  const [runningCount, setRunningCount] = useState(0);
+  const [maxConcurrent, setMaxConcurrent] = useState(2);
+
+  useEffect(() => {
+    getUserQuota()
+      .then((q) => {
+        setCanCreate(q.can_create);
+        setRunningCount(q.running_count);
+        setMaxConcurrent(q.max_concurrent);
+      })
+      .catch(() => {}); // non-critical, just allow creation
+  }, [loading]); // re-check when loading changes (task may have finished)
 
   const handleFinish = async (values: GenerateParams & { content?: string }) => {
     if (submitting) return;
@@ -200,11 +213,21 @@ const Step1Upload: React.FC<Step1Props> = ({ onStart, loading, progress }) => {
 
           <Divider style={{ margin: '16px 0' }} />
 
+          {!canCreate && !loading && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={`您当前有 ${runningCount} 个任务在进行中（上限 ${maxConcurrent}），请等待完成后再创建新任务。`}
+            />
+          )}
+
           <Form.Item>
             <Button
               type="primary"
               htmlType="submit"
               loading={loading || submitting}
+              disabled={!canCreate && !loading}
               icon={<RocketOutlined />}
               block
               style={{

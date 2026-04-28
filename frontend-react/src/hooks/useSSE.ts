@@ -56,7 +56,8 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     setLatest(null);
 
     const apiBase = import.meta.env.VITE_API_BASE || '/api';
-    const url = `${apiBase}/status/${taskId}`;
+    const token = localStorage.getItem('token');
+    const url = `${apiBase}/status/${taskId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     const es = new EventSource(url);
     esRef.current = es;
 

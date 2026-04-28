@@ -14,6 +14,7 @@ import threading
 import time
 import psycopg2
 import psycopg2.extras
+from psycopg2.pool import ThreadedConnectionPool
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 
@@ -40,10 +41,22 @@ class TaskStore:
     def __init__(self, database_url: str = None):
         self.database_url = database_url or DATABASE_URL
         # in-memory pub-sub for SSE (not persisted, per-process)
-        self._queues: Dict[str, asyncio.Queue] = {}
+        # maps task_id -> (Queue, subscribe_timestamp)
+        self._queues: Dict[str, tuple] = {}
         self._queue_lock = threading.Lock()
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._pool: Optional[ThreadedConnectionPool] = None
         self._init_db()
+
+    def _get_pool(self) -> ThreadedConnectionPool:
+        """Lazy-init connection pool (thread-safe)."""
+        if self._pool is None or self._pool.closed:
+            from psycopg2.extras import RealDictCursor
+            self._pool = ThreadedConnectionPool(
+                minconn=2, maxconn=10, dsn=self.database_url,
+                cursor_factory=RealDictCursor,
+            )
+        return self._pool
 
     # ── SSE 事件推送 ──
 
@@ -53,9 +66,10 @@ class TaskStore:
 
     def subscribe(self, task_id: str) -> asyncio.Queue:
         """SSE handler 调用：注册并返回该 task 的更新队列。"""
+        self._cleanup_stale_queues()
         q: asyncio.Queue = asyncio.Queue(maxsize=100)
         with self._queue_lock:
-            self._queues[task_id] = q
+            self._queues[task_id] = (q, time.monotonic())
         return q
 
     def unsubscribe(self, task_id: str) -> None:
@@ -66,26 +80,34 @@ class TaskStore:
     def _notify(self, task_id: str) -> None:
         """update_task 后通知订阅队列（线程安全，从 worker thread 调用）。"""
         with self._queue_lock:
-            q = self._queues.get(task_id)
-        if q is None or self._event_loop is None:
+            entry = self._queues.get(task_id)
+        if entry is None or self._event_loop is None:
             return
+        q = entry[0]
         try:
             self._event_loop.call_soon_threadsafe(q.put_nowait, True)
         except Exception:
             pass
 
+    def _cleanup_stale_queues(self, max_age_seconds: int = 1800) -> None:
+        """清理超过 max_age_seconds 的死队列（默认 30 分钟）。"""
+        now = time.monotonic()
+        with self._queue_lock:
+            stale = [tid for tid, (_, ts) in self._queues.items()
+                     if now - ts > max_age_seconds]
+            for tid in stale:
+                del self._queues[tid]
+
     @contextmanager
     def _connect(self):
-        """获取数据库连接（RealDictCursor 自动返回字典）"""
-        conn = psycopg2.connect(
-            self.database_url,
-            cursor_factory=psycopg2.extras.RealDictCursor,
-        )
+        """获取数据库连接（从连接池），所有 cursor 自动使用 RealDictCursor。"""
+        pool = self._get_pool()
+        conn = pool.getconn()
         conn.autocommit = False
         try:
             yield conn
         finally:
-            conn.close()
+            pool.putconn(conn)
 
     def _init_db(self, retries=5, delay=2):
         """Run Alembic migrations to initialize / upgrade the database schema."""
@@ -176,22 +198,30 @@ class TaskStore:
                 row = cur.fetchone()
         return dict(row) if row else None
 
+    def update_user_password_hash(self, user_id: str, password_hash: str) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET password_hash = %s WHERE user_id = %s",
+                    (password_hash, user_id))
+            conn.commit()
+
     # ── 任务 CREATE ──
 
     def create_task(self, task_id: str, title: str = "", content: str = "",
                     target_audience: str = "管理层", scenario: str = "",
                     language: str = "zh",
                     file_path: str = None, mode: str = "auto",
-                    created_at: str = "") -> Dict:
+                    created_at: str = "", user_id: str = None) -> Dict:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO tasks (task_id, title, content, target_audience,
                                        scenario, language, file_path, mode,
-                                       created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       created_at, updated_at, user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (task_id, title, content, target_audience, scenario,
-                      language, file_path, mode, created_at, created_at))
+                      language, file_path, mode, created_at, created_at, user_id))
                 for stage in PIPELINE_STAGES:
                     cur.execute("""
                         INSERT INTO pipeline_stages (task_id, stage, status)
@@ -221,12 +251,17 @@ class TaskStore:
                 rows = cur.fetchall()
         return [self._row_to_dict(r) for r in rows]
 
-    def get_history(self, limit: int = 20) -> List[Dict]:
+    def get_history(self, limit: int = 20, user_id: str = None) -> List[Dict]:
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT * FROM tasks "
-                    "ORDER BY created_at DESC LIMIT %s", (limit,))
+                if user_id:
+                    cur.execute(
+                        "SELECT * FROM tasks WHERE user_id = %s "
+                        "ORDER BY created_at DESC LIMIT %s", (user_id, limit))
+                else:
+                    cur.execute(
+                        "SELECT * FROM tasks "
+                        "ORDER BY created_at DESC LIMIT %s", (limit,))
                 rows = cur.fetchall()
         return [self._row_to_dict(r) for r in rows]
 
@@ -250,6 +285,31 @@ class TaskStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) as cnt FROM tasks")
+                row = cur.fetchone()
+        return row["cnt"] if row else 0
+
+    def count_by_user(self, user_id: str) -> int:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) as cnt FROM tasks WHERE user_id = %s",
+                    (user_id,))
+                row = cur.fetchone()
+        return row["cnt"] if row else 0
+
+    def get_running_task_count(self, user_id: str = None) -> int:
+        """Count tasks in running/pending/checkpoint status (optionally per user)."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if user_id:
+                    cur.execute(
+                        "SELECT COUNT(*) as cnt FROM tasks "
+                        "WHERE user_id = %s AND status IN ('pending','running','checkpoint')",
+                        (user_id,))
+                else:
+                    cur.execute(
+                        "SELECT COUNT(*) as cnt FROM tasks "
+                        "WHERE status IN ('pending','running','checkpoint')")
                 row = cur.fetchone()
         return row["cnt"] if row else 0
 

@@ -10,7 +10,7 @@ Enforces the PPT-safe CSS subset:
 
 import re
 import logging
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +73,9 @@ class CSSLinter:
 
         result = pattern.sub(replacer, html)
         if result == html and '<body' in html:
-            html = html.replace('<body', f'<body style="width: {self.body_width}px; height: {self.body_height}px;"', 1)
+            result = html.replace('<body', f'<body style="width: {self.body_width}px; height: {self.body_height}px;"', 1)
             warnings.append("Added missing body dimensions")
-        return result if result != html else html
+        return result
 
     def _fix_gradients(self, html: str, warnings: List[str]) -> str:
         def replacer(m):
@@ -208,7 +208,7 @@ class CSSLinter:
 
         return errors
 
-    def _check_content_density(self, html: str, page_weight: str = "") -> str | None:
+    def _check_content_density(self, html: str, page_weight: str = "") -> Optional[str]:
         """粗估内容面积占比。使用最大元素面积避免重复计数。超过阈值则 reject。"""
         total_area = self.body_width * self.body_height
 
