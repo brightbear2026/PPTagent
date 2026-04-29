@@ -932,7 +932,7 @@ class OutlineItem:
     narrative_arc: str = ""             # NarrativeRole值，由 PlanAgent LLM 直接填写
     chunk_ids: list = field(default_factory=list)  # 精确绑定的原文 chunk id 列表
     layout_hint: str = ""  # 布局建议: parallel_points/comparison/metrics/chart_focus/quote_emphasis/framework_grid/narrative
-    page_weight: str = "pillar"         # hero/pillar/evidence/transition — 视觉节奏权重
+    page_weight: str = "pillar"         # hero/pillar/supporting/transition — 视觉节奏权重
 
 
 @dataclass

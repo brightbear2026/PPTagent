@@ -294,10 +294,11 @@ class HTMLDesignAgent:
             template_id = data.get("template_id", "content_bullets")
             slots = data.get("slots", {})
 
-            # Enforce chart_focus when chart_suggestion has data
-            if TemplatePicker._chart_has_data(slide_data) and template_id != "chart_focus":
+            # Enforce chart_focus when primary_visual=chart
+            pv = slide_data.get("primary_visual", "text_only") or "text_only"
+            if pv == "chart" and template_id != "chart_focus":
                 logger.warning(
-                    "Slide %d: LLM picked %s but chart_suggestion exists, forcing chart_focus",
+                    "Slide %d: LLM picked %s but primary_visual=chart, forcing chart_focus",
                     slide_index, template_id,
                 )
                 template_id = "chart_focus"
@@ -307,7 +308,7 @@ class HTMLDesignAgent:
                 }
 
             from pipeline.layer6_output.slide_templates import render_template
-            return render_template(
+            html = render_template(
                 template_id=template_id,
                 slots=slots,
                 theme_colors=theme_colors,
@@ -315,13 +316,63 @@ class HTMLDesignAgent:
                 total_slides=total_slides,
             )
 
+            # Dup-prefix check: detect if LLM filled same text into two slots
+            from pipeline.layer6_output.html_dup_check import detect_dup_prefix
+            dup_err = detect_dup_prefix(html)
+            if dup_err:
+                logger.warning(
+                    "Slide %d: dup-prefix detected, retrying once: %s",
+                    slide_index, dup_err,
+                )
+                retry_messages = [
+                    ChatMessage(role="system", content=_get_slot_system_prompt()),
+                    ChatMessage(role="user", content=user_msg),
+                    ChatMessage(role="assistant", content=raw),
+                    ChatMessage(role="user", content=dup_err),
+                ]
+                retry_resp = self.llm.chat(messages=retry_messages, temperature=0.2, max_tokens=800)
+                if retry_resp.success:
+                    retry_raw = (retry_resp.content or "").strip()
+                    if retry_raw.startswith("```"):
+                        retry_raw = retry_raw.split("\n", 1)[-1]
+                    if retry_raw.endswith("```"):
+                        retry_raw = retry_raw.rsplit("```", 1)[0]
+                    try:
+                        rm = re.search(r"\{[\s\S]*\}", retry_raw)
+                        if rm:
+                            rdata = json.loads(rm.group(0))
+                            rtid = rdata.get("template_id", "content_bullets")
+                            rslots = rdata.get("slots", {})
+                            # Re-enforce chart_focus
+                            if pv == "chart" and rtid != "chart_focus":
+                                rtid = "chart_focus"
+                                rslots = {"title": slide_data.get("takeaway_message", ""), "annotations": []}
+                            retry_html = render_template(
+                                template_id=rtid, slots=rslots,
+                                theme_colors=theme_colors,
+                                page_number=slide_index + 1, total_slides=total_slides,
+                            )
+                            if not detect_dup_prefix(retry_html):
+                                return retry_html
+                            logger.warning("Slide %d: retry still has dup-prefix, using fallback", slide_index)
+                    except Exception:
+                        logger.warning("Slide %d: retry parse failed, using fallback", slide_index)
+
+                # Fallback to heuristic template
+                return self.fallback.heuristic_template_html(
+                    slide_index, slide_data, theme_colors, total_slides,
+                )
+
+            return html
+
         except Exception as e:
             if isinstance(e, (TypeError, AttributeError, NameError)):
                 logger.error("Slide %d: code error in slot generation: %s", slide_index, e, exc_info=True)
                 raise
             logger.warning("Slot generation failed for slide %d: %s, using heuristic fallback", slide_index, e)
-            # Even in fallback, enforce chart_focus if chart data exists
-            if TemplatePicker._chart_has_data(slide_data):
+            # Even in fallback, enforce chart_focus if primary_visual=chart
+            pv = slide_data.get("primary_visual", "text_only") or "text_only"
+            if pv == "chart":
                 logger.info("Slide %d: heuristic fallback with chart data, forcing chart_focus", slide_index)
                 from pipeline.layer6_output.slide_templates import render_template
                 return render_template(
@@ -334,7 +385,13 @@ class HTMLDesignAgent:
                     page_number=slide_index + 1,
                     total_slides=total_slides,
                 )
-            return self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
+            html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
+            # Dup-prefix check even on heuristic fallback
+            from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
+            dup = _dp(html)
+            if dup:
+                logger.warning("Slide %d: heuristic fallback also has dup-prefix: %s", slide_index, dup)
+            return html
 
     def _inspect_and_fix(
         self, html, slide_index, slide_data, theme_colors, total_slides, task, linter,
@@ -374,6 +431,9 @@ class HTMLDesignAgent:
 
         if not all_errors:
             return html
+
+        # Dup-prefix check on final output (after all fixes applied)
+        from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp_check
 
         logger.warning(
             "Slide %d: inspect errors (lint=%d, render=%d): %s",
@@ -448,6 +508,9 @@ class HTMLDesignAgent:
                         orig_ph = _re.search(r'<div class="placeholder"[^>]*>.*?</div>', html, _re.DOTALL)
                         if orig_ph:
                             fixed_html = fixed_html.replace('</body>', orig_ph.group(0) + '</body>')
+                    dup = _dp_check(fixed_html)
+                    if dup:
+                        logger.warning("Slide %d: LLM fix has dup-prefix: %s", slide_index, dup)
                     return fixed_html
                 else:
                     logger.warning("Slide %d: LLM fix didn't help (%d→%d), using heuristic fallback",
@@ -460,7 +523,11 @@ class HTMLDesignAgent:
 
         # 4. Fix failed or no LLM — use heuristic template fallback
         logger.info("Slide %d: falling back to heuristic template", slide_index)
-        return self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
+        html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
+        dup = _dp_check(html)
+        if dup:
+            logger.warning("Slide %d: heuristic fallback has dup-prefix: %s", slide_index, dup)
+        return html
 
     def _build_system_prompt(self, theme_colors: Dict[str, str]) -> str:
         accent = theme_colors.get("accent", "#C9A84C")

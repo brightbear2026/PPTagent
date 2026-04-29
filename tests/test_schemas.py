@@ -434,3 +434,43 @@ class TestValidateOutline:
         data = {"slides": [{"page_number": 1}]}
         errors = validate_outline(data)
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# page_weight enum — must accept all 4 values used in the pipeline
+# ---------------------------------------------------------------------------
+
+
+class TestPageWeightEnum:
+    """page_weight Literal must include every value the pipeline actually uses.
+    Regression: 'transition' was missing — PlanAgent injects it for
+    title/agenda/section_divider, css_linter uses it for density thresholds."""
+
+    @pytest.mark.parametrize("pw", ["hero", "pillar", "supporting", "transition"])
+    def test_outline_item_accepts_all_weights(self, pw):
+        item = OutlineItemSchema(page_number=1, page_weight=pw)
+        assert item.page_weight == pw
+
+    @pytest.mark.parametrize("pw", ["hero", "pillar", "supporting", "transition"])
+    def test_content_slide_accepts_all_weights(self, pw):
+        slide = ContentSlideSchema(page_number=1, page_weight=pw)
+        assert slide.page_weight == pw
+
+    def test_invalid_page_weight_rejected(self):
+        with pytest.raises(ValidationError):
+            OutlineItemSchema(page_number=1, page_weight="bogus")
+
+    def test_real_world_outline_no_violations(self):
+        """The exact regressed outline_dump shape should produce zero
+        page_weight schema warnings after the fix."""
+        items = [
+            {"page_number": 1, "slide_type": "title", "page_weight": "transition"},
+            {"page_number": 2, "slide_type": "agenda", "page_weight": "transition"},
+            {"page_number": 3, "slide_type": "section_divider", "page_weight": "transition"},
+            {"page_number": 4, "slide_type": "content", "page_weight": "hero"},
+            {"page_number": 5, "slide_type": "content", "page_weight": "pillar"},
+        ]
+        errors = validate_outline({"items": items})
+        # Filter to only page_weight-related errors
+        pw_errors = [e for e in errors if "hero" in e or "pillar" in e or "supporting" in e or "transition" in e]
+        assert pw_errors == [], f"Expected no page_weight errors, got: {pw_errors}"

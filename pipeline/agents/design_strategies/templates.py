@@ -374,7 +374,7 @@ class TemplatePicker:
                         break
                 number_caption = prefix[:30] if prefix else ""
             if not big_number:
-                big_number = title[:10] if title else "—"
+                big_number = "—"
             # Subtitle: second text block or takeaway
             subtitle = ""
             if len(body_blocks) > 1:

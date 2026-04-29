@@ -29,6 +29,33 @@ from models.schema_adapter import validate_outline
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# Chapter numbering helpers — used to make section_divider numbering
+# deterministic regardless of LLM output. The LLM is unreliable about
+# emitting chapter numbers ("第一章 X" + "第一章 Y" off-by-one), so we
+# strip whatever prefix it wrote and renumber by first-appearance order.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Matches "第X章" prefix where X is Chinese numerals (一-十百千) or arabic digits,
+# optionally followed by punctuation/whitespace.
+_CHAPTER_PREFIX_RE = re.compile(r"^第[一二三四五六七八九十百千零\d]+章[\s:：、.\-—]*")
+_CN_CHAPTER_NUMS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+
+
+def _strip_chapter_prefix(s: str) -> str:
+    """Remove any LLM-written 第X章 prefix; return clean section name."""
+    if not s:
+        return ""
+    return _CHAPTER_PREFIX_RE.sub("", s).strip()
+
+
+def _chapter_label(idx: int) -> str:
+    """1→'一', 10→'十', 11+→arabic digits as fallback."""
+    if 1 <= idx <= len(_CN_CHAPTER_NUMS):
+        return _CN_CHAPTER_NUMS[idx - 1]
+    return str(idx)
+
 # 场景 → 叙事框架映射（硬编码，用户选择直接生效）
 SCENARIO_FRAMEWORK_MAP: Dict[str, tuple] = {
     "季度汇报":  ("scr",              "SCR框架：情境（Situation）→ 行动/挑战（Complication）→ 结论/结果（Resolution）"),
@@ -390,6 +417,26 @@ class PlanAgent:
         if hero_count > 3:
             issues.append(f"hero 页过多（{hero_count}页），最多3页。请将部分 hero 降级为 pillar。")
 
+        # Section page distribution
+        from collections import defaultdict
+        section_pages = defaultdict(int)
+        for s in content_slides:
+            sec = _strip_chapter_prefix(s.get("section", "").strip())
+            if sec:
+                section_pages[sec] += 1
+
+        for sec, count in section_pages.items():
+            if count == 1:
+                issues.append(
+                    f"章节'{sec}'只有 1 页内容，偏薄。"
+                    f"建议拆分该章节的论点为 2-3 张幻灯片，或合并到相邻章节。"
+                )
+            elif count >= 8:
+                issues.append(
+                    f"章节'{sec}'有 {count} 页，过详。"
+                    f"建议拆分为两个独立章节（每章 4-5 页），或精简至 5-6 页。"
+                )
+
         return issues
 
     # ------------------------------------------------------------------
@@ -444,8 +491,10 @@ class PlanAgent:
             if na not in valid_arc:
                 item["narrative_arc"] = "evidence"
             # Fix invalid page_weight
+            # transition is reserved for structural slides (title/agenda/section_divider)
+            # injected by _to_outline_result; css_linter uses it for density thresholds.
             pw = item.get("page_weight", "")
-            if pw not in ("hero", "pillar", "supporting"):
+            if pw not in ("hero", "pillar", "supporting", "transition"):
                 item["page_weight"] = "pillar"
         return result
 
@@ -529,12 +578,21 @@ class PlanAgent:
         # Strip any structural slides the LLM accidentally generated
         slides = [s for s in slides if s.get("slide_type") not in _structural]
 
-        # Collect unique section names in order of first appearance (skip title slides)
+        # Strip any LLM-written "第X章 " prefix from each content slide's section
+        # field (LLM is off-by-one; we'll renumber deterministically below).
+        # This MUST happen before sections_order collection so dedup matches.
+        for s in slides:
+            if s.get("slide_type") == "title":
+                continue
+            raw_sec = s.get("section", "").strip()
+            s["section"] = _strip_chapter_prefix(raw_sec)
+
+        # Collect unique cleaned section names in order of first appearance
         sections_order: list = []
         for s in slides:
             if s.get("slide_type") == "title":
                 continue
-            sec = s.get("section", "").strip()
+            sec = s.get("section", "")
             if sec and sec not in sections_order:
                 sections_order.append(sec)
 
@@ -550,13 +608,28 @@ class PlanAgent:
             }
 
             rebuilt: list = []
-            for sec in sections_order:
+            for idx, sec_name in enumerate(sections_order, start=1):
+                # Deterministic chapter title: "第N章 SECNAME". Both the
+                # section_divider's title and section field hold this canonical
+                # form, so HTMLDesignAgent's _sections_list lookup is consistent
+                # with the sec_num passed to section_divider_html.
+                chapter_title = f"第{_chapter_label(idx)}章 {sec_name}"
                 rebuilt.append({
-                    "slide_type": "section_divider", "title": sec, "takeaway_message": sec,
-                    "supporting_hint": "", "data_source": "", "primary_visual": "text_only",
-                    "narrative_arc": "context", "section": sec, "page_weight": "transition",
+                    "slide_type": "section_divider",
+                    "title": chapter_title,
+                    "takeaway_message": chapter_title,
+                    "supporting_hint": "", "data_source": "",
+                    "primary_visual": "text_only",
+                    "narrative_arc": "context",
+                    "section": chapter_title,
+                    "page_weight": "transition",
                 })
-                rebuilt.extend(s for s in content_slides if s.get("section", "").strip() == sec)
+                # Update content slides' section to match the canonical form so
+                # downstream consumers (agenda lookup, etc.) see one source of truth
+                for s in content_slides:
+                    if s.get("section", "").strip() == sec_name:
+                        s["section"] = chapter_title
+                        rebuilt.append(s)
 
             # Slides without a section assignment go at the end
             rebuilt.extend(s for s in content_slides if not s.get("section", "").strip())
@@ -569,6 +642,12 @@ class PlanAgent:
             # Structural slides (title/agenda/section_divider) should be transition weight
             if s.get("slide_type") in ("title", "agenda", "section_divider"):
                 s["page_weight"] = "transition"
+
+        # Endpoints deterministic: first content slide = opening, last = closing
+        content_items = [s for s in slides if s.get("slide_type") == "content"]
+        if content_items:
+            content_items[0]["narrative_arc"] = "opening"
+            content_items[-1]["narrative_arc"] = "closing"
 
         result = {
             "narrative_logic": narrative_logic,

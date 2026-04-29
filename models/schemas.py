@@ -29,7 +29,7 @@ class ContentSlideSchema(BaseModel):
     visual_block: Optional[dict] = None
     source_note: str = ""
     layout_hint: str = ""
-    page_weight: Literal["hero", "pillar", "supporting"] = "pillar"
+    page_weight: Literal["hero", "pillar", "supporting", "transition"] = "pillar"
     is_failed: bool = False
     error_message: str = ""
 
@@ -138,7 +138,7 @@ class OutlineItemSchema(BaseModel):
     primary_visual: PrimaryVisualType = PrimaryVisualType.TEXT_ONLY
     narrative_arc: NarrativeRole = NarrativeRole.EVIDENCE
     layout_hint: str = ""
-    page_weight: Literal["hero", "pillar", "supporting"] = "pillar"
+    page_weight: Literal["hero", "pillar", "supporting", "transition"] = "pillar"
     section: str = ""
     title: str = ""
     chunk_ids: list[str] = Field(default_factory=list)
