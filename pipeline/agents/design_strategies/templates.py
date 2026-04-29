@@ -47,8 +47,13 @@ class TemplatePicker:
 
         picker = TemplatePicker
 
-        # 0. hero pages → force hero_splash template
+        # 0. hero pages → hero_splash, but demote multi-point pages to metrics
         if slide_data.get("page_weight") == "hero":
+            if len(body_blocks) >= 4:
+                logger.info("hero page_weight + %d blocks → demoting to content_key_metrics", len(body_blocks))
+                return picker.build_slots(
+                    "content_key_metrics", slide_data, body_blocks, bold_blocks, title,
+                )
             return picker.build_slots(
                 "hero_splash", slide_data, body_blocks, bold_blocks, title,
             )
@@ -162,30 +167,22 @@ class TemplatePicker:
                     "sub_bullets": sub_bullets[:3],
                 }
 
-        # 4. 3-6 short parallel blocks → icon_grid
+        # 4. 3-6 short parallel blocks → icon_grid (only with structured visual_block)
         if 3 <= n_blocks <= 6:
             max_len = max(len(b.get("content", "") if isinstance(b, dict) else str(b)) for b in body_blocks)
             if max_len <= 60:
-                items = []
-                for idx, b in enumerate(body_blocks):
-                    content = b.get("content", "") if isinstance(b, dict) else str(b)
-                    icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
-                    if len(content) <= 15:
-                        items.append({"icon": icon, "title": content, "desc": ""})
-                    else:
-                        mid = min(len(content), 20)
-                        # Try to split at a punctuation
-                        for sep in ["：", ":", "—", "-", "，", ","]:
-                            pos = content.find(sep)
-                            if 0 < pos < 40:
-                                mid = pos
-                                break
+                vblock = slide_data.get("visual_block")
+                if isinstance(vblock, dict) and vblock.get("items"):
+                    items = []
+                    for idx, item in enumerate(vblock["items"][:6]):
+                        icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
                         items.append({
                             "icon": icon,
-                            "title": content[:mid].rstrip("：:—-，, "),
-                            "desc": content[mid:].lstrip("：:—-，, ")[:60],
+                            "title": item.get("title", "")[:20],
+                            "desc": item.get("description", item.get("desc", ""))[:60],
                         })
-                return "icon_grid", {"title": title, "items": items}
+                    return "icon_grid", {"title": title, "items": items}
+                # No visual_block — skip icon_grid, fall through to content_bullets
 
         # 5. Everything else → content_bullets
         bullets = []
@@ -223,6 +220,20 @@ class TemplatePicker:
             return template_id, {"title": title, "annotations": annotations or ["关键趋势"]}
 
         if template_id == "content_two_column":
+            vblock = slide_data.get("visual_block")
+            if isinstance(vblock, dict) and vblock.get("type") == "comparison_columns":
+                items = vblock.get("items", [])
+                if len(items) >= 2:
+                    mid = len(items) // 2
+                    left = [str(it.get("title", it.get("content", "")))[:60] for it in items[:mid]]
+                    right = [str(it.get("title", it.get("content", "")))[:60] for it in items[mid:]]
+                    return template_id, {
+                        "title": title,
+                        "left_label": picker._infer_column_label(left, "方案A"),
+                        "left_bullets": left,
+                        "right_label": picker._infer_column_label(right, "方案B"),
+                        "right_bullets": right,
+                    }
             left, right = picker._split_comparison(body_blocks)
             return template_id, {
                 "title": title,
@@ -233,6 +244,18 @@ class TemplatePicker:
             }
 
         if template_id == "content_key_metrics":
+            vblock = slide_data.get("visual_block")
+            if isinstance(vblock, dict) and vblock.get("items"):
+                metrics = []
+                for item in vblock["items"][:4]:
+                    metrics.append({
+                        "label": item.get("title", item.get("description", "")),
+                        "value": item.get("value", ""),
+                        "unit": item.get("unit", ""),
+                        "note": item.get("description", item.get("trend", "")),
+                    })
+                return template_id, {"title": title, "metrics": metrics}
+            # Fallback: extract from numeric blocks
             metrics = []
             for b in body_blocks[:4]:
                 m = picker._extract_metric(b)
@@ -252,58 +275,65 @@ class TemplatePicker:
             return template_id, {"title": title, "quote_text": quote, "sub_bullets": sub_bullets}
 
         if template_id == "icon_grid":
-            items = []
-            for idx, b in enumerate(body_blocks[:6]):
-                content = b.get("content", "") if isinstance(b, dict) else str(b)
-                icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
-                if len(content) <= 20:
-                    items.append({"icon": icon, "title": content, "desc": ""})
-                else:
-                    mid = min(len(content), 30)
-                    for sep in ["：", ":", "—", "-"]:
-                        pos = content.find(sep)
-                        if 0 < pos < 50:
-                            mid = pos
-                            break
+            vblock = slide_data.get("visual_block")
+            if isinstance(vblock, dict) and vblock.get("items"):
+                items = []
+                for idx, item in enumerate(vblock["items"][:6]):
+                    icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
                     items.append({
                         "icon": icon,
-                        "title": content[:mid].rstrip("：:—-，, "),
-                        "desc": content[mid:].lstrip("：:—-，, ")[:60],
+                        "title": item.get("title", "")[:20],
+                        "desc": item.get("description", item.get("desc", ""))[:60],
                     })
-            return template_id, {"title": title, "items": items or [{"icon": "📊", "title": title, "desc": ""}]}
+                return template_id, {"title": title, "items": items or [{"icon": "📊", "title": title, "desc": ""}]}
+            logger.warning("Slide %s: no visual_block for icon_grid, falling back to content_bullets",
+                           slide_data.get("page_number", "?"))
+            return picker.build_slots("content_bullets", slide_data, body_blocks, bold_blocks, title)
 
         if template_id == "timeline_horizontal":
-            phases = []
-            for idx, b in enumerate(body_blocks[:6]):
-                content = b.get("content", "") if isinstance(b, dict) else str(b)
-                phases.append({"label": f"阶段{idx+1}", "title": content[:30], "desc": content[:60]})
-            return template_id, {"title": title, "phases": phases or [{"label": "阶段1", "title": title, "desc": ""}]}
+            vblock = slide_data.get("visual_block")
+            if isinstance(vblock, dict) and vblock.get("items"):
+                phases = []
+                for idx, item in enumerate(vblock["items"][:6]):
+                    phases.append({
+                        "label": item.get("label", f"阶段{idx+1}"),
+                        "title": item.get("title", item.get("name", ""))[:30],
+                        "desc": item.get("description", item.get("desc", ""))[:60],
+                    })
+                return template_id, {"title": title, "phases": phases or [{"label": "阶段1", "title": title, "desc": ""}]}
+            logger.warning("Slide %s: no visual_block for timeline, falling back to content_bullets",
+                           slide_data.get("page_number", "?"))
+            return picker.build_slots("content_bullets", slide_data, body_blocks, bold_blocks, title)
 
         if template_id == "architecture_stack":
-            layers = []
-            for idx, b in enumerate(body_blocks[:6]):
-                content = b.get("content", "") if isinstance(b, dict) else str(b)
-                layers.append({"name": content[:20], "desc": content[:60]})
-            return template_id, {"title": title, "layers": layers or [{"name": "Layer 1", "desc": ""}]}
+            logger.warning("Slide %s: no visual_block mapping for architecture_stack, falling back to content_bullets",
+                           slide_data.get("page_number", "?"))
+            return picker.build_slots("content_bullets", slide_data, body_blocks, bold_blocks, title)
 
         if template_id == "quadrant_matrix":
-            cells = []
-            for idx, b in enumerate(body_blocks[:4]):
-                content = b.get("content", "") if isinstance(b, dict) else str(b)
-                cells.append({"label": f"象限{idx+1}", "items": [content[:50]]})
-            while len(cells) < 4:
-                cells.append({"label": "", "items": []})
-            return template_id, {"title": title, "x_label": "维度A", "y_label": "维度B", "cells": cells}
+            logger.warning("Slide %s: no visual_block mapping for quadrant_matrix, falling back to content_bullets",
+                           slide_data.get("page_number", "?"))
+            return picker.build_slots("content_bullets", slide_data, body_blocks, bold_blocks, title)
 
         if template_id == "role_columns":
-            roles = []
-            for idx, b in enumerate(body_blocks[:4]):
-                content = b.get("content", "") if isinstance(b, dict) else str(b)
-                roles.append({"name": content[:20], "subtitle": "", "bullets": [content[:50]]})
-            return template_id, {"title": title, "roles": roles or [{"name": "角色1", "subtitle": "", "bullets": []}]}
+            logger.warning("Slide %s: no visual_block mapping for role_columns, falling back to content_bullets",
+                           slide_data.get("page_number", "?"))
+            return picker.build_slots("content_bullets", slide_data, body_blocks, bold_blocks, title)
 
         if template_id == "hero_splash":
-            # Extract the most impactful number from text blocks
+            # Prefer structured visual_block (stat_highlight) over heuristic regex
+            vblock = slide_data.get("visual_block")
+            if isinstance(vblock, dict) and vblock.get("type") == "stat_highlight":
+                items = vblock.get("items", [])
+                if items:
+                    item = items[0]
+                    return template_id, {
+                        "headline": slide_data.get("takeaway_message", title),
+                        "big_number": str(item.get("value", ""))[:8],
+                        "number_caption": item.get("title", "")[:30],
+                        "subtitle": item.get("description", "")[:50],
+                    }
+            # Fallback: extract the most impactful number from text blocks
             all_text = " ".join(
                 b.get("content", "") if isinstance(b, dict) else str(b)
                 for b in body_blocks

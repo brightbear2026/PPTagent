@@ -128,3 +128,30 @@ bullet 和 chart_suggestion 中的数字**严禁自相矛盾**：
 - chart_type 必须是用户消息中"可用图表类型"列出的值之一
 - 输出单个 JSON 对象（不是数组），完整且有效
 - 严格遵守用户消息中"显示容量约束"的数量和字数限制
+
+---
+
+## 七、layout_hint 驱动的输出结构
+
+当用户消息中的视觉要求指定了模板类型时，输出必须匹配该模板的 slot schema：
+
+| layout_hint  | visual_block.type | text_blocks 角色 |
+|---|---|---|
+| narrative    | step_cards        | 1-2 条趋势总结（不复述每阶段） |
+| metrics      | kpi_cards         | 1-2 条数据解读（不重复指标值） |
+| framework_grid | icon_text_grid  | 1 条总结 |
+| comparison   | comparison_columns | 1-2 条对比结论（不重复 columns 内容） |
+| chart_focus  | null              | 3-5 条图表解读 |
+| quote_emphasis | null            | 首条为核心结论 + 2-4 条支撑 |
+| parallel_points | null           | 4-6 条独立并列论据 |
+
+### 互斥规则
+chart_suggestion、diagram_spec、visual_block 三者只能有一个非null（由 primary_visual 决定）。
+- primary_visual="chart" → chart_suggestion 非null，其他必须 null
+- primary_visual="diagram" → diagram_spec 非null，其他必须 null
+- primary_visual="visual_block" → visual_block 非null，其他必须 null
+- primary_visual="text_only" → 三者都必须 null
+
+### hero 页特殊规则
+page_weight=hero 时，必须输出 visual_block（type=stat_highlight），包含一个震撼数字。
+text_blocks 最多2条支撑论据，不含数字本身。

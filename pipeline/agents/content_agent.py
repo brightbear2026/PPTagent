@@ -137,6 +137,25 @@ class ContentAgent(StructuredLLMAgent):
             total_slides_with_tables, slides_with_chart_data, len(result.get("slides", [])),
         )
 
+        # Visual block fill rate by layout_hint
+        from collections import Counter
+        lh_total = Counter()
+        lh_vblock_filled = Counter()
+        for s in all_slides:
+            lh = s.get("layout_hint", "")
+            if lh:
+                lh_total[lh] += 1
+        for s in result.get("slides", []):
+            lh = s.get("layout_hint", "")
+            if lh and s.get("visual_block"):
+                lh_vblock_filled[lh] += 1
+        for lh in lh_total:
+            logger.info(
+                "[VBlockFill] layout_hint=%s: vblock_filled=%d/%d (%.0f%%)",
+                lh, lh_vblock_filled.get(lh, 0), lh_total[lh],
+                100 * lh_vblock_filled.get(lh, 0) / lh_total[lh] if lh_total[lh] else 0,
+            )
+
         # 2-pass chart dedup: rerun duplicate pages with charts forbidden
         dupes = self._dedupe_charts(result)
         if dupes:
@@ -315,11 +334,45 @@ class ContentAgent(StructuredLLMAgent):
     # 单页生成（线程安全，无共享状态写入）
     # ------------------------------------------------------------------
 
+    # Layout_hint → template-specific output guidance
+    _TEMPLATE_CONTENT_GUIDE = {
+        "narrative": (
+            "本页将使用时间线布局。必须填写 visual_block（type=step_cards），每个 item 含 {label, title, description}。\n"
+            "text_blocks 仅保留 1-2 条趋势总结/关键洞察，不要逐阶段重复 visual_block 内容。"
+        ),
+        "metrics": (
+            "本页将使用指标卡片布局。必须填写 visual_block（type=kpi_cards），每个 item 含 {title, value, description}。\n"
+            "text_blocks 仅保留 1-2 条数据解读，不要重复指标值本身。"
+        ),
+        "framework_grid": (
+            "本页将使用象限/网格布局。必须填写 visual_block（type=icon_text_grid），每个 item 含 {title, description}。\n"
+            "text_blocks 仅保留 1 条总结。"
+        ),
+        "comparison": (
+            "本页使用双栏对比布局。建议填写 visual_block（type=comparison_columns），每个 item 含 {title, content}。\n"
+            "text_blocks 可保留 1-2 条对比结论，但不要与 visual_block 内容重复。"
+        ),
+        "chart_focus": (
+            "本页以图表为主。chart_suggestion 必须填写。text_blocks 提供 3-5 条图表解读/标注。"
+        ),
+        "quote_emphasis": (
+            "本页强调单一核心结论。第1条 text_block 为核心结论（不超过60字），后续 2-4 条为支撑论据。"
+        ),
+        "parallel_points": (
+            "本页使用并列论据布局。text_blocks 应包含 4-6 条独立并列的论据，每条一句话。不需要 visual_block。"
+        ),
+    }
+
     @staticmethod
     def _weight_guide(slide: Dict) -> str:
         w = slide.get("page_weight", "pillar")
         if w == "hero":
-            return "\n⚠️ 这是全篇核心论点页（hero）。text_blocks 最多3条，必须包含一个震撼数字作为primary_metric。其余数字用stat_highlight呈现，视觉占比≥70%。"
+            return (
+                "\n⚠️ 这是全篇核心论点页（hero）。\n"
+                "text_blocks 最多2条支撑论据（不含数字本身）。\n"
+                "必须填写 visual_block（type=stat_highlight），包含一个震撼数字。\n"
+                "示例：{\"type\":\"stat_highlight\",\"items\":[{\"title\":\"市场规模\",\"value\":\"1254亿元\",\"description\":\"2024年六大行金融科技投入合计\"}]}"
+            )
         elif w == "transition":
             return "\n这是过渡页。text_blocks 最多2条，极简。不需要chart/diagram/visual_block。"
         elif w == "evidence":
@@ -409,9 +462,14 @@ class ContentAgent(StructuredLLMAgent):
         else:
             visual_req = "chart_suggestion、diagram_spec、visual_block 均设为 null"
 
-        # Layout hint guidance — from shared capacity model
+        # Template-specific content structure guidance (overrides generic visual_req)
         from models.template_capacity import LAYOUT_CAPACITIES, DEFAULT_LAYOUT
         layout_hint = slide.get("layout_hint", DEFAULT_LAYOUT)
+        template_guide = self._TEMPLATE_CONTENT_GUIDE.get(layout_hint)
+        if template_guide:
+            visual_req = template_guide
+
+        # Layout hint capacity guidance
         cap = LAYOUT_CAPACITIES.get(layout_hint, LAYOUT_CAPACITIES[DEFAULT_LAYOUT])
         layout_guide = (
             f"\n## 显示容量约束（必须遵守）\n"

@@ -498,6 +498,14 @@ def render_template(
         result = result.replace("<<METRIC_BOXES_HTML>>",
                                 _render_metrics(metrics, primary, accent, bg, text_color, muted))
         sub = slots.get("sub_bullets", [])
+        # Deduplicate: remove sub_bullets that overlap with metric label/note
+        if sub and metrics:
+            metric_texts = set()
+            for m in metrics:
+                for v in (m.get("label", ""), m.get("value", ""), m.get("note", "")):
+                    if v:
+                        metric_texts.add(v[:30])
+            sub = [s for s in sub if not any(s[:30] in mt or mt in s[:30] for mt in metric_texts)]
         result = result.replace("<<SUB_BULLETS_HTML>>",
                                 _render_bullets(sub, muted, primary, font_size=11) if sub else "")
 
@@ -533,12 +541,17 @@ def render_template(
                                 _render_role_columns(slots.get("roles", []), primary, accent, bg, text_color, muted))
 
     elif template_id == "hero_splash":
+        big_number = str(slots.get("big_number", ""))
+        w_len = _weighted_len(big_number)
+        max_font = min(72, int(680 / max(w_len, 1) * 0.9))
+        big_number_font = max(max_font, 28)
         result = result.replace("<<HEADLINE>>", _html.escape(str(slots.get("headline", ""))))
-        result = result.replace("<<BIG_NUMBER>>", _html.escape(str(slots.get("big_number", ""))))
+        result = result.replace("<<BIG_NUMBER>>", _html.escape(big_number))
         result = result.replace("<<NUMBER_CAPTION>>", _html.escape(str(slots.get("number_caption", ""))))
         result = result.replace("<<SUBTITLE>>", _html.escape(str(slots.get("subtitle", ""))))
         result = result.replace("<<PAGE_NUMBER>>", str(page_number))
         result = result.replace("<<TOTAL_SLIDES>>", str(total_slides))
+        result = result.replace("font-size:72px", f"font-size:{big_number_font}px")
 
     elif template_id == "tech_stack_layers":
         result = result.replace("<<STACK_LAYERS_HTML>>",

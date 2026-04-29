@@ -45,8 +45,14 @@ slots: title, x_label(str ≤10字), y_label(str ≤10字), cells([{label:str, i
 适用：3-4个角色/对象的特性对比
 slots: title, roles([{name:str, subtitle:str, bullets:list[str]}] 3-4个角色)
 
-## 选择规则（layout_hint 最高优先级）
-如果输入数据中存在 layout_hint 字段，直接按以下映射选择模板（跳过其他规则）：
+## 检查顺序（严格按此顺序，只走第一个匹配）
+1. 如果 slide_data.layout_hint 存在 → 按 layout_hint 映射选择模板（跳过步骤 2-4）
+2. 否则如果 slide_data.chart_suggestion 非空且有 series 数据 → chart_focus，忽略 diagram_spec/visual_block
+3. 否则如果 slide_data.diagram_spec 非空且有 diagram_type → 按 diagram_type 选模板
+4. 否则如果 slide_data.visual_block 非空且有 type → 按 visual_block.type 选模板
+5. 否则 → 按 text_blocks 内容推断（对比/数字/短句等）
+
+## layout_hint 映射
 - parallel_points → content_bullets
 - comparison → content_two_column
 - metrics → content_key_metrics
@@ -55,21 +61,17 @@ slots: title, roles([{name:str, subtitle:str, bullets:list[str]}] 3-4个角色)
 - framework_grid → icon_grid（如果 diagram_spec 指示分层架构则用 architecture_stack）
 - narrative → timeline_horizontal
 
-如果没有 layout_hint，则按以下规则选择：
-chart_suggestion存在 → chart_focus
-N层分层架构 → architecture_stack
-多阶段/时间线/路线图 → timeline_horizontal
-2×2象限/四分法 → quadrant_matrix
-3-4个角色/对象并列对比 → role_columns
-两方明确对比 → content_two_column
-3-4个数字指标 → content_key_metrics
-单一核心结论需强调 → quote_highlight
-3-6个框架/步骤/原则 → icon_grid
-默认 → content_bullets
+## visual_block.type 映射
+- kpi_cards / stat_highlight → content_key_metrics
+- icon_text_grid → icon_grid
+- step_cards → timeline_horizontal
+- comparison_columns → content_two_column
 
 ## 内容保留规则（最重要）
 你的职责是选布局，不是重写内容。严格遵守：
-- bullets / items[].desc / annotations 等文本字段，必须直接来自 slide_data.text_blocks 的 content 字段，原样搬运或仅做布局适配（如加编号），不要概括、压缩、重写
+- 当模板需要 items/phases 时，优先使用 slide_data.visual_block.items 的结构化数据，直接映射到 slots
+- 仅当 visual_block 不存在时，才从 text_blocks.content 提取
+- 同一条 text_block 的内容只能出现在一个 slot 中，禁止同时在卡片标题和 bullet 中重复
 - 必须保留 text_blocks 中的具体数据、百分比、金额、专有名词、人名/产品名等事实性内容
 - 每个 bullet/desc 应保持 30-60 字，与原始 text_blocks 长度相当
 - 如果某条 text_blocks 内容较长（>60字），可以适当精简但必须保留核心数据和结论

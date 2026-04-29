@@ -246,6 +246,14 @@ class HTMLDesignAgent:
     ) -> str:
         """Generate HTML for a single slide via LLM."""
 
+        # Defensive check: after mutual exclusion, at most one visual field should be non-null
+        _visuals = sum(1 for k in ("chart_suggestion", "diagram_spec", "visual_block") if slide_data.get(k))
+        if _visuals > 1:
+            logger.warning(
+                "Slide %d: %d visual fields non-null after mutual exclusion — primary_visual=%s",
+                slide_index, _visuals, slide_data.get("primary_visual"),
+            )
+
         # Structural slides use fixed templates — bypass LLM entirely.
         if slide_data.get("slide_type") == "title":
             return self.special_pages.cover_slide_html(slide_index, slide_data, theme_colors, total_slides, task)
@@ -546,6 +554,9 @@ class HTMLDesignAgent:
                 slide_data["chart_suggestion"] = content.get("chart_suggestion")
                 slide_data["diagram_spec"] = content.get("diagram_spec")
                 slide_data["visual_block"] = content.get("visual_block")
+                slide_data["primary_visual"] = content.get("primary_visual", "") or (
+                    item.get("primary_visual", "") if isinstance(item, dict) else getattr(item, "primary_visual", "")
+                )
                 # layout_hint: prefer ContentAgent's pass-through, fall back to outline item
                 lh = content.get("layout_hint", "") or (
                     item.get("layout_hint", "") if isinstance(item, dict) else getattr(item, "layout_hint", "")
@@ -582,6 +593,9 @@ class HTMLDesignAgent:
                 slide_data["chart_suggestion"] = _to_dict(getattr(content, "chart_suggestion", None))
                 slide_data["diagram_spec"] = _to_dict(getattr(content, "diagram_spec", None))
                 slide_data["visual_block"] = _to_dict(getattr(content, "visual_block", None))
+                slide_data["primary_visual"] = getattr(content, "primary_visual", "") or (
+                    item.get("primary_visual", "") if isinstance(item, dict) else getattr(item, "primary_visual", "")
+                )
                 # layout_hint & page_weight: prefer ContentAgent pass-through, fall back to outline item
                 lh = getattr(content, "layout_hint", "") or (
                     item.get("layout_hint", "") if isinstance(item, dict) else getattr(item, "layout_hint", "")
@@ -595,5 +609,25 @@ class HTMLDesignAgent:
                     slide_data["page_weight"] = pw
 
             slides_data.append(slide_data)
+
+        # Enforce primary_visual mutual exclusion — single source of truth for all downstream
+        for sd in slides_data:
+            pv = sd.get("primary_visual", "text") or "text"
+            if pv == "chart":
+                if sd.get("visual_block"):
+                    logger.info("Slide %s: primary_visual=chart, clearing visual_block", sd.get("page_number"))
+                sd["diagram_spec"] = None
+                sd["visual_block"] = None
+            elif pv == "diagram":
+                sd["chart_suggestion"] = None
+                sd["visual_block"] = None
+            elif pv == "visual_block":
+                sd["chart_suggestion"] = None
+                sd["diagram_spec"] = None
+            else:
+                # text_only, text, empty, or unknown → clear all visual fields
+                sd["chart_suggestion"] = None
+                sd["diagram_spec"] = None
+                sd["visual_block"] = None
 
         return slides_data
