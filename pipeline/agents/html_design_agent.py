@@ -246,14 +246,6 @@ class HTMLDesignAgent:
     ) -> str:
         """Generate HTML for a single slide via LLM."""
 
-        # Defensive check: after mutual exclusion, at most one visual field should be non-null
-        _visuals = sum(1 for k in ("chart_suggestion", "diagram_spec", "visual_block") if slide_data.get(k))
-        if _visuals > 1:
-            logger.warning(
-                "Slide %d: %d visual fields non-null after mutual exclusion — primary_visual=%s",
-                slide_index, _visuals, slide_data.get("primary_visual"),
-            )
-
         # Structural slides use fixed templates — bypass LLM entirely.
         if slide_data.get("slide_type") == "title":
             return self.special_pages.cover_slide_html(slide_index, slide_data, theme_colors, total_slides, task)
@@ -610,24 +602,16 @@ class HTMLDesignAgent:
 
             slides_data.append(slide_data)
 
-        # Enforce primary_visual mutual exclusion — single source of truth for all downstream
+        # Defensive assert: upstream ContentSlideSchema guarantees mutual exclusion
         for sd in slides_data:
-            pv = sd.get("primary_visual", "text") or "text"
-            if pv == "chart":
-                if sd.get("visual_block"):
-                    logger.info("Slide %s: primary_visual=chart, clearing visual_block", sd.get("page_number"))
-                sd["diagram_spec"] = None
-                sd["visual_block"] = None
-            elif pv == "diagram":
-                sd["chart_suggestion"] = None
-                sd["visual_block"] = None
-            elif pv == "visual_block":
-                sd["chart_suggestion"] = None
-                sd["diagram_spec"] = None
-            else:
-                # text_only, text, empty, or unknown → clear all visual fields
-                sd["chart_suggestion"] = None
-                sd["diagram_spec"] = None
-                sd["visual_block"] = None
+            pv = sd.get("primary_visual", "text_only") or "text_only"
+            visual_count = sum(1 for k in ("chart_suggestion", "diagram_spec", "visual_block")
+                               if sd.get(k) is not None)
+            if pv in ("chart", "diagram", "visual_block") and visual_count != 1:
+                logger.warning("Slide %s: schema guarantee violated — pv=%s, %d visual fields",
+                               sd.get("page_number"), pv, visual_count)
+            elif pv == "text_only" and visual_count > 0:
+                logger.warning("Slide %s: text_only but %d visual fields (upstream leak?)",
+                               sd.get("page_number"), visual_count)
 
         return slides_data

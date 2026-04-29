@@ -18,6 +18,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 from .base import StructuredLLMAgent, ValidationResult, load_prompt
+from models.schemas import ContentResultSchema, ContentSlideSchema, ParseResult
+from models.schema_adapter import (
+    content_schema_to_dict,
+    degrade_to_text_only,
+    make_placeholder,
+    parse_slide,
+)
+from models.slide_spec import PrimaryVisualType, SlideType
 from llm_client.base import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -38,7 +46,7 @@ class ContentAgent(StructuredLLMAgent):
     def __init__(self, llm_client):
         super().__init__(llm_client)
         self._context: Dict[str, Any] = {}
-        self._page_contents: Dict[int, Dict] = {}
+        self._page_contents: Dict[int, ContentSlideSchema] = {}
         self._lock = threading.Lock()
 
     PROMPT_VERSION = os.getenv("CONTENT_AGENT_PROMPT_VERSION", "v2")
@@ -72,10 +80,11 @@ class ContentAgent(StructuredLLMAgent):
         for slide in all_slides:
             if slide.get("slide_type") in _STRUCTURAL_TYPES:
                 pn = slide.get("page_number", 0)
-                self._page_contents[pn] = {
-                    "page_number": pn, "text_blocks": [], "chart_suggestion": None,
-                    "diagram_spec": None, "visual_block": None, "visual_hint": "",
-                }
+                self._page_contents[pn] = ContentSlideSchema(
+                    page_number=pn,
+                    slide_type=slide.get("slide_type", "content"),
+                    primary_visual=PrimaryVisualType.TEXT_ONLY,
+                )
 
         llm_slide_count = sum(1 for s in all_slides if s.get("slide_type") not in _STRUCTURAL_TYPES)
         logger.info(
@@ -102,7 +111,7 @@ class ContentAgent(StructuredLLMAgent):
                     result = fut.result()
                     if result:
                         with self._lock:
-                            self._page_contents[result.get("page_number", pn)] = result
+                            self._page_contents[result.page_number] = result
                             completed_count += 1
                         pct = 50 + int(completed_count / max(total_slides, 1) * 19)
                         report(pct, f"内容填充: 第{pn}页完成 ({completed_count}/{total_slides})")
@@ -176,14 +185,16 @@ class ContentAgent(StructuredLLMAgent):
                     rerun_result = self._generate_one_slide(slide, prev_s, next_s, shared)
                     if rerun_result:
                         with self._lock:
-                            self._page_contents[rerun_result.get("page_number", pn)] = rerun_result
+                            self._page_contents[rerun_result.page_number] = rerun_result
                         logger.info(f"[ChartDedup] P{pn} 重跑成功")
                     else:
                         logger.warning(f"[ChartDedup] P{pn} 重跑失败，保留原内容但清除图表")
                         with self._lock:
-                            existing = self._page_contents.get(pn, {})
-                            existing["chart_suggestion"] = None
-                            self._page_contents[pn] = existing
+                            existing = self._page_contents.get(pn)
+                            if existing:
+                                self._page_contents[pn] = existing.model_copy(
+                                    update={"chart_suggestion": None, "primary_visual": PrimaryVisualType.TEXT_ONLY}
+                                )
                 except Exception as e:
                     logger.error(f"[ChartDedup] P{pn} 重跑异常: {e}")
                 finally:
@@ -498,8 +509,8 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
     def _generate_one_slide(
         self, slide: Dict, prev_slide: Optional[Dict], next_slide: Optional[Dict],
         shared: Dict, user_feedback: str = ""
-    ) -> Optional[Dict]:
-        """调用 LLM 生成单页内容，含截断检测和一次重试。线程安全（无写共享状态）。"""
+    ) -> Optional[ContentSlideSchema]:
+        """调用 LLM 生成单页内容，含截断检测和重试。线程安全（无写共享状态）。"""
         pn = slide.get("page_number", "?")
         messages = [
             ChatMessage(role="system", content=self.system_prompt),
@@ -516,7 +527,9 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                 ),
             ))
 
-        for attempt in range(2):
+        last_parse: Optional[ParseResult] = None
+
+        for attempt in range(3):
             try:
                 response = self.llm.chat(
                     messages=messages,
@@ -537,26 +550,47 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                     ))
                     continue
 
-                result = self._parse_single_page(response.content or "", pn)
-                if result:
-                    return result
+                last_parse = parse_slide(response.content or "", pn)
 
-                if attempt == 0:
-                    logger.warning(f"[ContentAgent] P{pn} 解析失败，要求重新输出...")
-                    messages.append(ChatMessage(role="assistant", content=response.content or ""))
-                    messages.append(ChatMessage(
-                        role="user",
-                        content="请重新输出JSON对象，确保放在 ```json ... ``` 代码块中，格式正确。",
-                    ))
+                if last_parse.error_kind == "ok":
+                    return last_parse.schema
+
+                # Construct retry message based on error type
+                if attempt < 2:
+                    if last_parse.error_kind == "json_parse":
+                        messages.append(ChatMessage(role="assistant", content=response.content or ""))
+                        messages.append(ChatMessage(
+                            role="user",
+                            content="请重新输出JSON对象，确保放在 ```json ... ``` 代码块中，格式正确。",
+                        ))
+                    elif last_parse.error_kind == "schema":
+                        messages.append(ChatMessage(role="assistant",
+                            content=json.dumps(last_parse.raw_data, ensure_ascii=False)))
+                        messages.append(ChatMessage(role="user",
+                            content=f"输出违反schema规则：{last_parse.error_msg}\n"
+                                    "修复要求：1) 只有一种visual字段 2) chart必须有series/data 3) visual_block必须有type和非空items"))
                     continue
 
             except Exception as e:
-                if attempt == 0:
-                    logger.warning(f"[ContentAgent] P{pn} 第1次失败({e})，重试...")
+                if attempt < 2:
+                    logger.warning(f"[ContentAgent] P{pn} 第{attempt+1}次失败({e})，重试...")
                     continue
                 logger.error(f"[ContentAgent] P{pn} 最终失败: {e}")
 
-        return None
+        # === Unified final-fail handling ===
+        self._record_degradation(pn, f"all retries exhausted: {last_parse.error_kind if last_parse else 'exception'}")
+
+        if last_parse and last_parse.error_kind == "schema" and last_parse.raw_data:
+            # LLM produced text but visual schema violated → keep text, clear visuals
+            return degrade_to_text_only(last_parse.raw_data)
+        else:
+            # LLM produced nothing (json_parse all failed / exception) → placeholder
+            return make_placeholder(
+                page_number=pn,
+                slide_type=slide.get("slide_type", "content"),
+                title=slide.get("title", ""),
+                takeaway=slide.get("takeaway_message", ""),
+            )
 
     # ------------------------------------------------------------------
     # 材料匹配（静态，线程安全）
@@ -694,34 +728,9 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_single_page(text: str, page_number: int) -> Optional[Dict]:
-        """从 LLM 输出中提取单个 JSON 对象。"""
-        import re
-
-        # 优先从代码块中提取
-        for pattern in [r'```json\s*([\s\S]*?)\s*```', r'```\s*([\s\S]*?)\s*```']:
-            for match in re.finditer(pattern, text, re.DOTALL):
-                try:
-                    data = json.loads(match.group(1).strip())
-                    if isinstance(data, dict) and "text_blocks" in data:
-                        data.setdefault("page_number", page_number)
-                        return data
-                except Exception:
-                    continue
-
-        # 回退：找第一个完整 JSON 对象
-        try:
-            start = text.find('{')
-            if start >= 0:
-                decoder = json.JSONDecoder()
-                data, _ = decoder.raw_decode(text, start)
-                if isinstance(data, dict) and "text_blocks" in data:
-                    data.setdefault("page_number", page_number)
-                    return data
-        except Exception:
-            pass
-
-        return None
+    def _parse_single_page(text: str, page_number: int) -> ParseResult:
+        """从 LLM 输出中提取单个 JSON 对象，返回 tagged ParseResult。"""
+        return parse_slide(text, page_number)
 
     @staticmethod
     def _parse_pages_from_text(text: str) -> list:
@@ -739,22 +748,18 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
         return []
 
     @staticmethod
-    def _make_placeholder(slide: Dict) -> Dict:
-        """为失败页面生成占位内容（DesignAgent 会标记 is_failed）。"""
-        takeaway = slide.get("takeaway_message", slide.get("takeaway", ""))
-        return {
-            "page_number": slide.get("page_number"),
-            "text_blocks": [
-                {"type": "heading", "text": slide.get("title", takeaway[:30] if takeaway else "")},
-                {"type": "bullet", "text": takeaway, "level": 1},
-            ],
-            "chart_suggestion": None,
-            "diagram_spec": None,
-            "visual_block": None,
-            "visual_hint": "",
-            "is_failed": True,
-            "error_message": "content_generation_failed",
-        }
+    def _make_placeholder(slide: Dict) -> ContentSlideSchema:
+        """为失败页面生成占位内容（is_failed=True）。"""
+        return make_placeholder(
+            page_number=slide.get("page_number", 0),
+            slide_type=slide.get("slide_type", "content"),
+            title=slide.get("title", ""),
+            takeaway=slide.get("takeaway_message", slide.get("takeaway", "")),
+        )
+
+    def _record_degradation(self, page_number, reason: str):
+        """Record a degradation event for diagnostics."""
+        logger.warning("[ContentAgent] P%s degraded: %s", page_number, reason)
 
     def _dedupe_charts(self, result: Dict) -> List[int]:
         """Detect duplicate chart_suggestion signatures across slides."""
@@ -778,7 +783,7 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
         return dupes
 
     def _build_content_result(self) -> Dict:
-        """将收集的页面内容组装为 ContentResult.to_dict() 格式。"""
+        """将收集的页面内容组装为 ContentResultSchema，边界 dump 成 dict。"""
         outline = self._context.get("outline", {})
         outline_slides = {
             s["page_number"]: s
@@ -786,15 +791,15 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
         }
 
         _STRUCTURAL_TYPES = {"title", "agenda", "section_divider"}
-        slides = []
+        slides: list[ContentSlideSchema] = []
         for pn in sorted(self._page_contents.keys()):
             page = self._page_contents[pn]
             outline_page = outline_slides.get(pn, {})
-            # Structural slides have no user-editable content; HTMLDesignAgent uses templates
             if outline_page.get("slide_type") in _STRUCTURAL_TYPES:
                 continue
 
-            raw_blocks = page.get("text_blocks", [])
+            # Normalize text_blocks from schema instance
+            raw_blocks = page.text_blocks or []
             text_blocks = []
             for b in raw_blocks:
                 if isinstance(b, dict):
@@ -807,42 +812,35 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
             takeaway = (
                 outline_page.get("takeaway_message")
                 or outline_page.get("takeaway")
-                or page.get("takeaway_message", "")
+                or page.takeaway_message
             )
 
-            entry: Dict = {
-                "page_number": pn,
-                "slide_type": outline_page.get("slide_type", "content"),
+            updated = page.model_copy(update={
                 "takeaway_message": takeaway,
-                "primary_visual": outline_page.get("primary_visual", "text"),
                 "text_blocks": text_blocks,
-                "chart_suggestion": page.get("chart_suggestion"),
-                "diagram_spec": page.get("diagram_spec"),
-                "visual_block": page.get("visual_block"),
-                "source_note": page.get("visual_hint", ""),
-                "layout_hint": outline_page.get("layout_hint", ""),
-                "page_weight": outline_page.get("page_weight", "pillar"),
-            }
-            if page.get("is_failed"):
-                entry["is_failed"] = True
-                entry["error_message"] = page.get("error_message", page.get("error", ""))
-            slides.append(entry)
+                "slide_type": outline_page.get("slide_type", page.slide_type.value if isinstance(page.slide_type, SlideType) else page.slide_type),
+                "layout_hint": outline_page.get("layout_hint", page.layout_hint),
+                "page_weight": outline_page.get("page_weight", page.page_weight),
+                "source_note": page.source_note or "",
+            })
+            slides.append(updated)
 
-        # Temporary: dump visual field fill rates
-        total = len(slides)
-        chart_count = sum(1 for s in slides if s.get("chart_suggestion"))
-        diagram_count = sum(1 for s in slides if s.get("diagram_spec"))
-        visual_block_count = sum(1 for s in slides if s.get("visual_block"))
+        result = ContentResultSchema(slides=slides)
+
+        # Visual field fill rates
+        chart_count = sum(1 for s in result.slides if s.primary_visual == PrimaryVisualType.CHART)
+        diagram_count = sum(1 for s in result.slides if s.primary_visual == PrimaryVisualType.DIAGRAM)
+        vblock_count = sum(1 for s in result.slides if s.primary_visual == PrimaryVisualType.VISUAL_BLOCK)
         logger.info(
             "CONTENT_VISUAL_RATES total=%d chart=%d diagram=%d visual_block=%d",
-            total, chart_count, diagram_count, visual_block_count,
+            len(slides), chart_count, diagram_count, vblock_count,
         )
 
-        return {"slides": slides}
+        return content_schema_to_dict(result)
 
 
     def validate(self, output: Dict) -> ValidationResult:
-        errors = []
+        errors: list[str] = []
         slides = output.get("slides", [])
         outline = self._context.get("outline", {})
         outline_slides = outline.get("items", outline.get("slides", []))
@@ -854,21 +852,16 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
         if len(slides) < len(outline_slides) * 0.7:
             errors.append(f"内容页数({len(slides)})远少于大纲页数({len(outline_slides)})")
 
+        # Schema-level validation
         for s in slides:
             pn = s.get("page_number", "?")
             text_blocks = s.get("text_blocks", [])
-            primary_visual = s.get("primary_visual", "text")
-
             if not text_blocks:
                 errors.append(f"第{pn}页 text_blocks 为空")
                 continue
-
             content_blocks = [b for b in text_blocks if b.get("content", "").strip() and not b.get("is_bold")]
             if len(content_blocks) < 1:
                 errors.append(f"第{pn}页内容过少（少于1个正文块）")
-
-            if primary_visual == "chart" and not s.get("chart_suggestion"):
-                errors.append(f"第{pn}页 primary_visual='chart' 但缺少 chart_suggestion")
 
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 

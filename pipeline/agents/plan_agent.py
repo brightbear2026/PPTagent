@@ -25,6 +25,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from llm_client.base import ChatMessage
+from models.schema_adapter import validate_outline
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +429,26 @@ class PlanAgent:
                 return fixed
         return plan
 
+    def _fix_schema_errors(self, result: Dict, errors: List[str]) -> Dict:
+        """Fix known schema violations in outline result (rule-based, no LLM call)."""
+        for item in result.get("items", []):
+            # Fix empty/invalid primary_visual
+            pv = item.get("primary_visual")
+            if not pv or pv == "text":
+                item["primary_visual"] = "text_only"
+            # Fix invalid narrative_arc
+            na = item.get("narrative_arc", "")
+            valid_arc = {"opening", "problem_statement", "context", "evidence",
+                         "analysis", "comparison", "counterpoint", "solution",
+                         "recommendation", "closing"}
+            if na not in valid_arc:
+                item["narrative_arc"] = "evidence"
+            # Fix invalid page_weight
+            pw = item.get("page_weight", "")
+            if pw not in ("hero", "pillar", "supporting"):
+                item["page_weight"] = "pillar"
+        return result
+
     # ------------------------------------------------------------------
     # 转换为 OutlineResult 兼容格式
     # ------------------------------------------------------------------
@@ -549,13 +570,21 @@ class PlanAgent:
             if s.get("slide_type") in ("title", "agenda", "section_divider"):
                 s["page_weight"] = "transition"
 
-        return {
+        result = {
             "narrative_logic": narrative_logic,
             "scqa": scqa,
             "root_claim": root_claim,
             "items": slides,
             "data_gap_suggestions": [],
         }
+
+        # Schema validation
+        schema_errors = validate_outline(result)
+        if schema_errors:
+            logger.warning("[PlanAgent] outline schema violations: %s", schema_errors)
+            result = self._fix_schema_errors(result, schema_errors)
+
+        return result
 
     # ------------------------------------------------------------------
     # 兜底：当LLM输出完全无法解析时

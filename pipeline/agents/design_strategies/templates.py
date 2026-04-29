@@ -43,7 +43,11 @@ class TemplatePicker:
         bold_blocks: List[Dict],
         title: str,
     ) -> Tuple[str, Dict]:
-        """Decision tree → (template_id, slots)."""
+        """Decision tree → (template_id, slots).
+
+        Routes via primary_visual (guaranteed by ContentSlideSchema) for visual slides,
+        falls back to text-content heuristics for text_only slides.
+        """
 
         picker = TemplatePicker
 
@@ -67,73 +71,107 @@ class TemplatePicker:
                 forced_template, slide_data, body_blocks, bold_blocks, title,
             )
 
-        # 1. Chart with real data → chart_focus
-        if picker._chart_has_data(slide_data):
-            annotations = []
-            for b in body_blocks[:6]:
-                c = b.get("content", "") if isinstance(b, dict) else str(b)
-                if c:
-                    annotations.append(c[:80])
-            return "chart_focus", {
-                "title": title,
-                "annotations": annotations or ["关键趋势"],
-            }
+        # 2. Route by primary_visual (ContentSlideSchema guarantees mutual exclusion)
+        pv = slide_data.get("primary_visual", "text_only") or "text_only"
 
-        # 1b. Diagram with structure → map diagram_type to template
-        diagram = slide_data.get("diagram_spec")
-        if isinstance(diagram, dict) and diagram.get("diagram_type"):
-            dt = diagram["diagram_type"]
-            _DIAGRAM_TEMPLATE_MAP = {
-                "process_flow": "timeline_horizontal",
-                "architecture": "architecture_stack",
-                "framework": "quadrant_matrix",
-                "relationship": "role_columns",
-                # IT diagram types
-                "tech_architecture": "tech_stack_layers",
-                "component_topology": "component_network",
-                "data_flow": "data_pipeline",
-                "tech_stack_matrix": "tech_comparison",
-            }
-            tmpl = _DIAGRAM_TEMPLATE_MAP.get(dt, "framework_grid")
-            logger.info("diagram_type=%s → template=%s", dt, tmpl)
-            return picker.build_slots(tmpl, slide_data, body_blocks, bold_blocks, title)
+        if pv == "chart":
+            return picker._pick_chart_template(slide_data, body_blocks, title)
+        elif pv == "diagram":
+            return picker._pick_diagram_template(slide_data)
+        elif pv == "visual_block":
+            return picker._pick_vblock_template(slide_data, body_blocks, bold_blocks, title)
 
-        # 1c. Visual block with data → map type to template
-        vblock = slide_data.get("visual_block")
-        if isinstance(vblock, dict) and vblock.get("type"):
-            vb_type = vblock["type"]
-            items = vblock.get("items", [])
-            if vb_type in ("kpi_cards", "stat_highlight") and items:
-                metrics = []
-                for item in items[:4]:
-                    metrics.append({
-                        "label": item.get("title", item.get("description", "")),
-                        "value": item.get("value", ""),
-                        "unit": "",
-                        "note": item.get("description", item.get("trend", "")),
-                    })
-                logger.info("visual_block type=%s → content_key_metrics (%d items)", vb_type, len(metrics))
-                return "content_key_metrics", {"title": title, "metrics": metrics}
-            elif vb_type == "icon_text_grid" and items:
-                logger.info("visual_block type=icon_text_grid → icon_grid (%d items)", len(items))
-                return "icon_grid", {"title": title, "items": items}
-            elif vb_type == "step_cards" and items:
-                logger.info("visual_block type=step_cards → timeline_horizontal (%d items)", len(items))
-                phases = []
-                for idx, item in enumerate(items[:6]):
-                    phases.append({
-                        "label": item.get("label", f"步骤{idx+1}"),
-                        "title": item.get("title", item.get("name", ""))[:30],
-                        "desc": item.get("description", item.get("desc", ""))[:60],
-                    })
-                return "timeline_horizontal", {"title": title, "phases": phases}
-            elif vb_type == "comparison_columns" and items:
-                logger.info("visual_block type=comparison_columns → content_two_column")
-                return picker.build_slots("content_two_column", slide_data, body_blocks, bold_blocks, title)
+        # 3. text_only: text-content heuristics
+        return picker._pick_text_template(slide_data, body_blocks, bold_blocks, title)
 
+    # ------------------------------------------------------------------ #
+    # primary_visual dispatch methods
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _pick_chart_template(slide_data, body_blocks, title):
+        annotations = []
+        for b in body_blocks[:6]:
+            c = b.get("content", "") if isinstance(b, dict) else str(b)
+            if c:
+                annotations.append(c[:80])
+        return "chart_focus", {
+            "title": title,
+            "annotations": annotations or ["关键趋势"],
+        }
+
+    @staticmethod
+    def _pick_diagram_template(slide_data):
+        diagram = slide_data.get("diagram_spec") or {}
+        dt = diagram.get("diagram_type", "")
+        mapping = {
+            "process_flow": "timeline_horizontal",
+            "architecture": "architecture_stack",
+            "framework": "quadrant_matrix",
+            "relationship": "role_columns",
+            "tech_architecture": "tech_stack_layers",
+            "component_topology": "component_network",
+            "data_flow": "data_pipeline",
+            "tech_stack_matrix": "tech_comparison",
+        }
+        tmpl = mapping.get(dt, "framework_grid")
+        logger.info("diagram_type=%s → template=%s", dt, tmpl)
+        return tmpl, {}
+
+    @staticmethod
+    def _pick_vblock_template(slide_data, body_blocks, bold_blocks, title):
+        vblock = slide_data.get("visual_block") or {}
+        vb_type = vblock.get("type", "")
+        items = vblock.get("items", [])
+
+        if vb_type in ("kpi_cards", "stat_highlight") and items:
+            metrics = []
+            for item in items[:4]:
+                metrics.append({
+                    "label": item.get("title", item.get("description", "")),
+                    "value": item.get("value", ""),
+                    "unit": "",
+                    "note": item.get("description", item.get("trend", "")),
+                })
+            logger.info("visual_block type=%s → content_key_metrics (%d items)", vb_type, len(metrics))
+            return "content_key_metrics", {"title": title, "metrics": metrics}
+        elif vb_type == "icon_text_grid" and items:
+            grid_items = []
+            for idx, item in enumerate(items[:6]):
+                icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
+                grid_items.append({
+                    "icon": icon,
+                    "title": item.get("title", "")[:20],
+                    "desc": item.get("description", item.get("desc", ""))[:60],
+                })
+            logger.info("visual_block type=icon_text_grid → icon_grid (%d items)", len(grid_items))
+            return "icon_grid", {"title": title, "items": grid_items}
+        elif vb_type == "step_cards" and items:
+            phases = []
+            for idx, item in enumerate(items[:6]):
+                phases.append({
+                    "label": item.get("label", f"步骤{idx+1}"),
+                    "title": item.get("title", item.get("name", ""))[:30],
+                    "desc": item.get("description", item.get("desc", ""))[:60],
+                })
+            logger.info("visual_block type=step_cards → timeline_horizontal (%d items)", len(phases))
+            return "timeline_horizontal", {"title": title, "phases": phases}
+        elif vb_type == "comparison_columns" and items:
+            logger.info("visual_block type=comparison_columns → content_two_column")
+            return TemplatePicker.build_slots(
+                "content_two_column", slide_data, body_blocks, bold_blocks, title,
+            )
+
+        # Unknown vblock type → fall through to text template
+        return TemplatePicker._pick_text_template(slide_data, body_blocks, bold_blocks, title)
+
+    @staticmethod
+    def _pick_text_template(slide_data, body_blocks, bold_blocks, title):
+        """Text-only template selection based on content heuristics."""
+        picker = TemplatePicker
         n_blocks = len(body_blocks)
 
-        # 2. Comparison intent → content_two_column
+        # Comparison intent → content_two_column
         if picker._looks_like_comparison(title, body_blocks) and n_blocks >= 2:
             left, right = picker._split_comparison(body_blocks)
             return "content_two_column", {
@@ -144,7 +182,7 @@ class TemplatePicker:
                 "right_bullets": right,
             }
 
-        # 3. Numeric-heavy blocks → content_key_metrics
+        # Numeric-heavy blocks → content_key_metrics
         numeric_blocks = [b for b in body_blocks if picker._has_numeric(
             b.get("content", "") if isinstance(b, dict) else str(b)
         )]
@@ -167,24 +205,7 @@ class TemplatePicker:
                     "sub_bullets": sub_bullets[:3],
                 }
 
-        # 4. 3-6 short parallel blocks → icon_grid (only with structured visual_block)
-        if 3 <= n_blocks <= 6:
-            max_len = max(len(b.get("content", "") if isinstance(b, dict) else str(b)) for b in body_blocks)
-            if max_len <= 60:
-                vblock = slide_data.get("visual_block")
-                if isinstance(vblock, dict) and vblock.get("items"):
-                    items = []
-                    for idx, item in enumerate(vblock["items"][:6]):
-                        icon = _AUTO_ICONS[idx % len(_AUTO_ICONS)]
-                        items.append({
-                            "icon": icon,
-                            "title": item.get("title", "")[:20],
-                            "desc": item.get("description", item.get("desc", ""))[:60],
-                        })
-                    return "icon_grid", {"title": title, "items": items}
-                # No visual_block — skip icon_grid, fall through to content_bullets
-
-        # 5. Everything else → content_bullets
+        # Default → content_bullets
         bullets = []
         for b in body_blocks[:8]:
             c = b.get("content", "") if isinstance(b, dict) else str(b)
@@ -193,7 +214,6 @@ class TemplatePicker:
         return "content_bullets", {
             "title": title,
             "bullets": bullets,
-            "has_chart": bool(slide_data.get("chart_suggestion")),
         }
 
     # ------------------------------------------------------------------ #
@@ -446,19 +466,6 @@ class TemplatePicker:
     # ------------------------------------------------------------------ #
     # Helper methods (private, used only by pick / build_slots)
     # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def _chart_has_data(slide_data: Dict) -> bool:
-        """Check whether chart_suggestion contains real data rows."""
-        chart = slide_data.get("chart_suggestion") or {}
-        if isinstance(chart, dict):
-            series = chart.get("series") or chart.get("data")
-            if isinstance(series, list) and len(series) > 0:
-                return True
-            labels = chart.get("labels") or chart.get("categories")
-            if isinstance(labels, list) and len(labels) > 0:
-                return True
-        return False
 
     @staticmethod
     def _looks_like_comparison(title: str, blocks: List[Dict]) -> bool:

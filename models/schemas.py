@@ -1,0 +1,176 @@
+"""
+Pydantic schema contracts for pipeline stage boundaries.
+
+Each agent's output is validated against these schemas before being passed downstream.
+Three guarantees on ContentSlideSchema:
+  1. infer_primary_visual — LLM often omits primary_visual; infer from actual visual fields
+  2. enforce_visual_content_present — chart must have series/data, diagram must have type, vblock must have type+items
+  3. enforce_visual_mutual_exclusion — only one of chart_suggestion/diagram_spec/visual_block may be non-null
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, computed_field, model_validator
+
+from models.slide_spec import NarrativeRole, PrimaryVisualType, SlideType
+
+
+class ContentSlideSchema(BaseModel):
+    page_number: int = Field(ge=1)
+    slide_type: SlideType = SlideType.CONTENT
+    takeaway_message: str = ""
+    primary_visual: PrimaryVisualType = PrimaryVisualType.TEXT_ONLY
+    text_blocks: list[dict] = Field(default_factory=list)
+    chart_suggestion: Optional[dict] = None
+    diagram_spec: Optional[dict] = None
+    visual_block: Optional[dict] = None
+    source_note: str = ""
+    layout_hint: str = ""
+    page_weight: Literal["hero", "pillar", "supporting"] = "pillar"
+    is_failed: bool = False
+    error_message: str = ""
+
+    # -- Guarantee 1: infer primary_visual from actual visual fields --
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_primary_visual(cls, data):
+        if not isinstance(data, dict):
+            return data
+        pv = data.get("primary_visual")
+        if not pv or pv == "text":
+            if data.get("chart_suggestion"):
+                data["primary_visual"] = "chart"
+            elif data.get("diagram_spec"):
+                data["primary_visual"] = "diagram"
+            elif data.get("visual_block"):
+                data["primary_visual"] = "visual_block"
+            else:
+                data["primary_visual"] = "text_only"
+        return data
+
+    # -- Guarantee 2: visual content must be non-empty --
+
+    @model_validator(mode="after")
+    def enforce_visual_content_present(self):
+        if self.primary_visual == PrimaryVisualType.CHART:
+            cs = self.chart_suggestion or {}
+            series = cs.get("series") or cs.get("data")
+            labels = cs.get("labels") or cs.get("categories")
+            has_data = (isinstance(series, list) and series) or (
+                isinstance(labels, list) and labels
+            )
+            if not has_data:
+                raise ValueError(
+                    f"P{self.page_number}: primary_visual=chart but chart_suggestion has no data"
+                )
+        elif self.primary_visual == PrimaryVisualType.DIAGRAM:
+            ds = self.diagram_spec or {}
+            if not ds.get("diagram_type"):
+                raise ValueError(
+                    f"P{self.page_number}: primary_visual=diagram but diagram_spec has no diagram_type"
+                )
+        elif self.primary_visual == PrimaryVisualType.VISUAL_BLOCK:
+            vb = self.visual_block or {}
+            if not vb.get("type"):
+                raise ValueError(
+                    f"P{self.page_number}: primary_visual=visual_block but visual_block has no type"
+                )
+            items = vb.get("items")
+            if not isinstance(items, list) or not items:
+                raise ValueError(
+                    f"P{self.page_number}: visual_block type={vb.get('type')} but items is empty"
+                )
+        return self
+
+    # -- Guarantee 3: mutual exclusion --
+
+    @model_validator(mode="after")
+    def enforce_visual_mutual_exclusion(self):
+        pv = self.primary_visual
+        has_chart = self.chart_suggestion is not None
+        has_diag = self.diagram_spec is not None
+        has_vb = self.visual_block is not None
+
+        if pv == PrimaryVisualType.CHART and (has_diag or has_vb):
+            raise ValueError(
+                f"P{self.page_number}: primary_visual=chart but has diagram={has_diag} vblock={has_vb}"
+            )
+        elif pv == PrimaryVisualType.DIAGRAM and (has_chart or has_vb):
+            raise ValueError(
+                f"P{self.page_number}: primary_visual=diagram but has chart={has_chart} vblock={has_vb}"
+            )
+        elif pv == PrimaryVisualType.VISUAL_BLOCK and (has_chart or has_diag):
+            raise ValueError(
+                f"P{self.page_number}: primary_visual=visual_block but has chart={has_chart} diagram={has_diag}"
+            )
+        elif pv == PrimaryVisualType.TEXT_ONLY and (has_chart or has_diag or has_vb):
+            raise ValueError(
+                f"P{self.page_number}: primary_visual=text_only but visual fields present "
+                f"(chart={has_chart} diagram={has_diag} vblock={has_vb})"
+            )
+        return self
+
+
+class ContentResultSchema(BaseModel):
+    slides: list[ContentSlideSchema] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def total_pages(self) -> int:
+        return len(self.slides)
+
+    @computed_field
+    @property
+    def failed_pages(self) -> list[int]:
+        return [s.page_number for s in self.slides if s.is_failed]
+
+
+class OutlineItemSchema(BaseModel):
+    page_number: int = Field(ge=1)
+    slide_type: SlideType = SlideType.CONTENT
+    takeaway_message: str = ""
+    supporting_hint: str = ""
+    data_source: str = ""
+    primary_visual: PrimaryVisualType = PrimaryVisualType.TEXT_ONLY
+    narrative_arc: NarrativeRole = NarrativeRole.EVIDENCE
+    layout_hint: str = ""
+    page_weight: Literal["hero", "pillar", "supporting"] = "pillar"
+    section: str = ""
+    title: str = ""
+    chunk_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, data):
+        if not isinstance(data, dict):
+            return data
+        pv = data.get("primary_visual")
+        if not pv or pv == "text":
+            data["primary_visual"] = "text_only"
+        na = data.get("narrative_arc", "")
+        valid_arc = {e.value for e in NarrativeRole}
+        if na not in valid_arc:
+            data["narrative_arc"] = "evidence"
+        return data
+
+
+class OutlineResultSchema(BaseModel):
+    narrative_logic: str = ""
+    items: list[OutlineItemSchema] = Field(default_factory=list)
+    data_gap_suggestions: list[str] = Field(default_factory=list)
+    scqa: dict = {}
+    root_claim: str = ""
+
+
+@dataclass
+class ParseResult:
+    """Tagged result distinguishing JSON parse errors from schema validation errors."""
+
+    schema: Optional[ContentSlideSchema] = None
+    error_kind: Literal["ok", "json_parse", "schema"] = "ok"
+    error_msg: str = ""
+    raw_data: Optional[dict] = None
