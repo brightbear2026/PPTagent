@@ -13,10 +13,16 @@ class TestLayoutRegistry:
         from pipeline.layouts import LayoutRegistry
         assert "call_to_action" in LayoutRegistry.names()
 
+    def test_registry_has_quote_emphasis(self):
+        from pipeline.layouts import LayoutRegistry
+        assert "quote_emphasis" in LayoutRegistry.names()
+
     def test_registry_get_returns_layout(self):
         from pipeline.layouts import LayoutRegistry
         layout = LayoutRegistry.get("call_to_action")
         assert layout.name == "call_to_action"
+        layout2 = LayoutRegistry.get("quote_emphasis")
+        assert layout2.name == "quote_emphasis"
 
     def test_registry_unknown_name_raises(self):
         from pipeline.layouts import LayoutRegistry
@@ -172,3 +178,57 @@ class TestPlanAgentClosingLayout:
         assert content[0]["layout_hint"] == "metrics"
         # Last slide gets overridden to call_to_action
         assert content[-1]["layout_hint"] == "call_to_action"
+
+
+class TestQuoteEmphasisLayout:
+    def _layout(self):
+        from pipeline.layouts import LayoutRegistry
+        return LayoutRegistry.get("quote_emphasis")
+
+    def test_from_slide_data(self):
+        layout = self._layout()
+        slide_data = {
+            "takeaway_message": "核心论点足够长的测试句子",
+            "text_blocks": [
+                {"type": "heading", "content": "标题"},
+                {"type": "bullet", "content": "这是第一个核心结论作为引用文本", "level": 1},
+                {"type": "bullet", "content": "这是第二个支撑论据的详细描述", "level": 1},
+                {"type": "bullet", "content": "这是第三个支撑论据的更多细节", "level": 1},
+            ],
+        }
+        content = layout.from_slide_data(slide_data)
+        assert "引用文本" in content.quote_text
+        assert len(content.sub_bullets) == 2
+
+    def test_build_html_contains_quote(self):
+        from pipeline.layouts.quote_emphasis import QuoteEmphasisContent
+        layout = self._layout()
+        content = QuoteEmphasisContent(
+            title="测试标题足够长了",
+            quote_text="这是一个非常重要的核心结论值得强调",
+            sub_bullets=["支撑论据一", "支撑论据二"],
+        )
+        html = layout.build_html(content, {"primary": "#003D6E"})
+        assert "非常重要的核心结论" in html
+        assert "支撑论据一" in html
+
+    def test_no_dup_prefix(self):
+        from pipeline.layer6_output.html_dup_check import detect_dup_prefix
+        from pipeline.layouts.quote_emphasis import QuoteEmphasisContent
+        layout = self._layout()
+        content = QuoteEmphasisContent(
+            title="测试标题足够长的句子内容",
+            quote_text="核心结论引用文本内容也足够长",
+            sub_bullets=["论据一描述", "论据二描述"],
+        )
+        html = layout.build_html(content, {"primary": "#003D6E"})
+        assert detect_dup_prefix(html) is None
+
+    def test_fallback_to_takeaway_when_no_blocks(self):
+        layout = self._layout()
+        slide_data = {
+            "takeaway_message": "当没有text_blocks时使用takeaway作为引用",
+            "text_blocks": [],
+        }
+        content = layout.from_slide_data(slide_data)
+        assert "takeaway" in content.quote_text or "使用takeaway" in content.quote_text

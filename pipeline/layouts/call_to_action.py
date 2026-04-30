@@ -15,6 +15,14 @@ class CallToActionLayout:
     content_schema = CTAContent
     capacity = Capacity(max_text_chars=200, max_bullet_count=3)
 
+    def from_slide_data(self, slide_data: dict) -> CTAContent:
+        body_blocks = [b for b in slide_data.get("text_blocks", []) if b.get("level", 0) > 0]
+        return CTAContent(
+            takeaway=slide_data.get("takeaway_message", ""),
+            action_items=[b.get("content", "") for b in body_blocks][:3],
+            timeline="",
+        )
+
     def build_html(
         self,
         content: CTAContent,

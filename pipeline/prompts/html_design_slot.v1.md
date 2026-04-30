@@ -75,3 +75,9 @@ slots: title, roles([{name:str, subtitle:str, bullets:list[str]}] 3-4个角色)
 - 必须保留 text_blocks 中的具体数据、百分比、金额、专有名词、人名/产品名等事实性内容
 - 每个 bullet/desc 应保持 30-60 字，与原始 text_blocks 长度相当
 - 如果某条 text_blocks 内容较长（>60字），可以适当精简但必须保留核心数据和结论
+
+## 颜色 semantic 规则（必须遵守）
+模板中的颜色由系统注入（primary/secondary/accent），你不需要选择颜色。但如果你在 slots 中包含内联样式：
+- accent 色（橙 #FF6B35）仅用于：① takeaway/核心结论标题 ② 关键数字/指标值 ③ 1个 callout 标注
+- 禁止将 accent 用于：背景色、装饰条、次要文本、普通 bullet、分隔线
+- 普通文本用 #333333/#666666，标题用 primary（深蓝 #003D6E）

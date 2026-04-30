@@ -10,6 +10,10 @@ To add a new layout:
 """
 from pipeline.layouts.base import Capacity, LayoutModule
 from pipeline.layouts.call_to_action import CallToActionLayout, CTAContent
+from pipeline.layouts.quote_emphasis import QuoteEmphasisLayout, QuoteEmphasisContent
+from pipeline.layouts.parallel_points import ParallelPointsLayout, ParallelPointsContent
+from pipeline.layouts.metrics import MetricsLayout, MetricsContent
+from pipeline.layouts.chart_focus import ChartFocusLayout, ChartFocusContent
 
 
 class LayoutRegistry:
@@ -29,3 +33,7 @@ class LayoutRegistry:
 
 
 LayoutRegistry.register(CallToActionLayout())
+LayoutRegistry.register(QuoteEmphasisLayout())
+LayoutRegistry.register(ParallelPointsLayout())
+LayoutRegistry.register(MetricsLayout())
+LayoutRegistry.register(ChartFocusLayout())
