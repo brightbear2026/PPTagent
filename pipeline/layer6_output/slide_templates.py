@@ -574,6 +574,16 @@ def render_template(
                                 _render_tech_matrix(slots.get("categories", []),
                                                     primary, accent, bg, text_color, muted))
 
+    # Source footnote: render if source_note slot is non-empty
+    source_note = slots.get("source_note", "").strip()
+    if source_note:
+        source_html = (
+            f'<p style="position:absolute; bottom:28px; right:40px; '
+            f'font-size:9px; color:{muted}; font-style:italic; max-width:500px;">'
+            f'Source: {_html.escape(source_note)}</p>'
+        )
+        result = result.replace("</body>", source_html + "\n</body>")
+
     return result
 
 

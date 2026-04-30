@@ -437,6 +437,18 @@ class PlanAgent:
                     f"建议拆分为两个独立章节（每章 4-5 页），或精简至 5-6 页。"
                 )
 
+        # Soft warning: check if content slide titles look descriptive (no verb).
+        # Log only — _fix_plan LLM retry handles actual rewriting.
+        for s in content_slides:
+            tm = s.get("takeaway_message", "")
+            if tm and len(tm) >= 8 and s.get("slide_type") in ("content", "data"):
+                has_verb = any(c in tm for c in "应须建议将实现构建降低提升减少增加发现表明证明要求推动是")
+                if not has_verb:
+                    logger.info(
+                        "P%s takeaway may lack verb (descriptive title): %.40s",
+                        s.get("page_number"), tm,
+                    )
+
         return issues
 
     # ------------------------------------------------------------------

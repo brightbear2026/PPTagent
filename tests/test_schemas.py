@@ -474,3 +474,44 @@ class TestPageWeightEnum:
         # Filter to only page_weight-related errors
         pw_errors = [e for e in errors if "hero" in e or "pillar" in e or "supporting" in e or "transition" in e]
         assert pw_errors == [], f"Expected no page_weight errors, got: {pw_errors}"
+
+
+class TestBulletLengthCap:
+    def test_overlong_bullet_rejected(self):
+        import pytest as _pytest
+        with _pytest.raises(ValidationError):
+            ContentSlideSchema(
+                page_number=1,
+                text_blocks=[
+                    {"type": "heading", "content": "标题"},
+                    {"type": "bullet", "content": "X" * 121, "level": 1},
+                ],
+            )
+
+    def test_bullet_at_limit_accepted(self):
+        slide = ContentSlideSchema(
+            page_number=1,
+            text_blocks=[
+                {"type": "heading", "content": "标题"},
+                {"type": "bullet", "content": "X" * 120, "level": 1},
+            ],
+        )
+        assert len(slide.text_blocks) == 2
+
+    def test_heading_not_capped(self):
+        slide = ContentSlideSchema(
+            page_number=1,
+            text_blocks=[
+                {"type": "heading", "content": "X" * 200},
+            ],
+        )
+        assert len(slide.text_blocks) == 1
+
+    def test_level_zero_not_capped(self):
+        slide = ContentSlideSchema(
+            page_number=1,
+            text_blocks=[
+                {"type": "bullet", "content": "X" * 200, "level": 0},
+            ],
+        )
+        assert len(slide.text_blocks) == 1

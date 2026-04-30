@@ -328,6 +328,11 @@ class HTMLDesignAgent:
                 }
 
             from pipeline.layer6_output.slide_templates import render_template
+            # Inject source_note from slide data for chart/data slides
+            if "source_note" not in slots:
+                source = slide_data.get("source_note", "") or slide_data.get("data_source", "")
+                if source:
+                    slots["source_note"] = source
             html = render_template(
                 template_id=template_id,
                 slots=slots,

@@ -112,6 +112,26 @@ class ContentSlideSchema(BaseModel):
                 f"P{self.page_number}: primary_visual=text_only but visual fields present "
                 f"(chart={has_chart} diagram={has_diag} vblock={has_vb})"
             )
+
+        return self
+
+    # -- Guarantee 4: bullet length cap (Chinese text ≤120 chars) --
+
+    @model_validator(mode="after")
+    def enforce_bullet_length_cap(self):
+        overlong = []
+        for tb in self.text_blocks:
+            if not isinstance(tb, dict):
+                continue
+            content = tb.get("content", tb.get("text", ""))
+            level = tb.get("level", 0)
+            if level > 0 and len(content) > 120:
+                overlong.append(len(content))
+        if overlong:
+            raise ValueError(
+                f"P{self.page_number}: {len(overlong)} bullet(s) exceed 120 chars "
+                f"(lengths: {overlong}). Max 120 chars per bullet. Rewrite shorter."
+            )
         return self
 
 
