@@ -227,20 +227,32 @@ class HTMLDesignAgent:
         import shutil
         shutil.copy2(output_path, final_path)
 
-        slide_count = render_result.get("slide_count", total)
+        rendered_count = render_result.get("rendered_count", render_result.get("slide_count", total))
         errors = render_result.get("errors", [])
+        if errors:
+            for err in errors:
+                logger.error(
+                    "Slide %s (%s) render error: %s",
+                    err.get("slide_index", "?"), err.get("file", "?"), err.get("error", "unknown"),
+                )
+        dropped = total - rendered_count
+        if dropped > 0:
+            logger.error(
+                "HTMLDesignAgent: %d of %d slides dropped during Node render",
+                dropped, total,
+            )
 
         result = {
             "output_file": final_path,
-            "slide_count": slide_count,
+            "slide_count": rendered_count,
             "chart_count": chart_count,
             "diagram_count": sum(1 for sd in slides_data if sd.get("diagram_spec")),
             "render_errors": errors,
         }
 
         logger.info(
-            "HTMLDesignAgent: %d slides, %d charts, %d errors",
-            slide_count, chart_count, len(errors),
+            "HTMLDesignAgent: %d/%d slides rendered, %d charts, %d errors",
+            rendered_count, total, chart_count, len(errors),
         )
 
         return result
@@ -278,7 +290,16 @@ class HTMLDesignAgent:
             try:
                 layout = LayoutRegistry.get(hint)
                 content = layout.from_slide_data(slide_data)
-                return layout.build_html(content, theme_colors, slide_index + 1, total_slides)
+                html = layout.build_html(content, theme_colors, slide_index + 1, total_slides)
+                # Safety net: detect logic bugs in from_slide_data / build_html
+                from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
+                dup_err = _dp(html)
+                if dup_err:
+                    logger.error(
+                        "Slide %d: registry layout '%s' produced dup-prefix: %s",
+                        slide_index, hint, dup_err,
+                    )
+                return html
             except Exception as e:
                 logger.warning(
                     "Slide %d: registry layout '%s' failed, falling through to LLM: %s",
@@ -444,7 +465,7 @@ class HTMLDesignAgent:
         )
 
         # Replace the existing footer <p> tag inside the footer <div>
-        # Pattern: the footer div contains a <p> with footer text
+        # Pattern 1: standard registry/slot footer <p>
         old_footer_pattern = (
             f'<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">'
             f'第 {_html_module.escape(str(pn))} 页 / 共 {_html_module.escape(str(total_slides))} 页</p>'
@@ -452,12 +473,24 @@ class HTMLDesignAgent:
         if old_footer_pattern in html:
             html = html.replace(old_footer_pattern, new_footer)
         else:
-            # Fallback: replace any footer <p> content
-            html = re.sub(
+            # Pattern 2: any standard footer <p> (registry layouts use "PX / Y")
+            replaced = re.sub(
                 r'<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">.*?</p>',
                 new_footer,
                 html, count=1, flags=re.DOTALL,
             )
+            if replaced != html:
+                html = replaced
+            else:
+                # Pattern 3: hero/special template footer (different style)
+                pn_escaped = _html_module.escape(str(pn))
+                total_escaped = _html_module.escape(str(total_slides))
+                hero_pattern = f'>P{pn_escaped} / {total_escaped}</p>'
+                if hero_pattern in html:
+                    html = html.replace(
+                        f'P{pn_escaped} / {total_escaped}',
+                        f'{section_display} | P{pn_escaped} / {total_escaped}' if section_display else f'P{pn_escaped} / {total_escaped}',
+                    )
         return html
 
     def _inspect_and_fix(

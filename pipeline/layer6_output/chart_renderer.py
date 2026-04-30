@@ -478,7 +478,7 @@ class ChartRenderer:
             cat_label = categories[peak_idx] if peak_idx < len(categories) else ""
 
             if chart_spec.so_what:
-                annotation_text = chart_spec.so_what[:30]
+                annotation_text = ''.join(c for c in chart_spec.so_what[:30] if c.isprintable() or c == ' ')
             else:
                 # Auto-generate: "+47% 同比" style label
                 if len(values) >= 2:

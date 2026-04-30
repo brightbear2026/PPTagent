@@ -12,7 +12,7 @@ def detect_dup_prefix(
     html: str,
     min_short: int = 5,
     max_short: int = 30,
-    ratio: float = 2.0,
+    ratio: float = 1.3,
 ) -> Optional[str]:
     """Return error message if any text node is a strict short prefix of another.
 

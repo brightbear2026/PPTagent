@@ -116,6 +116,7 @@ async function handleRender(req, res, body) {
     sendJson(res, 200, {
       output_file: output_path,
       slide_count: files.length,
+      rendered_count: files.length - errors.length,
       placeholders: allPlaceholders,
       errors: errors,
     });

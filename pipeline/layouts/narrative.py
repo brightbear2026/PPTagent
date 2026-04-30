@@ -37,8 +37,8 @@ class NarrativeLayout:
                 c = b.get("content", b.get("text", ""))
                 phases.append(PhaseItem(
                     label=f"阶段{idx + 1}",
-                    title=c[:30],
-                    desc=c[:60],
+                    title=f"步骤{idx + 1}",
+                    desc=c[:80],
                 ))
         return NarrativeContent(
             title=slide_data.get("takeaway_message", ""),

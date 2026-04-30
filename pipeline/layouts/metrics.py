@@ -28,8 +28,12 @@ class MetricsLayout:
         metrics = []
         if vblock.get("items"):
             for item in vblock["items"][:4]:
+                label = item.get("title", item.get("description", ""))
+                # Avoid mid-sentence truncation: strip trailing incomplete words
+                if label and len(label) > 4 and not label[-1] in "。！？：；，、":
+                    label = label.rstrip("可直接损失峰值可达约")
                 metrics.append(MetricItem(
-                    label=item.get("title", item.get("description", "")),
+                    label=label,
                     value=item.get("value", ""),
                     unit=item.get("unit", ""),
                     note=item.get("description", item.get("trend", "")),
@@ -60,16 +64,18 @@ class MetricsLayout:
         metrics_html = ""
         if content.metrics:
             n = len(content.metrics)
-            card_w = min(200, 800 // max(n, 1))
+            card_w = min(260, 800 // max(n, 1))
             total_w = card_w * n + 20 * (n - 1)
             start_x = (880 - total_w) // 2 + 40
             for i, m in enumerate(content.metrics):
                 x = start_x + i * (card_w + 20)
                 metrics_html += (
                     f'<div style="position:absolute; left:{x}px; top:90px; '
-                    f'width:{card_w}px; height:100px; background-color:{bg}; '
-                    f'border-radius:6px; padding:12px;">\n'
-                    f'  <p style="font-size:11px; color:{muted}; margin:0;">{_html.escape(m.label)}</p>\n'
+                    f'width:{card_w}px; height:120px; background-color:{bg}; '
+                    f'border-radius:6px; padding:12px; overflow:hidden;">\n'
+                    f'  <p style="font-size:11px; color:{muted}; margin:0 0 2px 0; '
+                    f'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+                    f'{_html.escape(m.label)}</p>\n'
                     f'  <p style="font-size:28px; color:{primary}; font-weight:bold; margin:4px 0;">'
                     f'{_html.escape(m.value)}{_html.escape(m.unit)}</p>\n'
                     f'  <p style="font-size:10px; color:{muted}; margin:0;">{_html.escape(m.note)}</p>\n'

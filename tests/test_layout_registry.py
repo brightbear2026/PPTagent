@@ -41,33 +41,44 @@ class TestCTAContent:
         from pipeline.layouts.call_to_action import CTAContent
         c = CTAContent(
             takeaway="建议三个月内完成安全评估",
-            action_items=["启动试点", "组建团队"],
+            action_items=["启动试点", "组建团队", "选定场景"],
+            timeline="3-6个月",
         )
         assert c.takeaway == "建议三个月内完成安全评估"
-        assert len(c.action_items) == 2
+        assert len(c.action_items) == 3
 
-    def test_max_3_action_items(self):
+    def test_max_5_action_items(self):
         from pipeline.layouts.call_to_action import CTAContent
         with pytest.raises(pydantic.ValidationError):
             CTAContent(
                 takeaway="X" * 10,
-                action_items=["a", "b", "c", "d"],
+                action_items=["a", "b", "c", "d", "e", "f"],
+                timeline="1个月",
             )
 
     def test_min_takeaway_length(self):
         from pipeline.layouts.call_to_action import CTAContent
         with pytest.raises(pydantic.ValidationError):
-            CTAContent(takeaway="短")
+            CTAContent(takeaway="短", action_items=["a", "b", "c"], timeline="t")
 
-    def test_empty_action_items_ok(self):
+    def test_min_3_action_items(self):
         from pipeline.layouts.call_to_action import CTAContent
-        c = CTAContent(takeaway="这是一个足够长的核心结论句子")
-        assert c.action_items == []
+        with pytest.raises(pydantic.ValidationError):
+            CTAContent(takeaway="足够长的核心结论句子", action_items=["a"], timeline="t")
 
-    def test_timeline_optional(self):
+    def test_timeline_required(self):
         from pipeline.layouts.call_to_action import CTAContent
-        c = CTAContent(takeaway="核心结论足够长了", timeline="3-6 个月")
-        assert c.timeline == "3-6 个月"
+        with pytest.raises(pydantic.ValidationError):
+            CTAContent(takeaway="核心结论足够长了", action_items=["a", "b", "c"])
+
+    def test_reject_duplicated_action_item(self):
+        from pipeline.layouts.call_to_action import CTAContent
+        with pytest.raises(pydantic.ValidationError, match="duplicates takeaway"):
+            CTAContent(
+                takeaway="头部金融科技公司已部署AI红队和模型防火墙",
+                action_items=["头部金融科技公司已部署AI红队", "b", "c"],
+                timeline="1个月",
+            )
 
 
 class TestCTABuildHtml:
@@ -75,57 +86,49 @@ class TestCTABuildHtml:
         from pipeline.layouts import LayoutRegistry
         return LayoutRegistry.get("call_to_action")
 
-    def test_html_contains_takeaway(self):
+    def _content(self, **overrides):
         from pipeline.layouts.call_to_action import CTAContent
-        layout = self._layout()
-        content = CTAContent(
+        defaults = dict(
             takeaway="立即启动安全评估试点",
-            action_items=["第一步：组建团队", "第二步：选场景"],
+            action_items=["第一步：组建团队", "第二步：选场景", "第三步：评估"],
+            timeline="3-6个月",
         )
+        defaults.update(overrides)
+        return CTAContent(**defaults)
+
+    def test_html_contains_takeaway(self):
+        layout = self._layout()
+        content = self._content()
         html = layout.build_html(content, {"primary": "#003D6E"}, 10, 10)
         assert "立即启动安全评估试点" in html
         assert "第一步：组建团队" in html
-        assert "第二步：选场景" in html
+        assert "第三步：评估" in html
+
+    def test_html_has_footer(self):
+        layout = self._layout()
+        content = self._content()
+        html = layout.build_html(content, {"primary": "#003D6E"}, 5, 20)
+        assert "P5 / 20" in html
 
     def test_html_uses_theme_colors(self):
-        from pipeline.layouts.call_to_action import CTAContent
         layout = self._layout()
-        content = CTAContent(takeaway="测试结论足够长了吧", action_items=["行动"])
+        content = self._content()
         html = layout.build_html(content, {"primary": "#FF0000", "accent": "#00FF00"})
         assert "#FF0000" in html
 
     def test_no_dup_prefix_in_output(self):
         from pipeline.layer6_output.html_dup_check import detect_dup_prefix
-        from pipeline.layouts.call_to_action import CTAContent
         layout = self._layout()
-        content = CTAContent(
-            takeaway="建议三个月内完成安全评估并启动两个核心场景试点",
-            action_items=["组建专项团队"],
-        )
+        content = self._content()
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert detect_dup_prefix(html) is None
 
-    def test_timeline_appears_when_set(self):
-        from pipeline.layouts.call_to_action import CTAContent
+    def test_timeline_appears(self):
         layout = self._layout()
-        content = CTAContent(
-            takeaway="核心结论句足够长的测试内容",
-            action_items=["行动一"],
-            timeline="3-6 个月",
-        )
+        content = self._content(timeline="3-6 个月")
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert "3-6 个月" in html
         assert "建议时间窗" in html
-
-    def test_no_timeline_when_empty(self):
-        from pipeline.layouts.call_to_action import CTAContent
-        layout = self._layout()
-        content = CTAContent(
-            takeaway="核心结论句足够长的测试内容",
-            action_items=["行动一"],
-        )
-        html = layout.build_html(content, {"primary": "#003D6E"})
-        assert "建议时间窗" not in html
 
 
 class TestPlanAgentClosingLayout:

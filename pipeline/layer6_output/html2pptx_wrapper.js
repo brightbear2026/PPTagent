@@ -71,6 +71,7 @@ async function renderSlides(htmlDir, outputPath, layout) {
     const result = {
         output_file: outputPath,
         slide_count: files.length,
+        rendered_count: files.length - errors.length,
         placeholders: allPlaceholders,
         errors: errors
     };

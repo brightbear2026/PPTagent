@@ -69,6 +69,37 @@ HTMLDesignAgent 路由：`if layout_hint in LayoutRegistry.names()` → registry
 
 ---
 
+## Phase 3 复盘 & Lesson Learned
+
+**Date**: 2026-04-30
+
+### Bug: Registry fallback dup-prefix (framework_grid, narrative)
+
+`framework_grid.py` 和 `narrative.py` 的 fallback path（content 无 visual_block 时）将同一段文字切两段填入 `title=c[:N1]` + `desc=c[:N2]`，导致 desc 以 title 开头 → dup-prefix。
+
+**Root cause**: typed schema 只约束字段形状，`from_slide_data()` 和 `build_html()` 的转换逻辑仍可能引入 logic bug。Registry bypass LLM ≠ immune to content bugs。
+
+**Lesson**:
+1. **所有 `build_html()` 输出都必须过 `detect_dup_prefix`** — 不只 LLM 路径。已在 `html_design_agent.py` registry 分发后加 safety net（ERROR 日志）。
+2. **Fallback path 必须有独立测试** — 之前所有 layout 测试都用 visual_block 充足的 fixture，从不触发 fallback。已加 `test_layout_no_dup_prefix.py` 参数化测每个 layout 的 fallback path。
+3. **`detect_dup_prefix` ratio 阈值 2.0 过严** — 实际 dup-prefix 是 1.5x（title=20chars, desc=60chars），被漏掉。已降至 1.3。
+
+### PPTX Quality Review — 9 Fixes Applied
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | Footer total /21 但实际 20 slides | Node bridge 报告 rendered_count；Python 日志 dropped slides |
+| 2 | CTA slide 缺 footer | 加 footer bar HTML |
+| 3 | CTA takeaway 与 action_item[0] 重复 | CTAContent model_validator reject_duplicated_action_item |
+| 4 | framework_grid/narrative fallback dup-prefix | title="" + desc=c[:80]（不切同段文字）；ratio 降至 1.3 |
+| 5 | Metrics KPI label 截断 | card_w 200→260 + overflow:ellipsis |
+| 6 | Hero "—" 空占位 | conditional render：空/占位符时移除元素 |
+| 7 | Footer 格式不一致 P4/21 vs PX / 21 | hero 模板加空格 + _inject_section_footer 多 pattern fallback |
+| 8 | Closing 内容稀疏 | CTAContent action_items min_length=3, timeline min_length=1 |
+| 9 | Chart annotation \x0b 控制字符 | sanitize before render |
+
+---
+
 ## ADR-001: LayoutTemplate Registry（内联）
 
 ### 决策

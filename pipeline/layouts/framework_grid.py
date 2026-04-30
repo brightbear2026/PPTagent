@@ -41,8 +41,8 @@ class FrameworkGridLayout:
                 c = b.get("content", b.get("text", ""))
                 items.append(GridItem(
                     icon=icon,
-                    title=c[:20] if len(c) <= 30 else c[:20],
-                    desc=c[:60],
+                    title="",
+                    desc=c[:80],
                 ))
         return FrameworkGridContent(
             title=slide_data.get("takeaway_message", ""),
