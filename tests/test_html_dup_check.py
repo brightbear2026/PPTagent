@@ -47,3 +47,47 @@ class TestDupDetect:
         long_short = "大模型应用" * 7  # 35 chars
         html = f"<p>{long_short}</p><p>{long_short}的详细解释，含很多额外内容...</p>"
         assert detect_dup_prefix(html) is None
+
+
+class TestFooterInjection:
+    def test_inject_section_into_footer(self):
+        from pipeline.agents.html_design_agent import HTMLDesignAgent
+        html = (
+            '<body>'
+            '<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:#003D6E;">'
+            '<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">第 5 页 / 共 20 页</p>'
+            '</div>'
+            '</body>'
+        )
+        slide_data = {"section": "第三章 风险全景"}
+        result = HTMLDesignAgent._inject_section_footer(html, slide_data, 4, 20)
+        assert "风险全景" in result
+        assert "P5 / 20" in result
+        assert "第 5 页 / 共 20 页" not in result
+
+    def test_no_section_shows_only_page(self):
+        from pipeline.agents.html_design_agent import HTMLDesignAgent
+        html = (
+            '<body>'
+            '<div style="position:absolute; bottom:0;">'
+            '<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">第 1 页 / 共 10 页</p>'
+            '</div>'
+            '</body>'
+        )
+        slide_data = {"section": ""}
+        result = HTMLDesignAgent._inject_section_footer(html, slide_data, 0, 10)
+        assert "P1 / 10" in result
+
+    def test_chapter_prefix_stripped(self):
+        from pipeline.agents.html_design_agent import HTMLDesignAgent
+        html = (
+            '<body>'
+            '<div style="position:absolute; bottom:0;">'
+            '<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">第 3 页 / 共 10 页</p>'
+            '</div>'
+            '</body>'
+        )
+        slide_data = {"section": "第一章 开篇导入"}
+        result = HTMLDesignAgent._inject_section_footer(html, slide_data, 2, 10)
+        assert "开篇导入" in result
+        assert "第一章" not in result

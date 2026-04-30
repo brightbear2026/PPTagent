@@ -437,6 +437,11 @@ class ChartRenderer:
                         if chart_spec.title:
                             chart.has_title = True
                             chart.chart_title.text_frame.paragraphs[0].text = chart_spec.title
+
+                        # Inject annotation callout for the peak data point
+                        self._add_chart_annotation(
+                            slide, chart_spec, x_in, y_in, w_in, h_in,
+                        )
                         continue
                     except Exception as e:
                         print(f"[ChartRenderer] native chart failed: {e}, trying render()")
@@ -452,6 +457,61 @@ class ChartRenderer:
 
         prs.save(output_path)
         return output_path
+
+    def _add_chart_annotation(self, slide, chart_spec, x_in, y_in, w_in, h_in):
+        """Add a text callout near the chart's key data point (peak value)."""
+        try:
+            from pptx.util import Inches, Pt, Emu
+            from pptx.dml.color import RGBColor
+
+            # Determine annotation text: so_what or auto-computed peak label
+            series = chart_spec.series
+            if not series:
+                return
+            values = [float(v) for v in series[0].values]
+            categories = chart_spec.categories
+            if not values:
+                return
+
+            peak_idx = max(range(len(values)), key=lambda i: abs(values[i]))
+            peak_val = values[peak_idx]
+            cat_label = categories[peak_idx] if peak_idx < len(categories) else ""
+
+            if chart_spec.so_what:
+                annotation_text = chart_spec.so_what[:30]
+            else:
+                # Auto-generate: "+47% 同比" style label
+                if len(values) >= 2:
+                    prev = values[peak_idx - 1] if peak_idx > 0 else values[-1]
+                    if prev and prev != 0:
+                        pct = (peak_val - prev) / abs(prev) * 100
+                        annotation_text = f"{cat_label}: {peak_val:g} ({pct:+.0f}%)"
+                    else:
+                        annotation_text = f"{cat_label}: {peak_val:g}"
+                else:
+                    annotation_text = f"{cat_label}: {peak_val:g}"
+
+            if len(annotation_text) > 40:
+                annotation_text = annotation_text[:37] + "..."
+
+            # Position: top-right of chart area
+            txBox = slide.shapes.add_textbox(
+                Inches(x_in + w_in - 2.2),
+                Inches(y_in + 0.15),
+                Inches(2.0),
+                Inches(0.35),
+            )
+            tf = txBox.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = annotation_text
+            p.font.size = Pt(9)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(0xFF, 0x6B, 0x35)  # accent color
+            p.font.name = "Microsoft YaHei"
+            p.alignment = 2  # PP_ALIGN.RIGHT
+        except Exception as e:
+            print(f"[ChartRenderer] annotation failed (non-critical): {e}")
 
     @staticmethod
     def _default_theme():

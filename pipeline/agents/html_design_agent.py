@@ -167,6 +167,10 @@ class HTMLDesignAgent:
                 linter=linter,
             )
 
+            # Inject section name into footer (skip cover/section_divider/agenda)
+            if sd.get("slide_type") not in ("title", "section_divider", "agenda"):
+                html = self._inject_section_footer(html, sd, idx, total)
+
             html_path = os.path.join(html_dir, f"slide_{idx:02d}.html")
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html)
@@ -417,6 +421,45 @@ class HTMLDesignAgent:
             if dup:
                 logger.warning("Slide %d: heuristic fallback also has dup-prefix: %s", slide_index, dup)
             return html
+
+    @staticmethod
+    def _inject_section_footer(html: str, slide_data: Dict, slide_index: int, total_slides: int) -> str:
+        """Replace the default footer with section_name + page_number format."""
+        import html as _html_module
+        section = slide_data.get("section", "")
+        pn = slide_index + 1
+        # Find the section name from the current slide's section field,
+        # strip any "第X章" prefix for display
+        from pipeline.agents.plan_agent import _strip_chapter_prefix
+        clean_section = _strip_chapter_prefix(section)
+        section_display = _html_module.escape(clean_section) if clean_section else ""
+        page_display = _html_module.escape(f"P{pn} / {total_slides}")
+
+        # Build new footer content: section name (left) + page number (right)
+        new_footer = (
+            f'<p style="font-size:9px; color:#FFFFFF; margin:4px 24px; '
+            f'display:flex; justify-content:space-between;">'
+            f'<span>{section_display}</span>'
+            f'<span>{page_display}</span>'
+            f'</p>'
+        )
+
+        # Replace the existing footer <p> tag inside the footer <div>
+        # Pattern: the footer div contains a <p> with footer text
+        old_footer_pattern = (
+            f'<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">'
+            f'第 {_html_module.escape(str(pn))} 页 / 共 {_html_module.escape(str(total_slides))} 页</p>'
+        )
+        if old_footer_pattern in html:
+            html = html.replace(old_footer_pattern, new_footer)
+        else:
+            # Fallback: replace any footer <p> content
+            html = re.sub(
+                r'<p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">.*?</p>',
+                new_footer,
+                html, count=1, flags=re.DOTALL,
+            )
+        return html
 
     def _inspect_and_fix(
         self, html, slide_index, slide_data, theme_colors, total_slides, task, linter,
