@@ -1,7 +1,7 @@
 # PPTagent — Claude Code 工作清单
 
-> **更新日期**：2026-04-30
-> **上下文**：Fix 5/6/Cleanup 2 已合入（commit `ae51556`，97/97 tests pass）。下一步：Fix 9 升级为 Phase 3 pilot（LayoutTemplate Registry），其余 Fix 7/8/10/11/12/13 按反馈调整。
+> **更新日期**：2026-04-30（第二轮）
+> **状态**：Fix 5-13 全部完成 + Phase 3 LayoutTemplate Registry 8/8 layout_hints 覆盖。293 tests pass。
 > **历史版本**：旧任务清单归档为 `CLAUDE_CODE_TASKS.archive.2026-04-29.md`。
 >
 > 本清单可独立交给一个新 Claude Code 会话实施，不需要其他对话上下文。所有路径相对于 `/Users/xiongzhou/project/PPTagent/`（或 Docker 内 `/app/`）。
@@ -12,42 +12,60 @@
 
 | Fix | 内容 | Commit | 验证 |
 |---|---|---|---|
-| **Fix 1** | PlanAgent 章节编号 deterministic（strip LLM 写的"第X章"前缀，按 first-appearance 顺序重新编号） | `ae51556` | `tests/test_plan_chapter_numbering.py` (5/5) |
-| **Fix 4** | `page_weight` schema enum 补 `transition` + 修 `_fix_schema_errors` 误降级 | `ae51556` | `tests/test_schemas.py::TestPageWeightEnum` (10/10) |
-| **Fix 5** | HTMLDesignAgent dup-prefix detector（三路径覆盖）+ hero_splash `title[:10]` 根因修复 | `ae51556` | `tests/test_html_dup_check.py` (6/6) |
-| **Cleanup 2** | narrative_arc 端点 deterministic（opening/closing） | `ae51556` | `tests/test_plan_chapter_numbering.py::TestNarrativeArcEndpoints` (2/2) |
-| **Fix 6** | PlanAgent 章节页数均衡（thin=1页 / overlong=8+页） | `ae51556` | `tests/test_plan_chapter_numbering.py::TestSectionPageBalance` (3/3) |
+| **Fix 1** | PlanAgent 章节编号 deterministic | `ae51556` | 5/5 tests |
+| **Fix 4** | `page_weight` schema enum 补 `transition` | `ae51556` | 10/10 tests |
+| **Fix 5** | Dup-prefix detector（三路径覆盖）+ hero_splash 根因 | `ae51556` | 6/6 tests |
+| **Cleanup 2** | narrative_arc 端点 deterministic | `ae51556` | 2/2 tests |
+| **Fix 6** | 章节页数均衡（thin/overlong） | `ae51556` | 3/3 tests |
+| **Fix 9** | Phase 3 pilot: call_to_action closing layout | `c253e47` | 16/16 tests |
+| **Fix 7** | Action title prompt + soft warning | `26a1f5e` | prompt + log |
+| **Fix 8** | Source 脚注渲染 | `26a1f5e` | render_template |
+| **Fix 10** | Bullet 长度 cap 120 字 | `26a1f5e` | 4/4 tests |
+| **Fix 12** | Chart annotation callouts | `ee8e164` | 3/3 tests |
+| **Fix 13** | Footer 章节+页码 | `ee8e164` | 3/3 tests |
+| **Fix 11** | 颜色 semantic prompt-only | `8c9de87` | prompt |
+| **Phase 3** | LayoutTemplate Registry — 8/8 layout_hints 覆盖 | `8c9de87` | 21+6+8 tests |
 
-**已撤销**：~~Fix 2 render_server.js UTF-8 边界 bug~~ — H3 是观察伪影，pptx 实际 0 个 U+FFFD。
+**已撤销**：~~Fix 2 render_server.js UTF-8 边界 bug~~ — H3 是观察伪影。
 
 ---
 
-## 实施顺序
+## Phase 3 LayoutTemplate Registry — 完成
 
-```
-Week 1 (Phase 3 pilot = 可出货价值):
-  Fix 9 / Phase 3 pilot — call_to_action layout via LayoutTemplate Registry
-    → 交付: 一张高质量 closing 页 + registry skeleton
-    → 文件: pipeline/layouts/{__init__,base,call_to_action}.py
+8 个 layout_hint 全部迁移到 typed, system-assembled HTML：
 
-Week 2 (P1 内容质量 → 对标 MBB):
-  Fix 7  — Action title prompt 约束 + soft warning（非硬 regex gate）
-  Fix 8  — Source 脚注渲染
-  Fix 10 — Bullet 长度 cap 120 字（初始值，观察后收紧到 100）
+| Layout | 模板 | 文件 |
+|---|---|---|
+| `call_to_action` | CTA closing 页 | `pipeline/layouts/call_to_action.py` |
+| `quote_emphasis` | 核心结论强调 | `pipeline/layouts/quote_emphasis.py` |
+| `parallel_points` | 并列论据 bullets | `pipeline/layouts/parallel_points.py` |
+| `metrics` | KPI 卡片 | `pipeline/layouts/metrics.py` |
+| `chart_focus` | 图表 + 注解 | `pipeline/layouts/chart_focus.py` |
+| `comparison` | 双栏对比 | `pipeline/layouts/comparison.py` |
+| `framework_grid` | 图标网格 | `pipeline/layouts/framework_grid.py` |
+| `narrative` | 时间线 | `pipeline/layouts/narrative.py` |
 
-Week 3 (P2 视觉打磨):
-  Fix 13 — Footer 设计（章节名 + 页码）
-  Fix 12 — Chart annotation callouts
+每个 layout 含：`content_schema`（pydantic）、`from_slide_data()`、`build_html()`、`prompt_fragment()`。
 
-Week 4+ (P2+ 长期):
-  Fix 11  — 颜色 semantic（prompt-only，pixel check 推迟到 Phase 3 全部 layout 迁移后）
-  Phase 3 — Roll out 剩余 6 layouts（每个独立 PR）
+HTMLDesignAgent 路由：`if layout_hint in LayoutRegistry.names()` → registry bypass LLM → fall through to old path。
 
-Month 2:
-  Cleanup 1 — 删 Phase 2 schema 化后的过期 defensive code
-```
+---
 
-**质量目标**：完成 Fix 5-10 后通过 `CONSULTING_TEMPLATE_REFERENCE.md` MBB Rubric 8 项 ≥ 7 分。完成 Fix 11-13 后达到 MBB-grade（10 项 ≥ 8 分）。
+## 剩余工作
+
+### Cleanup 1 — 删 Phase 2 defensive code（一个月后）
+
+| 文件 | 行 | 内容 | 删的理由 |
+|---|---|---|---|
+| `pipeline/agents/html_design_agent.py` | ~630 | `_match_slides` 互斥清理块 | schema 已保证 |
+| `pipeline/agents/design_strategies/templates.py` | ~455 | `_chart_has_data` | schema 已保证 |
+| `pipeline/agents/html_design_agent.py` | _inspect_and_fix | LLM re-gen fallback | registry 已覆盖 |
+
+### 未来方向
+
+- **MBB Rubric 打分**：跑一次真实 docx 生成，按 `CONSULTING_TEMPLATE_REFERENCE.md` 10 维度打分
+- **Performance tuning**：观察 registry vs LLM latency 差异
+- **Specialty layouts**：architecture_stack / quadrant_matrix / role_columns 等 diagram 布局按需迁移
 
 ---
 

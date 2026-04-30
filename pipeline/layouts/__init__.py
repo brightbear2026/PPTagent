@@ -14,6 +14,9 @@ from pipeline.layouts.quote_emphasis import QuoteEmphasisLayout, QuoteEmphasisCo
 from pipeline.layouts.parallel_points import ParallelPointsLayout, ParallelPointsContent
 from pipeline.layouts.metrics import MetricsLayout, MetricsContent
 from pipeline.layouts.chart_focus import ChartFocusLayout, ChartFocusContent
+from pipeline.layouts.comparison import ComparisonLayout, ComparisonContent
+from pipeline.layouts.framework_grid import FrameworkGridLayout, FrameworkGridContent
+from pipeline.layouts.narrative import NarrativeLayout, NarrativeContent
 
 
 class LayoutRegistry:
@@ -37,3 +40,6 @@ LayoutRegistry.register(QuoteEmphasisLayout())
 LayoutRegistry.register(ParallelPointsLayout())
 LayoutRegistry.register(MetricsLayout())
 LayoutRegistry.register(ChartFocusLayout())
+LayoutRegistry.register(ComparisonLayout())
+LayoutRegistry.register(FrameworkGridLayout())
+LayoutRegistry.register(NarrativeLayout())

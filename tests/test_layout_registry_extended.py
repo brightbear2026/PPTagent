@@ -6,9 +6,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 class TestRegistryAllLayouts:
-    def test_all_five_registered(self):
+    def test_all_registered(self):
         from pipeline.layouts import LayoutRegistry
-        expected = {"call_to_action", "quote_emphasis", "parallel_points", "metrics", "chart_focus"}
+        expected = {
+            "call_to_action", "quote_emphasis", "parallel_points",
+            "metrics", "chart_focus", "comparison",
+            "framework_grid", "narrative",
+        }
         assert LayoutRegistry.names() == expected
 
 
