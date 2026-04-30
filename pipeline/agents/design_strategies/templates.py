@@ -30,6 +30,7 @@ class TemplatePicker:
         "quote_emphasis": "quote_highlight",
         "framework_grid": "icon_grid",
         "narrative": "timeline_horizontal",
+        "call_to_action": "call_to_action",
     }
 
     # ------------------------------------------------------------------ #

@@ -372,6 +372,11 @@ class ContentAgent(StructuredLLMAgent):
         "parallel_points": (
             "本页使用并列论据布局。text_blocks 应包含 4-6 条独立并列的论据，每条一句话。不需要 visual_block。"
         ),
+        "call_to_action": (
+            "结尾行动号召页。生成 1 个核心结论(takeaway_message, 15-40字) "
+            "+ text_blocks 中 1-3 个具体行动项(level=1, 每项≤20字)。"
+            "不要写长段落，只写可执行的行动步骤。"
+        ),
     }
 
     @staticmethod

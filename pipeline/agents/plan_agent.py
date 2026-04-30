@@ -648,6 +648,7 @@ class PlanAgent:
         if content_items:
             content_items[0]["narrative_arc"] = "opening"
             content_items[-1]["narrative_arc"] = "closing"
+            content_items[-1]["layout_hint"] = "call_to_action"
 
         result = {
             "narrative_logic": narrative_logic,

@@ -262,6 +262,26 @@ class HTMLDesignAgent:
         if self.llm is None:
             return self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
 
+        # Registry-typed layouts bypass LLM entirely (system-assembled HTML).
+        from pipeline.layouts import LayoutRegistry
+        hint = slide_data.get("layout_hint", "")
+        if hint in LayoutRegistry.names():
+            try:
+                layout = LayoutRegistry.get(hint)
+                ContentSchema = layout.content_schema
+                body_blocks = [b for b in slide_data.get("text_blocks", []) if b.get("level", 0) > 0]
+                content = ContentSchema(
+                    takeaway=slide_data.get("takeaway_message", ""),
+                    action_items=[b.get("content", "") for b in body_blocks][:3],
+                    timeline="",
+                )
+                return layout.build_html(content, theme_colors, slide_index + 1, total_slides)
+            except Exception as e:
+                logger.warning(
+                    "Slide %d: registry layout '%s' failed, falling through to LLM: %s",
+                    slide_index, hint, e,
+                )
+
         user_msg = json.dumps({
             "slide_number": slide_index + 1,
             **slide_data,
