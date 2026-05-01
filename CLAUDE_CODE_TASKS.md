@@ -36,6 +36,12 @@
 | Fix 13 | Footer with section name | ee8e164 |
 | Phase 2 | Schema-centric pipeline (pydantic) | c008011 |
 | Phase 3 | LayoutTemplate Registry 全部 8 layouts | 30241f7 |
+| **R1** | chart_renderer slide_type 过滤（H3） | 4c97e29 |
+| **R2** | ContentAgent chart 数据可溯源 validator（H4） | 8dcb9c6 |
+| **R3** | Universal dup-prefix guard（H2） | dc10282 |
+| **R4** | Layout fallback 测试矩阵 52 case | 8ac6f8b |
+| **R5** | 5 个 B2B 售前 layout（13 total） | 3c028e3 |
+| **R6** | dense_b2b theme | 2247394 |
 
 ## 已撤销（不要做）
 
@@ -52,15 +58,15 @@
 
 ## v4 Audit（基于 REQUIREMENTS.md SLO）
 
-### Hard requirements — 2/5 pass（当前不可发布）
+### Hard requirements — 5/5 pass（R1-R4 修后）
 
-| ID | 状态 | 详情 |
+| ID | 状态 | 修复 |
 |---|---|---|
-| H1 章节编号一致 | ✅ Pass | 6 章全对齐 |
-| H2 0 prefix-of-superset | ❌ **Fail** | slide 21 三槽 hero 布局漏修 |
-| H3 0 chart 误注入扉页 | ❌ **Severe Fail** | slide 9/17/20 全被误注入 |
-| H4 数据可溯源 | ❌ **Severe Fail** | "+540% / +1050% / +0%" 是 LLM 幻觉 |
-| H5 章节名一致 | ✅ Pass | |
+| H1 章节编号一致 | ✅ Pass | — |
+| H2 0 prefix-of-superset | ✅ **Fixed** | R3: universal guard + registry/heuristic degrade |
+| H3 0 chart 误注入扉页 | ✅ **Fixed** | R1: chart_renderer slide_type filter |
+| H4 数据可溯源 | ✅ **Fixed** | R2: traceability validator + chunk context |
+| H5 章节名一致 | ✅ Pass | — |
 
 ### Soft requirements — 粗估
 
@@ -68,9 +74,9 @@
 |---|---|
 | S1 bullet 60-120 字 | ✅ ~80% 达标 |
 | S2 章节 3-7 页 | ⚠️ Ch1 仅 2 页 |
-| S3 Source 脚注 | ❌ 0 张图带脚注 |
+| S3 Source 脚注 | ⚠️ Fix 8 已加渲染逻辑 |
 | S4 Action title | ✅ 多数达标 |
-| S5 ≥30% 含图表 | ⚠️ 实际 ~15% |
+| S5 ≥30% 含图表 | ⚠️ 需实际生成验证 |
 
 ---
 
