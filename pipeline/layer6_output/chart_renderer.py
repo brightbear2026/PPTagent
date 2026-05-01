@@ -10,12 +10,17 @@ ChartRenderer — 分层图表渲染引擎
 - 复杂图表用 Plotly 保证视觉质量（python-pptx 不原生支持这些类型）
 """
 
+import logging
 import tempfile
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from models.slide_spec import ChartSpec, ChartType, Rect
+
+logger = logging.getLogger(__name__)
+
+_CHART_FORBIDDEN_SLIDE_TYPES = frozenset({"section_divider", "agenda", "title"})
 
 
 class RenderMethod(Enum):
@@ -388,6 +393,16 @@ class ChartRenderer:
 
             slide = prs.slides[slide_idx]
             data = slides_data[slide_idx] if slide_idx < len(slides_data) else {}
+
+            # Skip chart injection on structural slides (H3)
+            slide_type = data.get("slide_type", "content")
+            if slide_type in _CHART_FORBIDDEN_SLIDE_TYPES:
+                logger.info(
+                    "Skipping chart on %s slide (index=%d)",
+                    slide_type, slide_idx,
+                )
+                continue
+
             chart_spec_dict = data.get("chart_spec")
             if not chart_spec_dict:
                 continue

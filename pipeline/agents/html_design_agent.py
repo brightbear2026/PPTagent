@@ -180,9 +180,10 @@ class HTMLDesignAgent:
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html)
 
-            chart_data = {}
+            chart_data = {"slide_type": sd.get("slide_type", "content")}
             if sd.get("chart_suggestion"):
-                chart_data = {"chart_spec": sd["chart_suggestion"], "theme": None}
+                chart_data["chart_spec"] = sd["chart_suggestion"]
+                chart_data["theme"] = None
 
             return idx, html, chart_data
 
@@ -281,7 +282,12 @@ class HTMLDesignAgent:
             return self.special_pages.agenda_slide_html(slide_index, slide_data, theme_colors, total_slides, task, self._sections_list)
 
         if self.llm is None:
-            return self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
+            html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
+            from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
+            if _dp(html):
+                logger.warning("Slide %d: no-LLM fallback dup-prefix — minimal safe HTML", slide_index)
+                return _minimal_safe_html(slide_data, theme_colors, slide_index + 1, total_slides)
+            return html
 
         # Registry-typed layouts bypass LLM entirely (system-assembled HTML).
         from pipeline.layouts import LayoutRegistry
@@ -291,13 +297,16 @@ class HTMLDesignAgent:
                 layout = LayoutRegistry.get(hint)
                 content = layout.from_slide_data(slide_data)
                 html = layout.build_html(content, theme_colors, slide_index + 1, total_slides)
-                # Safety net: detect logic bugs in from_slide_data / build_html
+                # Dup-prefix guard: registry HTML is deterministic — degrade if bad
                 from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
                 dup_err = _dp(html)
                 if dup_err:
                     logger.error(
-                        "Slide %d: registry layout '%s' produced dup-prefix: %s",
+                        "Slide %d: registry layout '%s' produced dup-prefix — degrading to text_only: %s",
                         slide_index, hint, dup_err,
+                    )
+                    return self.fallback.heuristic_template_html(
+                        slide_index, slide_data, theme_colors, total_slides,
                     )
                 return html
             except Exception as e:
@@ -435,11 +444,15 @@ class HTMLDesignAgent:
                     total_slides=total_slides,
                 )
             html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
-            # Dup-prefix check even on heuristic fallback
+            # Dup-prefix check even on heuristic fallback — degrade if detected
             from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
             dup = _dp(html)
             if dup:
-                logger.warning("Slide %d: heuristic fallback also has dup-prefix: %s", slide_index, dup)
+                logger.warning(
+                    "Slide %d: heuristic fallback dup-prefix — returning minimal safe HTML: %s",
+                    slide_index, dup,
+                )
+                return _minimal_safe_html(slide_data, theme_colors, slide_index + 1, total_slides)
             return html
 
     @staticmethod
@@ -782,3 +795,30 @@ class HTMLDesignAgent:
                                sd.get("page_number"), visual_count)
 
         return slides_data
+
+
+def _minimal_safe_html(slide_data: Dict, theme_colors: Dict, page_number: int, total_slides: int) -> str:
+    """Last-resort HTML when all layout paths produce dup-prefix. Content-only, no visual slots."""
+    import html as _html
+    title = _html.escape(slide_data.get("takeaway_message", slide_data.get("title", "")))
+    bg = theme_colors.get("bg", "#FFFFFF")
+    text = theme_colors.get("text", "#1A1A1A")
+    muted = theme_colors.get("muted", "#666666")
+    primary = theme_colors.get("primary", "#003D6E")
+    paragraphs = ""
+    for tb in (slide_data.get("text_blocks") or []):
+        content = _html.escape(tb.get("content", tb.get("text", "")))
+        level = tb.get("level", 0)
+        if level == 0:
+            paragraphs += f'<p style="font-size:13pt;color:{text};margin:4px 0">{content}</p>'
+        else:
+            paragraphs += f'<p style="font-size:11pt;color:{muted};margin:2px 0 2px 16px">{content}</p>'
+    footer = f'<div style="position:absolute;bottom:8px;right:24px;font-size:8pt;color:{muted}">P{page_number}/{total_slides}</div>'
+    return (
+        f'<div style="width:960px;height:540px;background:{bg};padding:32px 40px;box-sizing:border-box;'
+        f'font-family:Microsoft YaHei,sans-serif;position:relative">'
+        f'<h2 style="font-size:18pt;color:{primary};margin:0 0 16px 0">{title}</h2>'
+        f'{paragraphs}'
+        f'{footer}'
+        f'</div>'
+    )
