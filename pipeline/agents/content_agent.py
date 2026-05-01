@@ -377,6 +377,31 @@ class ContentAgent(StructuredLLMAgent):
             "+ text_blocks 中 1-3 个具体行动项(level=1, 每项≤20字)。"
             "不要写长段落，只写可执行的行动步骤。"
         ),
+        "tech_architecture": (
+            "技术架构图布局。必须填写 visual_block（type=icon_text_grid），"
+            "每个 item.title 为层级名（如'应用层'），item.items 为该层组件列表。"
+            "2-7 层，每层 2-8 个组件。text_blocks 仅 1 条总结。"
+        ),
+        "capability_matrix": (
+            "能力矩阵布局。必须填写 visual_block（type=icon_text_grid），"
+            "每个 item.title 为维度名，item.items 为各列状态（yes/no/partial/planned）。"
+            "横轴 2-5 列，纵轴 2-8 行。text_blocks 仅 1 条总结。"
+        ),
+        "case_study": (
+            "客户案例卡布局。visual_block.items[0].title 为客户名，"
+            "后续 items 为 KPI（label + value + unit）。text_blocks 前 2 条分别为挑战和方案。"
+            "至少 2 个 KPI 大数字。"
+        ),
+        "solution_comparison": (
+            "方案对比布局。visual_block.items 每个 item.title 为评估维度，"
+            "item.items 为各方案的评分（best/good/average/poor）+ 备注。"
+            "2-4 个方案，3-8 个评估维度。text_blocks 仅 1 条推荐结论。"
+        ),
+        "end_to_end_flow": (
+            "端到端流程布局。必须填写 visual_block（type=step_cards），"
+            "每个 item 含 name(阶段名)、actor(执行者)、action(动作)、output(产出)。"
+            "4-7 个阶段，箭头自动连接。text_blocks 仅 1 条流程总结。"
+        ),
     }
 
     @staticmethod
@@ -533,6 +558,7 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
             ))
 
         last_parse: Optional[ParseResult] = None
+        chunk_text = self._get_slide_context(slide, shared)
 
         for attempt in range(3):
             try:
@@ -555,7 +581,10 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                     ))
                     continue
 
-                last_parse = parse_slide(response.content or "", pn)
+                last_parse = parse_slide(
+                    response.content or "", pn,
+                    context={"raw_text": chunk_text, "tolerance": 0.05},
+                )
 
                 if last_parse.error_kind == "ok":
                     return last_parse.schema
@@ -569,11 +598,21 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                             content="请重新输出JSON对象，确保放在 ```json ... ``` 代码块中，格式正确。",
                         ))
                     elif last_parse.error_kind == "schema":
-                        messages.append(ChatMessage(role="assistant",
-                            content=json.dumps(last_parse.raw_data, ensure_ascii=False)))
-                        messages.append(ChatMessage(role="user",
-                            content=f"输出违反schema规则：{last_parse.error_msg}\n"
-                                    "修复要求：1) 只有一种visual字段 2) chart必须有series/data 3) visual_block必须有type和非空items"))
+                        err_msg = last_parse.error_msg
+                        if "traceability" in err_msg.lower():
+                            messages.append(ChatMessage(role="assistant",
+                                content=json.dumps(last_parse.raw_data, ensure_ascii=False)))
+                            messages.append(ChatMessage(role="user",
+                                content=f"图表数据无法从源文档找到对应数字：{err_msg}\n"
+                                        "修复方式（二选一）：\n"
+                                        "1. 使用源文档的原始数字（series.values 和 so_what 中的百分比/金额必须能在上方材料中找到）\n"
+                                        "2. 在 chart_suggestion 中加 \"estimated\": true，并将 so_what 改写为\"基于行业平均估算\""))
+                        else:
+                            messages.append(ChatMessage(role="assistant",
+                                content=json.dumps(last_parse.raw_data, ensure_ascii=False)))
+                            messages.append(ChatMessage(role="user",
+                                content=f"输出违反schema规则：{err_msg}\n"
+                                        "修复要求：1) 只有一种visual字段 2) chart必须有series/data 3) visual_block必须有type和非空items"))
                     continue
 
             except Exception as e:

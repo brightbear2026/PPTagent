@@ -73,8 +73,12 @@ def make_placeholder(
     )
 
 
-def parse_slide(text: str, page_number: int) -> ParseResult:
+def parse_slide(text: str, page_number: int, context: Optional[dict] = None) -> ParseResult:
     """Parse LLM output text into tagged ParseResult.
+
+    Args:
+        context: Optional ValidationContext dict (e.g. {"raw_text": ..., "tolerance": 0.05})
+                 passed through to ContentSlideSchema.model_validate for chart traceability.
 
     Returns:
       - error_kind="ok" + schema instance on success
@@ -85,7 +89,7 @@ def parse_slide(text: str, page_number: int) -> ParseResult:
     if data is None:
         return ParseResult(error_kind="json_parse", error_msg="no JSON found")
     try:
-        schema = ContentSlideSchema.model_validate(data)
+        schema = ContentSlideSchema.model_validate(data, context=context)
         return ParseResult(schema=schema, error_kind="ok")
     except ValidationError as e:
         return ParseResult(
