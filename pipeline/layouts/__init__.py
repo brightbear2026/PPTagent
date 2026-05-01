@@ -17,6 +17,11 @@ from pipeline.layouts.chart_focus import ChartFocusLayout, ChartFocusContent
 from pipeline.layouts.comparison import ComparisonLayout, ComparisonContent
 from pipeline.layouts.framework_grid import FrameworkGridLayout, FrameworkGridContent
 from pipeline.layouts.narrative import NarrativeLayout, NarrativeContent
+from pipeline.layouts.tech_architecture import TechArchitectureLayout, TechArchitectureContent
+from pipeline.layouts.capability_matrix import CapabilityMatrixLayout, CapabilityMatrixContent
+from pipeline.layouts.case_study import CaseStudyLayout, CaseStudyContent
+from pipeline.layouts.solution_comparison import SolutionComparisonLayout, SolutionComparisonContent
+from pipeline.layouts.end_to_end_flow import EndToEndFlowLayout, EndToEndFlowContent
 
 
 class LayoutRegistry:
@@ -43,3 +48,8 @@ LayoutRegistry.register(ChartFocusLayout())
 LayoutRegistry.register(ComparisonLayout())
 LayoutRegistry.register(FrameworkGridLayout())
 LayoutRegistry.register(NarrativeLayout())
+LayoutRegistry.register(TechArchitectureLayout())
+LayoutRegistry.register(CapabilityMatrixLayout())
+LayoutRegistry.register(CaseStudyLayout())
+LayoutRegistry.register(SolutionComparisonLayout())
+LayoutRegistry.register(EndToEndFlowLayout())

@@ -12,6 +12,8 @@ class TestRegistryComplete:
             "call_to_action", "quote_emphasis", "parallel_points",
             "metrics", "chart_focus", "comparison",
             "framework_grid", "narrative",
+            "tech_architecture", "capability_matrix", "case_study",
+            "solution_comparison", "end_to_end_flow",
         }
         assert LayoutRegistry.names() == expected
 
