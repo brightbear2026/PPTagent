@@ -131,6 +131,31 @@ def _make_creative_vibrant() -> VisualTheme:
     )
 
 
+def _make_dense_b2b() -> VisualTheme:
+    primary = "#1a4d8c"
+    accent = "#ff6f3c"
+    return VisualTheme(
+        theme_id="dense_b2b",
+        colors={
+            "primary": primary,
+            "secondary": "#3a7bc8",
+            "accent": accent,
+            "text_dark": "#1a1a1a",
+            "text_light": "#5a5a5a",
+            "background": "#f7f9fc",
+            "chart_palette": _build_palette(primary, accent),
+            "section_color_1": "#1a4d8c",
+            "section_color_2": "#2c7873",
+            "section_color_3": "#a23b72",
+            "section_color_4": "#f4a261",
+            "section_color_5": "#7d4f8c",
+            "section_color_6": "#577590",
+        },
+        fonts={"title": "Microsoft YaHei", "subtitle": "Microsoft YaHei", "body": "Microsoft YaHei", "footnote": "Microsoft YaHei"},
+        font_sizes={"title": 24, "subtitle": 16, "body": 11, "bullet": 10, "footnote": 7, "chart_title": 13, "chart_label": 9},
+    )
+
+
 class ThemeRegistry:
     """视觉主题注册表"""
 
@@ -140,6 +165,7 @@ class ThemeRegistry:
         "business_minimalist": _make_business_minimalist,
         "finance_stable": _make_finance_stable,
         "creative_vibrant": _make_creative_vibrant,
+        "dense_b2b": _make_dense_b2b,
     }
 
     def get_theme(self, theme_id: str) -> VisualTheme:
@@ -161,6 +187,9 @@ class ThemeRegistry:
             "minimalist": "business_minimalist",
             "finance": "finance_stable",
             "creative": "creative_vibrant",
+            "dense_b2b": "dense_b2b",
+            "b2b": "dense_b2b",
+            "presales": "dense_b2b",
         }
         theme_id = tone_map.get(tone, "consulting_formal")
         return self.get_theme(theme_id)
