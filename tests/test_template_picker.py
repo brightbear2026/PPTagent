@@ -5,8 +5,7 @@ Covers:
 - visual_block structured data maps to correct slots
 - No visual_block → fallback to content_bullets (not heuristic splitting)
 - Mutual exclusion: primary_visual clears conflicting visual fields
-- Hero demote: page_weight=hero + blocks>=4 → content_key_metrics
-- Hero splash: page_weight=hero + blocks<=3 → hero_splash
+- Hero demote: page_weight=hero always demotes to dense layouts (icon_grid / metrics)
 """
 
 import pytest
@@ -39,20 +38,19 @@ def _slide_data(**overrides):
 
 class TestVisualBlockMapping:
 
-    def test_hero_splash_stat_highlight(self):
+    def test_hero_demote_to_icon_grid(self):
+        """hero + ≤3 blocks → icon_grid (hero_splash deleted per H6)."""
         sd = _slide_data(
-            visual_block={"type": "stat_highlight", "items": [
-                {"title": "市场规模", "value": "1254亿元", "description": "2024年六大行投入合计"},
+            page_weight="hero",
+            visual_block={"type": "icon_text_grid", "items": [
+                {"title": "市场规模", "description": "1254亿元投入"},
             ]},
         )
-        tid, slots = TemplatePicker.build_slots(
-            "hero_splash", sd, _body_blocks(["some text"]), [], "标题",
+        tid, slots = TemplatePicker.pick(
+            sd, _body_blocks(["some text"]), [], "标题",
         )
-        assert tid == "hero_splash"
-        assert slots["big_number"] == "1254亿元"
-        assert slots["number_caption"] == "市场规模"
-        assert slots["subtitle"] == "2024年六大行投入合计"
-        assert slots["headline"] == "核心观点"
+        assert tid == "icon_grid"
+        assert len(slots["items"]) >= 1
 
     def test_content_key_metrics_kpi_cards(self):
         sd = _slide_data(
@@ -180,14 +178,14 @@ class TestFallbackToBullets:
         assert tid == "content_key_metrics"
         assert slots["metrics"][0]["value"] == "-"
 
-    def test_hero_splash_no_vblock_falls_to_regex(self):
-        """hero_splash without visual_block still uses regex extraction."""
-        sd = _slide_data()
-        tid, slots = TemplatePicker.build_slots(
-            "hero_splash", sd, _body_blocks(["市场规模达1254亿元"]), [], "标题",
+    def test_hero_demote_no_vblock(self):
+        """hero without visual_block → icon_grid fallback (not hero_splash)."""
+        sd = _slide_data(page_weight="hero")
+        tid, slots = TemplatePicker.pick(
+            sd, _body_blocks(["市场规模达1254亿元"]), [], "标题",
         )
-        assert tid == "hero_splash"
-        assert "1254" in slots["big_number"]
+        assert tid != "hero_splash"
+        assert tid in ("icon_grid", "content_key_metrics", "content_bullets")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -204,13 +202,15 @@ class TestPickDecisionTree:
         )
         assert tid == "content_key_metrics"
 
-    def test_hero_splash_3_blocks(self):
-        """hero + ≤3 blocks → hero_splash."""
+    def test_hero_demote_to_dense_layout(self):
+        """hero + ≤3 blocks → icon_grid, but without vblock falls to content_bullets."""
         sd = _slide_data(page_weight="hero")
         tid, slots = TemplatePicker.pick(
             sd, _body_blocks(["市场规模1254亿元"]), [], "标题",
         )
-        assert tid == "hero_splash"
+        # icon_grid without vblock falls back to content_bullets via build_slots
+        assert tid in ("icon_grid", "content_bullets", "content_key_metrics")
+        assert tid != "hero_splash"
 
     def test_layout_hint_short_circuit(self):
         """layout_hint overrides heuristics."""

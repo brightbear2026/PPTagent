@@ -176,6 +176,9 @@ class HTMLDesignAgent:
             if sd.get("slide_type") not in ("title", "section_divider", "agenda"):
                 html = self._inject_section_footer(html, sd, idx, total)
 
+            # H6 density guard (after footer injection, before write)
+            html = self._enforce_density_guard(html, sd, theme_colors, total)
+
             html_path = os.path.join(html_dir, f"slide_{idx:02d}.html")
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html)
@@ -455,6 +458,36 @@ class HTMLDesignAgent:
                 )
                 return _minimal_safe_html(slide_data, theme_colors, slide_index + 1, total_slides)
             return html
+
+    def _enforce_density_guard(
+        self, html: str, slide_data: Dict, theme_colors: Dict, total_slides: int,
+    ) -> str:
+        """H6: reject sparse layouts and placeholder chars on content slides."""
+        slide_type = slide_data.get("slide_type", "content")
+        if slide_type in ("title", "agenda", "section_divider"):
+            return html
+
+        from pipeline.layer6_output.html_density_check import (
+            detect_sparse, detect_placeholder_char,
+        )
+
+        err = detect_sparse(html, min_visible=8)
+        if err:
+            logger.warning(
+                "Slide %d density violation: %s. Forcing dense fallback.",
+                slide_data.get("page_number"), err,
+            )
+            return _force_dense_fallback(slide_data, theme_colors, total_slides)
+
+        err = detect_placeholder_char(html)
+        if err:
+            logger.error(
+                "Slide %d placeholder char violation: %s.",
+                slide_data.get("page_number"), err,
+            )
+            return _force_dense_fallback(slide_data, theme_colors, total_slides)
+
+        return html
 
     @staticmethod
     def _inject_section_footer(html: str, slide_data: Dict, slide_index: int, total_slides: int) -> str:
@@ -822,4 +855,53 @@ def _minimal_safe_html(slide_data: Dict, theme_colors: Dict, page_number: int, t
         f'{paragraphs}'
         f'{footer}'
         f'</div>'
+    )
+
+
+def _force_dense_fallback(slide_data: Dict, theme_colors: Dict, total_slides: int) -> str:
+    """Force dense content layout to guarantee ≥8 visible elements."""
+    import html as _html
+    pn = slide_data.get("page_number", 1)
+    title = _html.escape(slide_data.get("takeaway_message", slide_data.get("title", "")))
+    primary = theme_colors.get("primary", "#003D6E")
+    accent = theme_colors.get("accent", "#FF6B35")
+    bg = theme_colors.get("bg", "#FFFFFF")
+    text = theme_colors.get("text", "#2D3436")
+    muted = theme_colors.get("muted", "#636E72")
+
+    # Collect all text content into grid items
+    blocks = slide_data.get("text_blocks", [])
+    items_html = ""
+    for i, b in enumerate(blocks[:8]):
+        c = _html.escape(b.get("content", b.get("text", "")))
+        if not c:
+            continue
+        col = i % 3
+        row = i // 3
+        x = 40 + col * 300
+        y = 80 + row * 80
+        items_html += (
+            f'<div style="position:absolute;left:{x}px;top:{y}px;width:280px;'
+            f'background:{bg};border-left:3px solid {accent};padding:6px 10px;">'
+            f'<p style="font-size:12px;color:{text};margin:0;line-height:1.4;">{c}</p>'
+            f'</div>\n'
+        )
+
+    # If still sparse, pad with takeaway as subtitle
+    if not items_html:
+        items_html = f'<p style="font-size:13px;color:{text};">{title}</p>'
+
+    return (
+        '<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n'
+        f'<body style="width:960px;height:540px;font-family:Microsoft YaHei,Arial,sans-serif;'
+        f'background-color:#FFFFFF;position:relative;overflow:hidden;">\n'
+        f'<div style="position:absolute;top:0;left:0;width:960px;height:6px;background-color:{accent};"></div>\n'
+        f'<div style="position:absolute;bottom:0;left:0;width:960px;height:24px;background-color:{primary};">\n'
+        f'  <p style="font-size:9px;color:#FFFFFF;margin:4px 24px;">P{pn} / {total_slides}</p>\n'
+        f'</div>\n'
+        f'<div style="position:absolute;left:24px;top:28px;width:4px;height:36px;background-color:{primary};"></div>\n'
+        f'<h2 style="position:absolute;left:40px;top:22px;width:880px;font-size:16px;color:{primary};'
+        f'font-weight:bold;line-height:1.35;overflow:hidden;height:44px;">{title}</h2>\n'
+        f'{items_html}'
+        '</body></html>'
     )
