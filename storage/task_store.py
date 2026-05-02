@@ -30,6 +30,7 @@ PIPELINE_STAGES = [
     "analyze",           # 数据分析（静默）
     "outline",           # 大纲生成（检查点1）
     "content",           # 内容填充（检查点2）
+    "visual_plan",       # 视觉规划（静默，LLM per-slide layout 选择）
     "design",            # 视觉设计+图表生成（静默，LLM辅助）
     "render",            # PPT渲染+布局验证（静默，纯代码）
 ]

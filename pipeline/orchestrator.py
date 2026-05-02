@@ -26,12 +26,13 @@ CHECKPOINT_AGENTS = {"outline", "content"}
 
 # 阶段进度映射 (start%, end%, display_name)
 STAGE_PROGRESS = {
-    "parse":    (5,  15,  "输入解析"),
-    "analyze":  (15, 30,  "策略分析"),
-    "outline":  (30, 50,  "大纲生成"),
-    "content":  (50, 70,  "内容填充"),
-    "design":   (70, 85,  "视觉设计"),
-    "render":   (85, 100, "PPT渲染"),
+    "parse":        (5,  15,  "输入解析"),
+    "analyze":      (15, 30,  "策略分析"),
+    "outline":      (30, 50,  "大纲生成"),
+    "content":      (50, 70,  "内容填充"),
+    "visual_plan":  (70, 78,  "视觉规划"),
+    "design":       (78, 90,  "视觉设计"),
+    "render":       (90, 100, "PPT渲染"),
 }
 
 
@@ -408,6 +409,33 @@ class Orchestrator:
             )
             return result, agent
 
+        elif stage == "visual_plan":
+            from pipeline.agents.visual_planner_agent import VisualPlannerAgent
+            llm = self._get_llm(stage)
+            agent = VisualPlannerAgent(llm)
+
+            content_data = context.get("content", {})
+            content_slides = content_data.get("slides", []) if isinstance(content_data, dict) else []
+            outline = context.get("outline", {})
+            analysis = context.get("analysis", {})
+            task = context.get("task", {})
+
+            deck_context = {
+                "scenario": task.get("scenario", ""),
+                "total_slides": len(content_slides),
+                "framework": outline.get("narrative_logic", "")[:80],
+            }
+            theme = analysis.get("strategy", {})
+
+            def _vp_report(pct, msg):
+                try:
+                    self.store.update_task(task_id, progress=pct, message=msg)
+                except Exception:
+                    pass
+
+            result = agent.run(content_slides, outline, analysis, theme, deck_context, _vp_report)
+            return result, agent
+
         elif stage == "design":
             render_mode = os.environ.get("RENDER_MODE", "html")
             content_input = context.get("content", {})
@@ -456,25 +484,30 @@ class Orchestrator:
         def _load(s: str) -> Optional[Dict]:
             return self.store.get_stage_result(task_id, s)
 
-        if stage in ("analyze", "outline", "content", "design"):
+        if stage in ("analyze", "outline", "content", "visual_plan", "design"):
             raw = _load("parse")
             if raw:
                 ctx["raw_content"] = raw
 
-        if stage in ("outline", "content", "design"):
+        if stage in ("outline", "content", "visual_plan", "design"):
             analysis = _load("analyze")
             if analysis:
                 ctx["analysis"] = analysis
 
-        if stage in ("content", "design"):
+        if stage in ("content", "visual_plan", "design"):
             outline = _load("outline")
             if outline:
                 ctx["outline"] = outline
 
-        if stage == "design":
+        if stage in ("visual_plan", "design"):
             content = _load("content")
             if content:
                 ctx["content"] = content
+
+        if stage == "design":
+            visual_plan = _load("visual_plan")
+            if visual_plan:
+                ctx["visual_plan"] = visual_plan
 
         if stage == "render":
             design = _load("design")

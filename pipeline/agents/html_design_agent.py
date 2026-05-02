@@ -143,6 +143,15 @@ class HTMLDesignAgent:
             for sd in slides_data if sd.get("slide_type") == "section_divider"
         ]
 
+        # Load visual plans if available (Phase 4 VisualPlannerAgent output)
+        visual_plan_data = context.get("visual_plan", {})
+        self._plans_by_page: Dict[int, Dict] = {}
+        if visual_plan_data and isinstance(visual_plan_data, dict):
+            for plan in visual_plan_data.get("plans", []):
+                pn = plan.get("page_number")
+                if pn:
+                    self._plans_by_page[pn] = plan
+
         # Create temp dir for HTML files
         tmp_dir = tempfile.mkdtemp(prefix="pptagent_html_")
         html_dir = os.path.join(tmp_dir, "slides")
@@ -298,6 +307,29 @@ class HTMLDesignAgent:
 
         if slide_data.get("slide_type") == "agenda":
             return self.special_pages.agenda_slide_html(slide_index, slide_data, theme_colors, total_slides, task, self._sections_list)
+
+        # Phase 4: use VisualPlan if available
+        from pipeline.layouts import LayoutRegistry
+        page_num = slide_data.get("page_number", slide_index + 1)
+        plan = getattr(self, "_plans_by_page", {}).get(page_num)
+        if plan:
+            layout_id = plan.get("layout_id", "")
+            layout_content = plan.get("layout_content", {})
+            if layout_id in LayoutRegistry.names():
+                try:
+                    layout = LayoutRegistry.get(layout_id)
+                    content_obj = layout.content_schema.model_validate(layout_content)
+                    html = layout.build_html(content_obj, theme_colors, page_num, total_slides)
+                    # Run dup-prefix guard on visual plan HTML
+                    from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp, detect_exact_duplicate as _ed
+                    if _dp(html) or _ed(html):
+                        logger.warning("Slide %d: visual plan HTML has dup, falling back", slide_index)
+                        self._log_degradation(page_num, "visual_plan_dup", "heuristic", layout_id)
+                    else:
+                        return html
+                except Exception as e:
+                    logger.warning("Slide %d: visual plan render failed: %s", slide_index, e)
+                    self._log_degradation(page_num, "visual_plan_error", "legacy", layout_id)
 
         if self.llm is None:
             html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
