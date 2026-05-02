@@ -7,7 +7,7 @@ from pipeline.layouts.base import Capacity
 class QuoteEmphasisContent(BaseModel):
     title: str = Field(default="", description="Slide title (takeaway_message)")
     quote_text: str = Field(min_length=5, max_length=200, description="Core conclusion to highlight")
-    sub_bullets: list[str] = Field(default_factory=list, max_length=5, description="Supporting evidence bullets")
+    sub_bullets: list[str] = Field(default_factory=list, min_length=3, max_length=5, description="Supporting evidence bullets")
 
 
 class QuoteEmphasisLayout:

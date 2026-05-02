@@ -6,7 +6,7 @@ from pipeline.layouts.base import Capacity
 
 class ParallelPointsContent(BaseModel):
     title: str = Field(default="", description="Slide title (takeaway_message)")
-    bullets: list[str] = Field(default_factory=list, max_length=6, description="4-6 independent argument bullets")
+    bullets: list[str] = Field(default_factory=list, min_length=4, max_length=6, description="4-6 independent argument bullets")
 
 
 class ParallelPointsLayout:

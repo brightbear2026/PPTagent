@@ -197,11 +197,12 @@ class TestQuoteEmphasisLayout:
                 {"type": "bullet", "content": "这是第一个核心结论作为引用文本", "level": 1},
                 {"type": "bullet", "content": "这是第二个支撑论据的详细描述", "level": 1},
                 {"type": "bullet", "content": "这是第三个支撑论据的更多细节", "level": 1},
+                {"type": "bullet", "content": "这是第四个支撑论据补充说明", "level": 1},
             ],
         }
         content = layout.from_slide_data(slide_data)
         assert "引用文本" in content.quote_text
-        assert len(content.sub_bullets) == 2
+        assert len(content.sub_bullets) >= 3
 
     def test_build_html_contains_quote(self):
         from pipeline.layouts.quote_emphasis import QuoteEmphasisContent
@@ -209,7 +210,7 @@ class TestQuoteEmphasisLayout:
         content = QuoteEmphasisContent(
             title="测试标题足够长了",
             quote_text="这是一个非常重要的核心结论值得强调",
-            sub_bullets=["支撑论据一", "支撑论据二"],
+            sub_bullets=["支撑论据一", "支撑论据二", "支撑论据三"],
         )
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert "非常重要的核心结论" in html
@@ -222,16 +223,22 @@ class TestQuoteEmphasisLayout:
         content = QuoteEmphasisContent(
             title="测试标题足够长的句子内容",
             quote_text="核心结论引用文本内容也足够长",
-            sub_bullets=["论据一描述", "论据二描述"],
+            sub_bullets=["论据一描述", "论据二描述", "论据三描述"],
         )
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert detect_dup_prefix(html) is None
 
     def test_fallback_to_takeaway_when_no_blocks(self):
+        from pydantic import ValidationError
         layout = self._layout()
         slide_data = {
             "takeaway_message": "当没有text_blocks时使用takeaway作为引用",
             "text_blocks": [],
         }
-        content = layout.from_slide_data(slide_data)
-        assert "takeaway" in content.quote_text or "使用takeaway" in content.quote_text
+        # min_length=3 on sub_bullets means empty blocks → ValidationError
+        # (ContentAgent will retry with more data)
+        try:
+            layout.from_slide_data(slide_data)
+            assert False, "Expected ValidationError for sub_bullets < 3"
+        except ValidationError:
+            pass  # expected

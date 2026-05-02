@@ -28,10 +28,11 @@ class TestParallelPointsLayout:
                 {"type": "bullet", "content": "第一条独立论据描述内容", "level": 1},
                 {"type": "bullet", "content": "第二条独立论据描述内容", "level": 1},
                 {"type": "bullet", "content": "第三条独立论据描述内容", "level": 1},
+                {"type": "bullet", "content": "第四条独立论据描述内容", "level": 1},
             ],
         }
         content = layout.from_slide_data(sd)
-        assert len(content.bullets) == 3
+        assert len(content.bullets) == 4
         assert "第一条" in content.bullets[0]
 
     def test_build_html(self):
@@ -40,11 +41,11 @@ class TestParallelPointsLayout:
         layout = LayoutRegistry.get("parallel_points")
         content = ParallelPointsContent(
             title="测试标题内容",
-            bullets=["论据一", "论据二", "论据三"],
+            bullets=["论据一", "论据二", "论据三", "论据四"],
         )
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert "论据一" in html
-        assert "论据三" in html
+        assert "论据四" in html
 
     def test_no_dup_prefix(self):
         from pipeline.layer6_output.html_dup_check import detect_dup_prefix
@@ -53,7 +54,7 @@ class TestParallelPointsLayout:
         layout = LayoutRegistry.get("parallel_points")
         content = ParallelPointsContent(
             title="标题与正文完全不同的内容",
-            bullets=["第一条论据独立完整", "第二条论据也独立完整"],
+            bullets=["第一条论据独立完整", "第二条论据也独立完整", "第三条论据补充说明", "第四条论据收尾"],
         )
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert detect_dup_prefix(html) is None
@@ -65,7 +66,10 @@ class TestMetricsLayout:
         layout = LayoutRegistry.get("metrics")
         sd = {
             "takeaway_message": "关键指标显著增长趋势明显",
-            "text_blocks": [{"type": "bullet", "content": "解读数据", "level": 1}],
+            "text_blocks": [
+                {"type": "bullet", "content": "解读数据一", "level": 1},
+                {"type": "bullet", "content": "解读数据二", "level": 1},
+            ],
             "visual_block": {
                 "type": "kpi_cards",
                 "items": [
@@ -103,10 +107,11 @@ class TestChartFocusLayout:
             "text_blocks": [
                 {"type": "bullet", "content": "Q1趋势向上明显", "level": 1},
                 {"type": "bullet", "content": "Q2增长加速", "level": 1},
+                {"type": "bullet", "content": "Q3持续增长", "level": 1},
             ],
         }
         content = layout.from_slide_data(sd)
-        assert len(content.annotations) == 2
+        assert len(content.annotations) == 3
 
     def test_build_html_has_chart_placeholder(self):
         from pipeline.layouts.chart_focus import ChartFocusContent
@@ -114,7 +119,7 @@ class TestChartFocusLayout:
         layout = LayoutRegistry.get("chart_focus")
         content = ChartFocusContent(
             title="趋势图表",
-            annotations=["注解一", "注解二"],
+            annotations=["注解一", "注解二", "注解三"],
         )
         html = layout.build_html(content, {"primary": "#003D6E"})
         assert "chart-0" in html

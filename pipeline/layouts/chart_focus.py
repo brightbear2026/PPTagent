@@ -6,7 +6,8 @@ from pipeline.layouts.base import Capacity
 
 class ChartFocusContent(BaseModel):
     title: str = Field(default="")
-    annotations: list[str] = Field(default_factory=list, max_length=5)
+    annotations: list[str] = Field(default_factory=list, min_length=3, max_length=5)
+    supporting_text: str = Field(default="", max_length=200)
 
 
 class ChartFocusLayout:
@@ -27,7 +28,7 @@ class ChartFocusLayout:
                 annotations.append(c[:80])
         return ChartFocusContent(
             title=slide_data.get("takeaway_message", ""),
-            annotations=annotations or ["关键趋势"],
+            annotations=annotations or ["关键发现1", "关键发现2", "关键发现3"],
         )
 
     def build_html(self, content: ChartFocusContent, theme_colors: dict,

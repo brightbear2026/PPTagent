@@ -13,8 +13,8 @@ class MetricItem(BaseModel):
 
 class MetricsContent(BaseModel):
     title: str = Field(default="")
-    metrics: list[MetricItem] = Field(default_factory=list, max_length=4)
-    sub_bullets: list[str] = Field(default_factory=list, max_length=3)
+    metrics: list[MetricItem] = Field(default_factory=list, min_length=2, max_length=4)
+    sub_bullets: list[str] = Field(default_factory=list, min_length=2, max_length=3)
 
 
 class MetricsLayout:
@@ -44,6 +44,13 @@ class MetricsLayout:
                 c = b.get("content", b.get("text", ""))
                 if c:
                     sub_bullets.append(c[:80])
+        # Ensure minimum density: pad metrics/sub_bullets if below min_length
+        while len(metrics) < 2:
+            idx = len(metrics) + 1
+            metrics.append(MetricItem(label=f"指标{idx}", value="--"))
+        while len(sub_bullets) < 2:
+            idx = len(sub_bullets) + 1
+            sub_bullets.append(f"补充说明{idx}")
         return MetricsContent(
             title=slide_data.get("takeaway_message", ""),
             metrics=metrics,
