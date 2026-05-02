@@ -52,15 +52,17 @@ class TemplatePicker:
 
         picker = TemplatePicker
 
-        # 0. hero pages → hero_splash, but demote multi-point pages to metrics
+        # 0. hero pages → demote to dense layouts (hero_splash deleted per H6)
         if slide_data.get("page_weight") == "hero":
-            if len(body_blocks) >= 4:
-                logger.info("hero page_weight + %d blocks → demoting to content_key_metrics", len(body_blocks))
+            n_blocks = len(body_blocks)
+            if n_blocks >= 4:
+                logger.info("hero page_weight + %d blocks → demoting to content_key_metrics", n_blocks)
                 return picker.build_slots(
                     "content_key_metrics", slide_data, body_blocks, bold_blocks, title,
                 )
+            logger.info("hero page_weight + %d blocks → demoting to framework_grid", n_blocks)
             return picker.build_slots(
-                "hero_splash", slide_data, body_blocks, bold_blocks, title,
+                "icon_grid", slide_data, body_blocks, bold_blocks, title,
             )
 
         # 1. layout_hint short-circuit: if set, trust it directly
@@ -340,54 +342,6 @@ class TemplatePicker:
             logger.warning("Slide %s: no visual_block mapping for role_columns, falling back to content_bullets",
                            slide_data.get("page_number", "?"))
             return picker.build_slots("content_bullets", slide_data, body_blocks, bold_blocks, title)
-
-        if template_id == "hero_splash":
-            # Prefer structured visual_block (stat_highlight) over heuristic regex
-            vblock = slide_data.get("visual_block")
-            if isinstance(vblock, dict) and vblock.get("type") == "stat_highlight":
-                items = vblock.get("items", [])
-                if items:
-                    item = items[0]
-                    return template_id, {
-                        "headline": slide_data.get("takeaway_message", title),
-                        "big_number": str(item.get("value", ""))[:8],
-                        "number_caption": item.get("title", "")[:30],
-                        "subtitle": item.get("description", "")[:50],
-                    }
-            # Fallback: extract the most impactful number from text blocks
-            all_text = " ".join(
-                b.get("content", "") if isinstance(b, dict) else str(b)
-                for b in body_blocks
-            )
-            # Find numbers with units (亿, 万, %, etc.)
-            num_match = re.search(r'(\d+\.?\d*)\s*(亿|万|%|亿元|万元|个|家|人|美元)', all_text)
-            big_number = ""
-            number_caption = ""
-            if num_match:
-                big_number = num_match.group(1) + num_match.group(2)
-                # Try to find context before the number
-                prefix = all_text[:num_match.start()].rstrip("，。、：: ")
-                # Find last meaningful phrase
-                for sep in ["，", "。", "、", "：", "："]:
-                    idx = prefix.rfind(sep)
-                    if idx >= 0:
-                        prefix = prefix[idx+1:]
-                        break
-                number_caption = prefix[:30] if prefix else ""
-            if not big_number:
-                big_number = "—"
-            # Subtitle: second text block or takeaway
-            subtitle = ""
-            if len(body_blocks) > 1:
-                subtitle = (body_blocks[1].get("content", "") if isinstance(body_blocks[1], dict) else str(body_blocks[1]))[:40]
-            if not subtitle:
-                subtitle = slide_data.get("takeaway_message", "")[:40]
-            return template_id, {
-                "headline": slide_data.get("takeaway_message", title),
-                "big_number": big_number,
-                "number_caption": number_caption,
-                "subtitle": subtitle,
-            }
 
         # ── IT diagram slot builders (prefer diagram_spec data, fallback body_blocks) ──
 

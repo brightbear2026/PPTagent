@@ -255,15 +255,6 @@ TEMPLATES: dict[str, str] = {
     "timeline_horizontal": _T_TIMELINE_HORIZONTAL,
     "quadrant_matrix": _T_QUADRANT_MATRIX,
     "role_columns": _T_ROLE_COLUMNS,
-    "hero_splash": """<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
-  <p style="position:absolute;left:130px;top:130px;width:700px;height:60px;color:<<MUTED>>;font-size:18px;text-align:center;line-height:1.4;margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<HEADLINE>></p>
-  <h1 style="position:absolute;left:130px;top:210px;width:700px;height:90px;color:<<PRIMARY>>;font-size:72px;font-weight:700;text-align:center;line-height:1.1;letter-spacing:-2px;margin:0;"><<BIG_NUMBER>></h1>
-  <p style="position:absolute;left:130px;top:320px;width:700px;height:30px;color:<<ACCENT>>;font-size:16px;font-weight:500;text-align:center;margin:0;"><<NUMBER_CAPTION>></p>
-  <p style="position:absolute;left:180px;top:370px;width:600px;height:50px;color:<<MUTED>>;font-size:14px;text-align:center;line-height:1.5;margin:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"><<SUBTITLE>></p>
-  <div style="position:absolute;bottom:16px;right:32px;color:<<MUTED>>;font-size:10px;opacity:0.5;"><p style="color:<<MUTED>>;font-size:10px;margin:0;">P<<PAGE_NUMBER>> / <<TOTAL_SLIDES>></p></div>
-</body></html>""",
     # ── IT diagram templates ────────────────────────────────────────────
     "tech_stack_layers": """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
@@ -385,15 +376,6 @@ TEMPLATE_SCHEMAS: dict[str, dict] = {
         "required_slots": {
             "title": "str — 核心论点句",
             "roles": "list[{name:str, subtitle:str, bullets:list[str]}] — 角色3-4个，bullets最多4条",
-        },
-    },
-    "hero_splash": {
-        "description": "核心论点页，超大数字+极简文字+大量留白，用于hero页。",
-        "required_slots": {
-            "headline": "str — 核心论点一行（takeaway_message）",
-            "big_number": "str — 最震撼的数字（如'15.6亿'、'+32%'）",
-            "number_caption": "str — 数字说明（如'同比增长'）",
-            "subtitle": "str — 一句支撑论点（≤40字）",
         },
     },
     "tech_stack_layers": {
@@ -539,27 +521,6 @@ def render_template(
     elif template_id == "role_columns":
         result = result.replace("<<ROLE_COLUMNS_HTML>>",
                                 _render_role_columns(slots.get("roles", []), primary, accent, bg, text_color, muted))
-
-    elif template_id == "hero_splash":
-        big_number = str(slots.get("big_number", "")).strip()
-        # Hide big_number element when empty or meaningless placeholder
-        if not big_number or big_number in ("—", "-", "—", "–", "N/A"):
-            big_number = ""
-            result = result.replace(
-                '<h1 style="position:absolute;left:130px;top:210px;width:700px;height:90px;color:<<PRIMARY>>;font-size:72px;font-weight:700;text-align:center;line-height:1.1;letter-spacing:-2px;margin:0;"><<BIG_NUMBER>></h1>',
-                '',
-            )
-        else:
-            w_len = _weighted_len(big_number)
-            max_font = min(72, int(680 / max(w_len, 1) * 0.9))
-            big_number_font = max(max_font, 28)
-            result = result.replace("<<BIG_NUMBER>>", _html.escape(big_number))
-            result = result.replace("font-size:72px", f"font-size:{big_number_font}px")
-        result = result.replace("<<HEADLINE>>", _html.escape(str(slots.get("headline", ""))))
-        result = result.replace("<<NUMBER_CAPTION>>", _html.escape(str(slots.get("number_caption", ""))))
-        result = result.replace("<<SUBTITLE>>", _html.escape(str(slots.get("subtitle", ""))))
-        result = result.replace("<<PAGE_NUMBER>>", str(page_number))
-        result = result.replace("<<TOTAL_SLIDES>>", str(total_slides))
 
     elif template_id == "tech_stack_layers":
         result = result.replace("<<STACK_LAYERS_HTML>>",
