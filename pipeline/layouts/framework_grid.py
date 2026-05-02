@@ -63,19 +63,19 @@ class FrameworkGridLayout:
         n = len(content.items) or 1
         cols = min(3, n)
         rows = (n + cols - 1) // cols
-        card_w = 260
-        card_h = 110
-        gap_x = 20
-        gap_y = 16
+        card_w = 347
+        card_h = 147
+        gap_x = 27
+        gap_y = 21
         grid_w = cols * card_w + (cols - 1) * gap_x
-        start_x = (880 - grid_w) // 2 + 40
+        start_x = (1173 - grid_w) // 2 + 53
 
         items_html = ""
         for i, item in enumerate(content.items):
             col = i % cols
             row = i // cols
             x = start_x + col * (card_w + gap_x)
-            y = 76 + row * (card_h + gap_y)
+            y = 101 + row * (card_h + gap_y)
             items_html += (
                 f'<div style="position:absolute; left:{x}px; top:{y}px; '
                 f'width:{card_w}px; height:{card_h}px; background-color:{bg}; '
@@ -91,20 +91,20 @@ class FrameworkGridLayout:
         return (
             '<!DOCTYPE html>\n'
             '<html><head><meta charset="utf-8"></head>\n'
-            f'<body style="width:960px; height:540px; '
+            f'<body style="width:1280px; height:720px; '
             f"font-family:'Microsoft YaHei',Arial,sans-serif; "
             'background-color:#FFFFFF; position:relative; overflow:hidden;">\n'
             '\n'
-            f'<div style="position:absolute; top:0; left:0; width:960px; height:6px; '
+            f'<div style="position:absolute; top:0; left:0; width:1280px; height:6px; '
             f'background-color:{accent};"></div>\n'
-            f'<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; '
+            f'<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; '
             f'background-color:{primary};">\n'
             f'  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">{footer}</p>\n'
             '</div>\n'
             '\n'
-            f'<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; '
+            f'<div style="position:absolute; left:32px; top:28px; width:4px; height:36px; '
             f'background-color:{primary};"></div>\n'
-            f'<h2 style="position:absolute; left:40px; top:22px; width:880px; '
+            f'<h2 style="position:absolute; left:53px; top:22px; width:1173px; '
             f'font-size:16px; color:{primary}; font-weight:bold; '
             f'line-height:1.35; overflow:hidden; height:44px;">{title_escaped}</h2>\n'
             '\n'

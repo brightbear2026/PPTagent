@@ -42,8 +42,8 @@ class ParallelPointsLayout:
         title_escaped = _html.escape(content.title)
 
         has_chart = False  # chart placeholder logic handled elsewhere
-        title_w = 880
-        content_w = 880
+        title_w = 1173
+        content_w = 1173
 
         bullets_html = ""
         for b in content.bullets:
@@ -59,25 +59,25 @@ class ParallelPointsLayout:
         return (
             '<!DOCTYPE html>\n'
             '<html><head><meta charset="utf-8"></head>\n'
-            f'<body style="width:960px; height:540px; '
+            f'<body style="width:1280px; height:720px; '
             f"font-family:'Microsoft YaHei',Arial,sans-serif; "
             'background-color:#FFFFFF; position:relative; overflow:hidden;">\n'
             '\n'
-            f'<div style="position:absolute; top:0; left:0; width:960px; height:6px; '
+            f'<div style="position:absolute; top:0; left:0; width:1280px; height:6px; '
             f'background-color:{accent};"></div>\n'
-            f'<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; '
+            f'<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; '
             f'background-color:{primary};">\n'
             f'  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">{footer}</p>\n'
             '</div>\n'
             '\n'
-            f'<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; '
+            f'<div style="position:absolute; left:32px; top:28px; width:4px; height:36px; '
             f'background-color:{primary};"></div>\n'
-            f'<h2 style="position:absolute; left:40px; top:22px; width:{title_w}px; '
+            f'<h2 style="position:absolute; left:53px; top:22px; width:{title_w}px; '
             f'font-size:16px; color:{primary}; font-weight:bold; '
             f'line-height:1.35; overflow:hidden; height:44px;">{title_escaped}</h2>\n'
             '\n'
-            f'<div style="position:absolute; left:40px; top:76px; width:{content_w}px; '
-            f'height:420px; overflow:hidden;">\n'
+            f'<div style="position:absolute; left:53px; top:101px; width:{content_w}px; '
+            f'height:560px; overflow:hidden;">\n'
             f'{bullets_html}'
             '</div>\n'
             f'{chart_ph}'

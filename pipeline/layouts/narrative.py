@@ -57,34 +57,34 @@ class NarrativeLayout:
         title_escaped = _html.escape(content.title)
 
         n = len(content.phases) or 1
-        phase_w = min(180, 800 // max(n, 1))
-        total_w = phase_w * n + 20 * (n - 1)
-        start_x = (880 - total_w) // 2 + 40
+        phase_w = min(240, 1067 // max(n, 1))
+        total_w = phase_w * n + 27 * (n - 1)
+        start_x = (1173 - total_w) // 2 + 53
 
         # Timeline line
         line_html = (
-            f'<div style="position:absolute; left:{start_x}px; top:140px; '
+            f'<div style="position:absolute; left:{start_x}px; top:187px; '
             f'width:{total_w}px; height:3px; background-color:{primary};"></div>\n'
         )
 
         phases_html = ""
         for i, ph in enumerate(content.phases):
-            x = start_x + i * (phase_w + 20)
+            x = start_x + i * (phase_w + 27)
             # Circle marker
             phases_html += (
-                f'<div style="position:absolute; left:{x + phase_w // 2 - 10}px; top:131px; '
-                f'width:20px; height:20px; background-color:{accent}; border-radius:50%;"></div>\n'
+                f'<div style="position:absolute; left:{x + phase_w // 2 - 13}px; top:175px; '
+                f'width:27px; height:27px; background-color:{accent}; border-radius:50%;"></div>\n'
             )
             # Label above
             phases_html += (
-                f'<p style="position:absolute; left:{x}px; top:100px; width:{phase_w}px; '
+                f'<p style="position:absolute; left:{x}px; top:133px; width:{phase_w}px; '
                 f'font-size:11px; color:{accent}; font-weight:bold; text-align:center; '
                 f'margin:0;">{_html.escape(ph.label)}</p>\n'
             )
             # Card below
             phases_html += (
-                f'<div style="position:absolute; left:{x}px; top:170px; width:{phase_w}px; '
-                f'height:180px; background-color:{bg}; border-radius:4px; padding:10px; '
+                f'<div style="position:absolute; left:{x}px; top:227px; width:{phase_w}px; '
+                f'height:240px; background-color:{bg}; border-radius:4px; padding:13px; '
                 f'overflow:hidden;">\n'
                 f'  <p style="font-size:13px; color:{primary}; font-weight:bold; '
                 f'margin:0 0 6px 0;">{_html.escape(ph.title)}</p>\n'
@@ -96,20 +96,20 @@ class NarrativeLayout:
         return (
             '<!DOCTYPE html>\n'
             '<html><head><meta charset="utf-8"></head>\n'
-            f'<body style="width:960px; height:540px; '
+            f'<body style="width:1280px; height:720px; '
             f"font-family:'Microsoft YaHei',Arial,sans-serif; "
             'background-color:#FFFFFF; position:relative; overflow:hidden;">\n'
             '\n'
-            f'<div style="position:absolute; top:0; left:0; width:960px; height:6px; '
+            f'<div style="position:absolute; top:0; left:0; width:1280px; height:6px; '
             f'background-color:{accent};"></div>\n'
-            f'<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; '
+            f'<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; '
             f'background-color:{primary};">\n'
             f'  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">{footer}</p>\n'
             '</div>\n'
             '\n'
-            f'<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; '
+            f'<div style="position:absolute; left:32px; top:28px; width:4px; height:36px; '
             f'background-color:{primary};"></div>\n'
-            f'<h2 style="position:absolute; left:40px; top:22px; width:880px; '
+            f'<h2 style="position:absolute; left:53px; top:22px; width:1173px; '
             f'font-size:16px; color:{primary}; font-weight:bold; '
             f'line-height:1.35; overflow:hidden; height:44px;">{title_escaped}</h2>\n'
             '\n'

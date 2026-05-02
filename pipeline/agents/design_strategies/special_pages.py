@@ -35,22 +35,22 @@ class SpecialPageBuilder:
         return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:{primary}; position:relative;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:{primary}; position:relative;">
 
 <!-- Left accent stripe -->
-<div style="position:absolute; top:0; left:0; width:8px; height:540px; background-color:{accent};"></div>
+<div style="position:absolute; top:0; left:0; width:11px; height:720px; background-color:{accent};"></div>
 
 <!-- Bottom accent band -->
-<div style="position:absolute; bottom:0; left:0; width:960px; height:6px; background-color:{accent};"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:6px; background-color:{accent};"></div>
 
 <!-- Title -->
-<h1 style="position:absolute; left:80px; top:150px; width:800px; height:140px; font-size:36px; color:#FFFFFF; font-weight:bold; line-height:1.4;">{title}</h1>
+<h1 style="position:absolute; left:107px; top:200px; width:1067px; height:187px; font-size:36px; color:#FFFFFF; font-weight:bold; line-height:1.4;">{title}</h1>
 
 <!-- Subtitle / root claim -->
-<p style="position:absolute; left:80px; top:310px; width:720px; height:60px; font-size:16px; color:#AECCE0;">{subtitle}</p>
+<p style="position:absolute; left:107px; top:413px; width:960px; height:80px; font-size:16px; color:#AECCE0;">{subtitle}</p>
 
 <!-- Divider line -->
-<div style="position:absolute; left:80px; top:290px; width:600px; height:2px; background-color:{accent};"></div>
+<div style="position:absolute; left:107px; top:387px; width:800px; height:2px; background-color:{accent};"></div>
 
 </body>
 </html>"""
@@ -71,30 +71,30 @@ class SpecialPageBuilder:
 
         items_html = ""
         for i, sec in enumerate(sections[:8]):
-            top_px = 50 + i * 58
+            top_px = 50 + i * 77
             items_html += (
-                f'<div style="position:absolute; left:280px; top:{top_px}px;'
-                f' width:32px; height:32px; background-color:{primary};">'
+                f'<div style="position:absolute; left:373px; top:{top_px}px;'
+                f' width:43px; height:43px; background-color:{primary};">'
                 f'<p style="color:#FFFFFF; font-size:13px; font-weight:bold;'
-                f' text-align:center; margin:6px 0;">{i + 1:02d}</p>'
+                f' text-align:center; margin:8px 0;">{i + 1:02d}</p>'
                 f'</div>'
-                f'<p style="position:absolute; left:328px; top:{top_px + 6}px;'
-                f' width:560px; font-size:14px; color:{text_color}; font-weight:500;">{sec}</p>'
-                f'<div style="position:absolute; left:280px; top:{top_px + 50}px;'
-                f' width:640px; height:1px; background-color:#E8E8E8;"></div>'
+                f'<p style="position:absolute; left:436px; top:{top_px + 8}px;'
+                f' width:747px; font-size:14px; color:{text_color}; font-weight:500;">{sec}</p>'
+                f'<div style="position:absolute; left:373px; top:{top_px + 67}px;'
+                f' width:853px; height:1px; background-color:#E8E8E8;"></div>'
             )
 
         return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative;">
 
-<div style="position:absolute; top:0; left:0; width:240px; height:540px; background-color:{primary};"></div>
-<div style="position:absolute; top:0; left:240px; width:720px; height:4px; background-color:{accent};"></div>
-<h1 style="position:absolute; left:0; top:208px; width:240px; font-size:24px; color:#FFFFFF; font-weight:bold; text-align:center; letter-spacing:6px;">目录</h1>
-<div style="position:absolute; left:96px; top:262px; width:48px; height:3px; background-color:{accent};"></div>
+<div style="position:absolute; top:0; left:0; width:320px; height:720px; background-color:{primary};"></div>
+<div style="position:absolute; top:0; left:320px; width:960px; height:4px; background-color:{accent};"></div>
+<h1 style="position:absolute; left:0; top:277px; width:320px; font-size:24px; color:#FFFFFF; font-weight:bold; text-align:center; letter-spacing:6px;">目录</h1>
+<div style="position:absolute; left:128px; top:349px; width:64px; height:3px; background-color:{accent};"></div>
 {items_html}
-<div style="position:absolute; bottom:0; left:240px; width:720px; height:20px; background-color:{primary};"></div>
+<div style="position:absolute; bottom:0; left:320px; width:960px; height:20px; background-color:{primary};"></div>
 
 </body>
 </html>"""
@@ -118,13 +118,13 @@ class SpecialPageBuilder:
         return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:{primary}; position:relative;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:{primary}; position:relative;">
 
-<div style="position:absolute; top:0; left:0; width:8px; height:540px; background-color:{accent};"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:6px; background-color:{accent};"></div>
-<p style="position:absolute; left:80px; top:168px; font-size:13px; color:{accent}; font-weight:600; letter-spacing:4px;">第 {cn_num} 章</p>
-<div style="position:absolute; left:80px; top:200px; width:480px; height:2px; background-color:{accent};"></div>
-<h1 style="position:absolute; left:80px; top:218px; width:800px; font-size:30px; color:#FFFFFF; font-weight:bold; line-height:1.5;">{sec_name}</h1>
+<div style="position:absolute; top:0; left:0; width:11px; height:720px; background-color:{accent};"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:6px; background-color:{accent};"></div>
+<p style="position:absolute; left:107px; top:224px; font-size:13px; color:{accent}; font-weight:600; letter-spacing:4px;">第 {cn_num} 章</p>
+<div style="position:absolute; left:107px; top:267px; width:640px; height:2px; background-color:{accent};"></div>
+<h1 style="position:absolute; left:107px; top:291px; width:1067px; font-size:30px; color:#FFFFFF; font-weight:bold; line-height:1.5;">{sec_name}</h1>
 
 </body>
 </html>"""

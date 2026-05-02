@@ -70,24 +70,24 @@ class TechArchitectureLayout:
         title_e = _html.escape(content.title)
         n = len(content.layers)
         layer_colors = [primary, secondary, accent, "#70AD47", "#FFC000", "#5B9BD5", "#C00000"]
-        available_h = 420
-        layer_h = max(50, min(80, available_h // max(n, 1)))
-        start_y = 80
+        available_h = 560
+        layer_h = max(67, min(107, available_h // max(n, 1)))
+        start_y = 107
 
         layers_html = ""
         for i, layer in enumerate(content.layers):
-            y = start_y + i * (layer_h + 6)
+            y = start_y + i * (layer_h + 8)
             lc = layer_colors[i % len(layer_colors)]
             name_e = _html.escape(layer.name)
             comps_e = " | ".join(_html.escape(c) for c in layer.components[:8])
             layers_html += (
-                f'<div style="position:absolute; left:40px; top:{y}px; width:880px; height:{layer_h}px; '
+                f'<div style="position:absolute; left:53px; top:{y}px; width:1173px; height:{layer_h}px; '
                 f'background-color:{bg}; border-left:6px solid {lc}; border-radius:4px;">\n'
-                f'  <div style="position:absolute; left:12px; top:50%; transform:translateY(-50%); '
-                f'width:140px; font-size:13px; font-weight:bold; color:{lc}; '
+                f'  <div style="position:absolute; left:16px; top:50%; transform:translateY(-50%); '
+                f'width:187px; font-size:13px; font-weight:bold; color:{lc}; '
                 f'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{name_e}</div>\n'
-                f'  <div style="position:absolute; left:160px; top:50%; transform:translateY(-50%); '
-                f'width:710px; font-size:12px; color:{text_color}; '
+                f'  <div style="position:absolute; left:213px; top:50%; transform:translateY(-50%); '
+                f'width:947px; font-size:12px; color:{text_color}; '
                 f'line-height:1.4;">{comps_e}</div>\n'
                 '</div>\n'
             )
@@ -95,18 +95,18 @@ class TechArchitectureLayout:
         footer = f"P{page_number} / {total_slides}"
         return (
             '<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n'
-            f'<body style="width:960px; height:540px; '
+            f'<body style="width:1280px; height:720px; '
             f"font-family:'Microsoft YaHei',Arial,sans-serif; "
             f'background-color:#FFFFFF; position:relative; overflow:hidden;">\n'
-            f'<div style="position:absolute; top:0; left:0; width:960px; height:6px; '
+            f'<div style="position:absolute; top:0; left:0; width:1280px; height:6px; '
             f'background-color:{accent};"></div>\n'
-            f'<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; '
+            f'<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; '
             f'background-color:{primary};">\n'
             f'  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">{footer}</p>\n'
             '</div>\n'
-            f'<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; '
+            f'<div style="position:absolute; left:32px; top:28px; width:4px; height:36px; '
             f'background-color:{primary};"></div>\n'
-            f'<h2 style="position:absolute; left:40px; top:22px; width:880px; '
+            f'<h2 style="position:absolute; left:53px; top:22px; width:1173px; '
             f'font-size:16px; color:{primary}; font-weight:bold; '
             f'line-height:1.35; overflow:hidden; height:44px;">{title_e}</h2>\n'
             f'{layers_html}'

@@ -103,11 +103,11 @@ class CaseStudyLayout:
         # KPI cards (right side)
         kpi_html = ""
         kpi_count = len(content.kpis) or 1
-        kpi_h = min(90, 380 // max(kpi_count, 1))
+        kpi_h = min(120, 507 // max(kpi_count, 1))
         for i, kpi in enumerate(content.kpis):
-            y = 80 + i * (kpi_h + 8)
+            y = 107 + i * (kpi_h + 11)
             kpi_html += (
-                f'<div style="position:absolute; right:24px; top:{y}px; width:200px; height:{kpi_h}px; '
+                f'<div style="position:absolute; right:32px; top:{y}px; width:267px; height:{kpi_h}px; '
                 f'background:{bg}; border-radius:6px; border-left:4px solid {accent}; padding:8px 12px; '
                 f'box-sizing:border-box;">\n'
                 f'  <p style="font-size:9px; color:{muted}; margin:0 0 2px 0;">{_html.escape(kpi.label)}</p>\n'
@@ -118,12 +118,12 @@ class CaseStudyLayout:
             )
 
         # Customer info + challenge/solution (left side)
-        left_w = 680
+        left_w = 907
         dur_html = f'<span style="font-size:10px; color:{muted}; margin-left:12px;">{dur_e}</span>' if dur_e else ""
 
         footer = f"P{page_number} / {total_slides}"
         quote_html = (
-            f'<div style="position:absolute; left:40px; top:320px; width:680px; '
+            f'<div style="position:absolute; left:53px; top:427px; width:907px; '
             f'font-size:12px; color:{muted}; font-style:italic; '
             f'line-height:1.5; border-left:3px solid {accent}; '
             f'padding-left:12px;">{quote_e}</div>\n'
@@ -131,35 +131,35 @@ class CaseStudyLayout:
 
         return (
             '<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n'
-            f'<body style="width:960px; height:540px; '
+            f'<body style="width:1280px; height:720px; '
             f"font-family:'Microsoft YaHei',Arial,sans-serif; "
             f'background-color:#FFFFFF; position:relative; overflow:hidden;">\n'
-            f'<div style="position:absolute; top:0; left:0; width:960px; height:6px; '
+            f'<div style="position:absolute; top:0; left:0; width:1280px; height:6px; '
             f'background-color:{accent};"></div>\n'
-            f'<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; '
+            f'<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; '
             f'background-color:{primary};">\n'
             f'  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">{footer}</p>\n'
             '</div>\n'
             # Title
-            f'<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; '
+            f'<div style="position:absolute; left:32px; top:28px; width:4px; height:36px; '
             f'background-color:{primary};"></div>\n'
-            f'<h2 style="position:absolute; left:40px; top:22px; width:880px; '
+            f'<h2 style="position:absolute; left:53px; top:22px; width:1173px; '
             f'font-size:16px; color:{primary}; font-weight:bold; '
             f'line-height:1.35; overflow:hidden; height:44px;">{title_e}</h2>\n'
             # Customer name
-            f'<div style="position:absolute; left:40px; top:80px; width:{left_w}px; '
-            f'height:40px; background:{primary}; border-radius:4px;">\n'
-            f'  <p style="font-size:16px; color:#FFFFFF; font-weight:bold; margin:10px 16px;">'
+            f'<div style="position:absolute; left:53px; top:107px; width:{left_w}px; '
+            f'height:53px; background:{primary}; border-radius:4px;">\n'
+            f'  <p style="font-size:16px; color:#FFFFFF; font-weight:bold; margin:14px 21px;">'
             f'{name_e}{dur_html}</p>\n'
             '</div>\n'
             # Challenge
-            f'<div style="position:absolute; left:40px; top:136px; width:{left_w}px; '
+            f'<div style="position:absolute; left:53px; top:181px; width:{left_w}px; '
             f'overflow:hidden;">\n'
             f'  <p style="font-size:11px; color:{muted}; margin:0 0 4px 0;">挑战</p>\n'
             f'  <p style="font-size:13px; color:{text_color}; line-height:1.5; margin:0;">{ch_e}</p>\n'
             '</div>\n'
             # Solution
-            f'<div style="position:absolute; left:40px; top:230px; width:{left_w}px; '
+            f'<div style="position:absolute; left:53px; top:307px; width:{left_w}px; '
             f'overflow:hidden;">\n'
             f'  <p style="font-size:11px; color:{muted}; margin:0 0 4px 0;">解决方案</p>\n'
             f'  <p style="font-size:13px; color:{text_color}; line-height:1.5; margin:0;">{sol_e}</p>\n'

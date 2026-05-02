@@ -2,6 +2,10 @@
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+# Slide canvas dimensions (13.33 × 7.5 inches at 96 DPI = widescreen 16:9)
+CANVAS_W = 1280
+CANVAS_H = 720
+
 
 @dataclass
 class Capacity:

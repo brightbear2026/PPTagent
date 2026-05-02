@@ -2,7 +2,7 @@
  * html2pptx_wrapper.js — Batch renderer for PPTAgent pipeline
  *
  * Usage: node html2pptx_wrapper.js <html_dir> <output_path> [layout]
- * Layout defaults to LAYOUT_16x9.
+ * Layout defaults to LAYOUT_WIDE.
  *
  * Outputs JSON to stdout with placeholder coordinates for chart injection.
  */
@@ -17,7 +17,7 @@ const RECYCLE_SECONDS = parseInt(process.env.CHROMIUM_RECYCLE_SECONDS || '1800',
 
 async function renderSlides(htmlDir, outputPath, layout) {
     const pptx = new pptxgen();
-    pptx.layout = layout || 'LAYOUT_16x9';
+    pptx.layout = layout || 'LAYOUT_WIDE';
     const allPlaceholders = [];
     const errors = [];
 

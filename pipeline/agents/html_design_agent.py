@@ -45,7 +45,7 @@ def _get_slot_system_prompt() -> str:
 _SYSTEM_PROMPT = """你是一位 PPT 视觉设计师。为每张幻灯片生成完整的 HTML 文档。
 
 ## 画布尺寸（必须严格遵守）
-<body style="width: 960px; height: 540px;">  (16:9, 96 DPI)
+<body style="width: 1280px; height: 720px;">  (16:9, 96 DPI)
 
 ## 内容区域
 内容必须在 margin-top:20px, margin-bottom:34px, margin-left:48px, margin-right:48px 的范围内。
@@ -595,7 +595,7 @@ class HTMLDesignAgent:
                 + "\n".join(f"- {e}" for e in all_errors)
                 + "\n\n请修正这些问题并重新输出完整的 HTML 文档。只输出 HTML。\n"
                 "注意约束：\n"
-                "- body 必须是 960x540px，不能有溢出\n"
+                "- body 必须是 1280x720px，不能有溢出\n"
                 "- 不要使用 <svg>、<iframe>、<video>、<canvas> 标签\n"
                 "- P/H1-H6/UL/OL/LI 标签不能有 background/border/box-shadow\n"
                 "- DIV 不能有 background-image\n"
@@ -849,7 +849,7 @@ def _minimal_safe_html(slide_data: Dict, theme_colors: Dict, page_number: int, t
             paragraphs += f'<p style="font-size:11pt;color:{muted};margin:2px 0 2px 16px">{content}</p>'
     footer = f'<div style="position:absolute;bottom:8px;right:24px;font-size:8pt;color:{muted}">P{page_number}/{total_slides}</div>'
     return (
-        f'<div style="width:960px;height:540px;background:{bg};padding:32px 40px;box-sizing:border-box;'
+        f'<div style="width:1280px;height:720px;background:{bg};padding:32px 53px;box-sizing:border-box;'
         f'font-family:Microsoft YaHei,sans-serif;position:relative">'
         f'<h2 style="font-size:18pt;color:{primary};margin:0 0 16px 0">{title}</h2>'
         f'{paragraphs}'
@@ -878,10 +878,10 @@ def _force_dense_fallback(slide_data: Dict, theme_colors: Dict, total_slides: in
             continue
         col = i % 3
         row = i // 3
-        x = 40 + col * 300
-        y = 80 + row * 80
+        x = 53 + col * 400
+        y = 80 + row * 107
         items_html += (
-            f'<div style="position:absolute;left:{x}px;top:{y}px;width:280px;'
+            f'<div style="position:absolute;left:{x}px;top:{y}px;width:373px;'
             f'background:{bg};border-left:3px solid {accent};padding:6px 10px;">'
             f'<p style="font-size:12px;color:{text};margin:0;line-height:1.4;">{c}</p>'
             f'</div>\n'
@@ -893,14 +893,14 @@ def _force_dense_fallback(slide_data: Dict, theme_colors: Dict, total_slides: in
 
     return (
         '<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n'
-        f'<body style="width:960px;height:540px;font-family:Microsoft YaHei,Arial,sans-serif;'
+        f'<body style="width:1280px;height:720px;font-family:Microsoft YaHei,Arial,sans-serif;'
         f'background-color:#FFFFFF;position:relative;overflow:hidden;">\n'
-        f'<div style="position:absolute;top:0;left:0;width:960px;height:6px;background-color:{accent};"></div>\n'
-        f'<div style="position:absolute;bottom:0;left:0;width:960px;height:24px;background-color:{primary};">\n'
+        f'<div style="position:absolute;top:0;left:0;width:1280px;height:6px;background-color:{accent};"></div>\n'
+        f'<div style="position:absolute;bottom:0;left:0;width:1280px;height:24px;background-color:{primary};">\n'
         f'  <p style="font-size:9px;color:#FFFFFF;margin:4px 24px;">P{pn} / {total_slides}</p>\n'
         f'</div>\n'
-        f'<div style="position:absolute;left:24px;top:28px;width:4px;height:36px;background-color:{primary};"></div>\n'
-        f'<h2 style="position:absolute;left:40px;top:22px;width:880px;font-size:16px;color:{primary};'
+        f'<div style="position:absolute;left:32px;top:28px;width:5px;height:36px;background-color:{primary};"></div>\n'
+        f'<h2 style="position:absolute;left:53px;top:22px;width:1173px;font-size:16px;color:{primary};'
         f'font-weight:bold;line-height:1.35;overflow:hidden;height:44px;">{title}</h2>\n'
         f'{items_html}'
         '</body></html>'

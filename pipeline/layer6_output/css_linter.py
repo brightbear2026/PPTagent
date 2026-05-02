@@ -4,7 +4,7 @@ CSS Linter — Auto-fix LLM-generated HTML before html2pptx.js processing.
 Enforces the PPT-safe CSS subset:
 - Text elements must not have background/border/box-shadow
 - Fonts must be from the web-safe + CJK whitelist
-- Body must have fixed dimensions (960×540 for 16:9)
+- Body must have fixed dimensions (1280×720 for 16:9)
 - No gradients, inset shadows, or forbidden elements
 """
 
@@ -30,7 +30,7 @@ GRADIENT_RE = re.compile(r'(linear|radial|conic)-gradient\s*\(', re.IGNORECASE)
 class CSSLinter:
     """Pre-processes LLM HTML output to comply with html2pptx constraints."""
 
-    def __init__(self, body_width: int = 960, body_height: int = 540):
+    def __init__(self, body_width: int = 1280, body_height: int = 720):
         self.body_width = body_width
         self.body_height = body_height
 

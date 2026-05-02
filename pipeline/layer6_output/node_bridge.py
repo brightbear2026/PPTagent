@@ -216,7 +216,7 @@ class NodeRenderBridge:
         self,
         html_dir: str,
         output_path: str,
-        layout: str = "LAYOUT_16x9",
+        layout: str = "LAYOUT_WIDE",
     ) -> Dict[str, Any]:
         """Render all HTML slides in html_dir into a single .pptx file.
 

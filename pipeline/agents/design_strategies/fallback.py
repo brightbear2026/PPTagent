@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 # Fixed chrome template injected into every slide
 _CHROME_TEMPLATE = """
 <!-- Chrome: top accent bar -->
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:{accent};"></div>
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:{accent};"></div>
 <!-- Chrome: bottom footer -->
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:{primary};">
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:{primary};">
   <p style="color:#FFFFFF; font-size:9px; margin:4px 24px;">{footer}</p>
 </div>
 """
@@ -100,26 +100,26 @@ class FallbackBuilder:
         # Chart placeholder
         chart_placeholder = ""
         if has_chart:
-            chart_placeholder = '<div class="placeholder" id="chart-0" style="position:absolute; left:520px; top:80px; width:400px; height:280px;"></div>'
+            chart_placeholder = '<div class="placeholder" id="chart-0" style="position:absolute; left:693px; top:80px; width:533px; height:373px;"></div>'
 
         # Content width
-        content_w = "460px" if has_chart else "860px"
+        content_w = "613px" if has_chart else "1147px"
 
         return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft Yahei',Arial,sans-serif; background-color:#FFFFFF; position:relative;">
+<body style="width:1280px; height:720px; font-family:'Microsoft Yahei',Arial,sans-serif; background-color:#FFFFFF; position:relative;">
 
 {_CHROME_TEMPLATE.format(accent=accent, primary=primary, footer=f'第 {slide_index+1} 页 / 共 {total_slides} 页')}
 
 <!-- Takeaway bar -->
-<div style="position:absolute; left:24px; top:36px; width:4px; height:36px; background-color:{primary};"></div>
+<div style="position:absolute; left:32px; top:36px; width:5px; height:36px; background-color:{primary};"></div>
 
 <!-- Takeaway message -->
-<h2 style="position:absolute; left:40px; top:28px; width:{content_w}; height:32px; font-size:16px; color:{primary}; font-weight:bold;">{takeaway}</h2>
+<h2 style="position:absolute; left:53px; top:28px; width:{content_w}; height:32px; font-size:16px; color:{primary}; font-weight:bold;">{takeaway}</h2>
 
 <!-- Text content -->
-<div style="position:absolute; left:40px; top:70px; width:{content_w}; height:400px;">
+<div style="position:absolute; left:53px; top:70px; width:{content_w}; height:533px;">
 {text_html}
 </div>
 

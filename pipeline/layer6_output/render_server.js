@@ -66,7 +66,7 @@ async function handleRender(req, res, body) {
   try {
     const b = await ensureBrowser();
     const pptx = new pptxgen();
-    pptx.layout = layout || 'LAYOUT_16x9';
+    pptx.layout = layout || 'LAYOUT_WIDE';
 
     const allPlaceholders = [];
     const errors = [];

@@ -14,8 +14,8 @@ const { chromium } = require('playwright');
 
 const PX_PER_IN = 96;
 const PT_PER_PX = 0.75;
-const EXPECTED_W = 960;
-const EXPECTED_H = 540;
+const EXPECTED_W = 1280;
+const EXPECTED_H = 720;
 
 async function validate(htmlFile) {
   const filePath = path.isAbsolute(htmlFile) ? htmlFile : path.join(process.cwd(), htmlFile);
@@ -41,8 +41,8 @@ async function validate(htmlFile) {
       };
     });
 
-    if (Math.abs(dims.width - 960) > 2 || Math.abs(dims.height - 540) > 2) {
-      errors.push(`dimensions ${dims.width.toFixed(0)}x${dims.height.toFixed(0)} expected 960x540`);
+    if (Math.abs(dims.width - 1280) > 2 || Math.abs(dims.height - 720) > 2) {
+      errors.push(`dimensions ${dims.width.toFixed(0)}x${dims.height.toFixed(0)} expected 1280x720`);
     }
 
     const hOverflow = Math.max(0, dims.scrollHeight - dims.height - 1);

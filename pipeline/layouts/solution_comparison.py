@@ -111,8 +111,8 @@ class SolutionComparisonLayout:
 
         title_e = _html.escape(content.title)
         n_opts = len(content.options)
-        table_w = 880
-        label_w = 160
+        table_w = 1173
+        label_w = 213
         cell_w = (table_w - label_w) // max(n_opts, 1)
 
         # Header
@@ -161,22 +161,22 @@ class SolutionComparisonLayout:
         footer = f"P{page_number} / {total_slides}"
         return (
             '<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n'
-            f'<body style="width:960px; height:540px; '
+            f'<body style="width:1280px; height:720px; '
             f"font-family:'Microsoft YaHei',Arial,sans-serif; "
             f'background-color:#FFFFFF; position:relative; overflow:hidden;">\n'
-            f'<div style="position:absolute; top:0; left:0; width:960px; height:6px; '
+            f'<div style="position:absolute; top:0; left:0; width:1280px; height:6px; '
             f'background-color:{accent};"></div>\n'
-            f'<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; '
+            f'<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; '
             f'background-color:{primary};">\n'
             f'  <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;">{footer}</p>\n'
             '</div>\n'
-            f'<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; '
+            f'<div style="position:absolute; left:32px; top:28px; width:4px; height:36px; '
             f'background-color:{primary};"></div>\n'
-            f'<h2 style="position:absolute; left:40px; top:22px; width:880px; '
+            f'<h2 style="position:absolute; left:53px; top:22px; width:1173px; '
             f'font-size:16px; color:{primary}; font-weight:bold; '
             f'line-height:1.35; overflow:hidden; height:44px;">{title_e}</h2>\n'
-            f'<div style="position:absolute; left:40px; top:76px; width:{table_w}px; '
-            f'max-height:420px; overflow:auto;">\n'
+            f'<div style="position:absolute; left:53px; top:101px; width:{table_w}px; '
+            f'max-height:560px; overflow:auto;">\n'
             f'<table style="border-collapse:collapse; width:{table_w}px;">\n'
             f'<tr>{header_html}</tr>\n'
             f'{rows_html}'

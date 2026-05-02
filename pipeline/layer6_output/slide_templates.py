@@ -7,8 +7,8 @@ slide_templates.py — Pre-designed slide templates for HTMLDesignAgent.
 Instead of LLM generating free HTML, the LLM picks a template_id and fills
 structured slots. Python renders the final HTML from pre-validated templates.
 
-Canvas: 960 × 540 px (16:9, 96 DPI)
-Content area: left:40px, top:72px (below title bar), right:40px, above footer
+Canvas: 1280 × 720 px (16:9, 96 DPI)
+Content area: left:53px, top:72px (below title bar), right:53px, above footer
 Chrome: 6px accent top bar + 24px primary footer (always injected by template)
 """
 
@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import html as _html
 from typing import Any
+
+# Canvas dimensions used throughout all templates
+_W = 1280
+_H = 720
 
 # --------------------------------------------------------------------------- #
 # Template strings — placeholders use <<SLOT_NAME>> to avoid CSS {} conflicts
@@ -25,17 +29,17 @@ _T_CONTENT_BULLETS = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:<<TITLE_W>>px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:<<TITLE_W>>px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
-<div style="position:absolute; left:40px; top:76px; width:<<CONTENT_W>>px; height:420px; overflow:hidden;">
+<div style="position:absolute; left:53px; top:76px; width:<<CONTENT_W>>px; height:560px; overflow:hidden;">
 <<BULLETS_HTML>>
 </div>
 
@@ -48,29 +52,29 @@ _T_CONTENT_TWO_COLUMN = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
-<div style="position:absolute; left:480px; top:72px; width:1px; height:434px; background-color:#E0E0E0;"></div>
+<div style="position:absolute; left:640px; top:72px; width:1px; height:579px; background-color:#E0E0E0;"></div>
 
-<div style="position:absolute; left:40px; top:76px; width:420px; height:28px; background-color:<<BG>>;">
+<div style="position:absolute; left:53px; top:76px; width:560px; height:28px; background-color:<<BG>>;">
   <p style="font-size:12px; font-weight:bold; color:<<PRIMARY>>; margin:5px 8px;"><<LEFT_LABEL>></p>
 </div>
-<div style="position:absolute; left:40px; top:112px; width:420px; height:398px; overflow:hidden;">
+<div style="position:absolute; left:53px; top:112px; width:560px; height:531px; overflow:hidden;">
 <<LEFT_BULLETS_HTML>>
 </div>
 
-<div style="position:absolute; left:496px; top:76px; width:420px; height:28px; background-color:<<BG>>;">
+<div style="position:absolute; left:661px; top:76px; width:560px; height:28px; background-color:<<BG>>;">
   <p style="font-size:12px; font-weight:bold; color:<<PRIMARY>>; margin:5px 8px;"><<RIGHT_LABEL>></p>
 </div>
-<div style="position:absolute; left:496px; top:112px; width:420px; height:398px; overflow:hidden;">
+<div style="position:absolute; left:661px; top:112px; width:560px; height:531px; overflow:hidden;">
 <<RIGHT_BULLETS_HTML>>
 </div>
 
@@ -81,19 +85,19 @@ _T_CONTENT_KEY_METRICS = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
 <<METRIC_BOXES_HTML>>
 
-<div style="position:absolute; left:40px; top:400px; width:880px; height:110px; overflow:hidden;">
+<div style="position:absolute; left:53px; top:533px; width:1173px; height:147px; overflow:hidden;">
 <<SUB_BULLETS_HTML>>
 </div>
 
@@ -104,19 +108,19 @@ _T_CHART_FOCUS = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
-<div class="placeholder" id="chart-0" style="position:absolute; left:360px; top:76px; width:556px; height:420px;"></div>
+<div class="placeholder" id="chart-0" style="position:absolute; left:480px; top:76px; width:741px; height:560px;"></div>
 
-<div style="position:absolute; left:40px; top:76px; width:300px; height:420px; overflow:hidden;">
+<div style="position:absolute; left:53px; top:76px; width:400px; height:560px; overflow:hidden;">
 <<ANNOTATIONS_HTML>>
 </div>
 
@@ -127,22 +131,22 @@ _T_QUOTE_HIGHLIGHT = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
-<div style="position:absolute; left:40px; top:76px; width:880px; height:108px; background-color:<<BG>>;">
-  <div style="position:absolute; left:0; top:0; width:6px; height:108px; background-color:<<ACCENT>>;"></div>
-  <p style="position:absolute; left:20px; top:16px; width:844px; font-size:17px; color:<<PRIMARY>>; font-weight:bold; line-height:1.55; overflow:hidden;"><<QUOTE_TEXT>></p>
+<div style="position:absolute; left:53px; top:76px; width:1173px; height:108px; background-color:<<BG>>;">
+  <div style="position:absolute; left:0; top:0; width:8px; height:108px; background-color:<<ACCENT>>;"></div>
+  <p style="position:absolute; left:27px; top:16px; width:1125px; font-size:17px; color:<<PRIMARY>>; font-weight:bold; line-height:1.55; overflow:hidden;"><<QUOTE_TEXT>></p>
 </div>
 
-<div style="position:absolute; left:40px; top:198px; width:880px; height:300px; overflow:hidden;">
+<div style="position:absolute; left:53px; top:198px; width:1173px; height:400px; overflow:hidden;">
 <<SUB_BULLETS_HTML>>
 </div>
 
@@ -153,15 +157,15 @@ _T_ICON_GRID = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
 <<GRID_ITEMS_HTML>>
 
@@ -172,15 +176,15 @@ _T_ARCHITECTURE_STACK = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
 <<STACK_LAYERS_HTML>>
 
@@ -191,15 +195,15 @@ _T_TIMELINE_HORIZONTAL = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
 <<TIMELINE_ITEMS_HTML>>
 
@@ -210,15 +214,15 @@ _T_QUADRANT_MATRIX = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
 <<QUADRANT_CELLS_HTML>>
 
@@ -229,15 +233,15 @@ _T_ROLE_COLUMNS = """\
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="width:960px; height:540px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
+<body style="width:1280px; height:720px; font-family:'Microsoft YaHei',Arial,sans-serif; background-color:#FFFFFF; position:relative; overflow:hidden;">
 
-<div style="position:absolute; top:0; left:0; width:960px; height:6px; background-color:<<ACCENT>>;"></div>
-<div style="position:absolute; bottom:0; left:0; width:960px; height:24px; background-color:<<PRIMARY>>;">
+<div style="position:absolute; top:0; left:0; width:1280px; height:6px; background-color:<<ACCENT>>;"></div>
+<div style="position:absolute; bottom:0; left:0; width:1280px; height:24px; background-color:<<PRIMARY>>;">
   <p style="font-size:9px; color:#FFFFFF; margin:4px 24px;"><<FOOTER>></p>
 </div>
 
-<div style="position:absolute; left:24px; top:28px; width:4px; height:36px; background-color:<<PRIMARY>>;"></div>
-<h2 style="position:absolute; left:40px; top:22px; width:880px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
+<div style="position:absolute; left:32px; top:28px; width:5px; height:36px; background-color:<<PRIMARY>>;"></div>
+<h2 style="position:absolute; left:53px; top:22px; width:1173px; font-size:16px; color:<<PRIMARY>>; font-weight:bold; line-height:1.35; overflow:hidden; height:44px;"><<TITLE>></h2>
 
 <<ROLE_COLUMNS_HTML>>
 
@@ -258,39 +262,39 @@ TEMPLATES: dict[str, str] = {
     # ── IT diagram templates ────────────────────────────────────────────
     "tech_stack_layers": """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
-<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
-<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
-<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
-<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
-<div style="position:absolute;left:40px;top:52px;width:880px;"><<STACK_LAYERS_HTML>></div>
-<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+<body style="width:1280px;height:720px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:1280px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:53px;top:20px;width:5px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:69px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:53px;top:52px;width:1173px;"><<STACK_LAYERS_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:1280px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 53px;opacity:0.8;"><<FOOTER>></p></div>
 </body></html>""",
     "component_network": """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
-<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
-<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
-<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
-<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
-<div style="position:absolute;left:40px;top:56px;width:880px;height:440px;"><<COMPONENT_GROUPS_HTML>></div>
-<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+<body style="width:1280px;height:720px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:1280px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:53px;top:20px;width:5px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:69px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:53px;top:56px;width:1173px;height:587px;"><<COMPONENT_GROUPS_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:1280px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 53px;opacity:0.8;"><<FOOTER>></p></div>
 </body></html>""",
     "data_pipeline": """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
-<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
-<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
-<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
-<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
-<div style="position:absolute;left:40px;top:60px;width:880px;height:420px;"><<PIPELINE_STAGES_HTML>></div>
-<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+<body style="width:1280px;height:720px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:1280px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:53px;top:20px;width:5px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:69px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:53px;top:60px;width:1173px;height:560px;"><<PIPELINE_STAGES_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:1280px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 53px;opacity:0.8;"><<FOOTER>></p></div>
 </body></html>""",
     "tech_comparison": """<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
-<body style="width:960px;height:540px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
-<div style="position:absolute;left:0;top:0;width:960px;height:6px;background:<<ACCENT>>;"></div>
-<div style="position:absolute;left:40px;top:20px;width:4px;height:24px;background:<<PRIMARY>>;"></div>
-<p style="position:absolute;left:52px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
-<div style="position:absolute;left:40px;top:56px;width:880px;"><<MATRIX_TABLE_HTML>></div>
-<div style="position:absolute;left:0;bottom:0;width:960px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 40px;opacity:0.8;"><<FOOTER>></p></div>
+<body style="width:1280px;height:720px;margin:0;padding:0;background:<<BG>>;font-family:'Microsoft YaHei',Arial,sans-serif;overflow:hidden;box-sizing:border-box;">
+<div style="position:absolute;left:0;top:0;width:1280px;height:6px;background:<<ACCENT>>;"></div>
+<div style="position:absolute;left:53px;top:20px;width:5px;height:24px;background:<<PRIMARY>>;"></div>
+<p style="position:absolute;left:69px;top:18px;font-size:16px;font-weight:bold;color:<<TEXT_COLOR>>;"><<TITLE>></p>
+<div style="position:absolute;left:53px;top:56px;width:1173px;"><<MATRIX_TABLE_HTML>></div>
+<div style="position:absolute;left:0;bottom:0;width:1280px;height:24px;background:<<PRIMARY>>;"><p style="color:#FFFFFF;font-size:9px;margin:5px 53px;opacity:0.8;"><<FOOTER>></p></div>
 </body></html>""",
 }
 
@@ -454,12 +458,12 @@ def render_template(
 
     if template_id == "content_bullets":
         has_chart = bool(slots.get("has_chart", False))
-        title_w = 440 if has_chart else 880
-        content_w = 436 if has_chart else 880
+        title_w = 587 if has_chart else 1173
+        content_w = 581 if has_chart else 1173
         bullets_html = _render_bullets(slots.get("bullets", []), text_color, primary)
         chart_ph = (
             '<div class="placeholder" id="chart-0" '
-            'style="position:absolute; left:512px; top:76px; width:404px; height:420px;"></div>'
+            'style="position:absolute; left:683px; top:76px; width:539px; height:560px;"></div>'
             if has_chart else ""
         )
         result = result.replace("<<TITLE_W>>", str(title_w))
@@ -547,8 +551,8 @@ def render_template(
     source_note = slots.get("source_note", "").strip()
     if source_note:
         source_html = (
-            f'<p style="position:absolute; bottom:28px; right:40px; '
-            f'font-size:9px; color:{muted}; font-style:italic; max-width:500px;">'
+            f'<p style="position:absolute; bottom:28px; right:53px; '
+            f'font-size:9px; color:{muted}; font-style:italic; max-width:667px;">'
             f'Source: {_html.escape(source_note)}</p>'
         )
         result = result.replace("</body>", source_html + "\n</body>")
@@ -596,13 +600,13 @@ def _render_metrics(
     if n == 0:
         return ""
     if n <= 3:
-        box_w = 260
-        gap = (880 - n * box_w) // (n + 1)
-        starts = [40 + gap + i * (box_w + gap) for i in range(n)]
+        box_w = 347
+        gap = (1173 - n * box_w) // (n + 1)
+        starts = [53 + gap + i * (box_w + gap) for i in range(n)]
     else:
-        box_w = 200
-        gap = (880 - n * box_w) // (n + 1)
-        starts = [40 + gap + i * (box_w + gap) for i in range(n)]
+        box_w = 267
+        gap = (1173 - n * box_w) // (n + 1)
+        starts = [53 + gap + i * (box_w + gap) for i in range(n)]
 
     box_top = 86
     box_h = 260
@@ -643,9 +647,9 @@ def _render_annotations(annotations: list, primary: str, accent: str, muted: str
         text = _html.escape(str(ann))
         top = i * 96
         parts.append(
-            f'<div style="position:absolute; left:0; top:{top}px; width:300px; height:86px;">'
-            f'<div style="position:absolute; left:0; top:0; width:4px; height:70px; background-color:{accent};"></div>'
-            f'<p style="position:absolute; left:12px; top:0; width:280px; font-size:12px; color:{primary}; line-height:1.55;">{text}</p>'
+            f'<div style="position:absolute; left:0; top:{top}px; width:400px; height:86px;">'
+            f'<div style="position:absolute; left:0; top:0; width:5px; height:70px; background-color:{accent};"></div>'
+            f'<p style="position:absolute; left:16px; top:0; width:373px; font-size:12px; color:{primary}; line-height:1.55;">{text}</p>'
             f'</div>'
         )
     return "\n".join(parts)
@@ -656,13 +660,13 @@ def _render_icon_grid(items: list, primary: str, accent: str, bg: str, text_colo
     if n == 0:
         return ""
     if n <= 3:
-        cols, rows, box_w, box_h, top_start = n, 1, 260, 310, 84
+        cols, rows, box_w, box_h, top_start = n, 1, 347, 413, 84
     elif n == 4:
-        cols, rows, box_w, box_h, top_start = 2, 2, 410, 196, 80
+        cols, rows, box_w, box_h, top_start = 2, 2, 547, 261, 80
     else:
-        cols, rows, box_w, box_h, top_start = 3, 2, 263, 196, 80
+        cols, rows, box_w, box_h, top_start = 3, 2, 351, 261, 80
 
-    gap_x = (880 - cols * box_w) // (cols + 1)
+    gap_x = (1173 - cols * box_w) // (cols + 1)
 
     parts = []
     for i, item in enumerate(items[:n]):
@@ -671,7 +675,7 @@ def _render_icon_grid(items: list, primary: str, accent: str, bg: str, text_colo
         icon = str(item.get("icon", "●"))
         item_title = _html.escape(str(item.get("title", "")))
         desc = _html.escape(str(item.get("desc", "")))
-        left = 40 + gap_x + col * (box_w + gap_x)
+        left = 53 + gap_x + col * (box_w + gap_x)
         top = top_start + row * (box_h + 10)
         parts.append(
             f'<div style="position:absolute; left:{left}px; top:{top}px; width:{box_w}px; height:{box_h}px; background-color:{bg};">'
@@ -691,9 +695,9 @@ def _render_stack_layers(
     n = min(len(layers), 6)
     if n == 0:
         return ""
-    layer_h = min(80, (420 - (n - 1) * 6) // n)
+    layer_h = min(80, (560 - (n - 1) * 6) // n)
     total_h = n * layer_h + (n - 1) * 6
-    top_start = 76 + (430 - total_h) // 2
+    top_start = 76 + (573 - total_h) // 2
     colors = [primary, accent, bg, _lighten(primary, 0.6), _lighten(primary, 0.8)][:n]
     text_colors = ["#FFFFFF", "#FFFFFF", text_color, primary, primary][:n]
     parts = []
@@ -705,9 +709,9 @@ def _render_stack_layers(
         c = colors[i]
         tc = text_colors[i]
         parts.append(
-            f'<div style="position:absolute; left:60px; top:{top}px; width:840px; height:{layer_h}px; background-color:{c}; border-radius:3px;">'
+            f'<div style="position:absolute; left:80px; top:{top}px; width:1120px; height:{layer_h}px; background-color:{c}; border-radius:3px;">'
             f'<p style="position:absolute; left:16px; top:{max(4, (layer_h-20)//2)}px; font-size:14px; color:{tc}; font-weight:bold;">{name}</p>'
-            f'<p style="position:absolute; left:16px; top:{max(4, (layer_h-20)//2) + 20}px; width:800px; font-size:11px; color:{tc}; line-height:1.3;">{desc}</p>'
+            f'<p style="position:absolute; left:16px; top:{max(4, (layer_h-20)//2) + 20}px; width:1067px; font-size:11px; color:{tc}; line-height:1.3;">{desc}</p>'
             f'</div>'
         )
     return "\n".join(parts)
@@ -720,15 +724,15 @@ def _render_timeline(
     n = min(len(phases), 6)
     if n == 0:
         return ""
-    phase_w = min(200, (880 - (n - 1) * 20) // n)
-    gap_x = (880 - n * phase_w) // max(1, n - 1) if n > 1 else 0
+    phase_w = min(267, (1173 - (n - 1) * 20) // n)
+    gap_x = (1173 - n * phase_w) // max(1, n - 1) if n > 1 else 0
     line_top = 170
     card_top = 200
-    card_h = 280
+    card_h = 373
     parts = []
     # Horizontal line
-    first_left = 40
-    last_left = 40 + (n - 1) * (phase_w + gap_x)
+    first_left = 53
+    last_left = 53 + (n - 1) * (phase_w + gap_x)
     parts.append(
         f'<div style="position:absolute; left:{first_left}px; top:{line_top}px; '
         f'width:{last_left + phase_w - first_left}px; height:3px; background-color:{primary};"></div>'
@@ -737,7 +741,7 @@ def _render_timeline(
         label = _html.escape(str(phase.get("label", f"P{i+1}")))
         title = _html.escape(str(phase.get("title", "")))
         desc = _html.escape(str(phase.get("desc", "")))
-        left = 40 + i * (phase_w + gap_x)
+        left = 53 + i * (phase_w + gap_x)
         dot_left = left + phase_w // 2
         parts.append(
             f'<div style="position:absolute; left:{dot_left - 8}px; top:{line_top - 6}px; '
@@ -766,10 +770,10 @@ def _render_quadrant(
     """Render 2x2 quadrant matrix. cells order: BL, BR, TL, TR."""
     if len(cells) < 4:
         cells = cells + [{"label": "", "items": []}] * (4 - len(cells))
-    cell_w = 410
-    cell_h = 200
+    cell_w = 547
+    cell_h = 267
     gap = 20
-    left_start = 70
+    left_start = 93
     top_start = 80
     parts = []
     x_esc = _html.escape(x_label)
@@ -817,16 +821,16 @@ def _render_role_columns(
     n = min(len(roles), 4)
     if n == 0:
         return ""
-    col_w = min(260, (880 - (n - 1) * 16) // n)
-    gap_x = (880 - n * col_w) // max(1, n - 1) if n > 1 else 0
+    col_w = min(347, (1173 - (n - 1) * 16) // n)
+    gap_x = (1173 - n * col_w) // max(1, n - 1) if n > 1 else 0
     top_start = 80
-    col_h = 400
+    col_h = 533
     parts = []
     for i, role in enumerate(roles[:n]):
         name = _html.escape(str(role.get("name", f"Role {i+1}")))
         subtitle = _html.escape(str(role.get("subtitle", "")))
         bullets = role.get("bullets", [])[:4]
-        left = 40 + i * (col_w + gap_x)
+        left = 53 + i * (col_w + gap_x)
         bullets_html = "".join(
             f'<p style="font-size:11px; color:{text_color}; line-height:1.5;">• {_html.escape(str(b))}</p>'
             for b in bullets
@@ -866,9 +870,9 @@ def _render_component_groups(
     if not groups:
         return ""
     n = len(groups)
-    group_h = min(140, (420 - (n - 1) * 30) // n)
+    group_h = min(140, (560 - (n - 1) * 30) // n)
     total_h = n * group_h + (n - 1) * 30
-    top_start = 10 + (430 - total_h) // 2
+    top_start = 10 + (573 - total_h) // 2
     parts = []
     for i, group in enumerate(groups[:6]):
         name = _html.escape(str(group.get("name", f"Group {i+1}")))
@@ -878,7 +882,7 @@ def _render_component_groups(
         if i > 0:
             arrow_top = top - 28
             parts.append(
-                f'<div style="position:absolute;left:440px;top:{arrow_top}px;width:80px;text-align:center;">'
+                f'<div style="position:absolute;left:587px;top:{arrow_top}px;width:107px;text-align:center;">'
                 f'<p style="color:{muted};font-size:20px;margin:0;">↓</p></div>'
             )
             # 连线标签
@@ -887,12 +891,12 @@ def _render_component_groups(
                 label = _html.escape(str(conn.get("label", "")))
                 if label:
                     parts.append(
-                        f'<div style="position:absolute;left:530px;top:{arrow_top}px;">'
+                        f'<div style="position:absolute;left:707px;top:{arrow_top}px;">'
                         f'<p style="color:{accent};font-size:9px;margin:0;">{label}</p></div>'
                     )
         # 分组框
         parts.append(
-            f'<div style="position:absolute;left:40px;top:{top}px;width:800px;height:{group_h}px;'
+            f'<div style="position:absolute;left:53px;top:{top}px;width:1067px;height:{group_h}px;'
             f'border:2px solid {primary};border-radius:4px;background:rgba(255,255,255,0.6);">'
             f'<p style="position:absolute;left:12px;top:4px;font-size:11px;font-weight:bold;color:{primary};margin:0;">{name}</p>'
             f'</div>'
@@ -901,7 +905,7 @@ def _render_component_groups(
         comp_strs = [_html.escape(str(c)) for c in components[:6]]
         if comp_strs:
             comp_html = ""
-            comp_w = min(180, (780 - 10) // max(len(comp_strs), 1))
+            comp_w = min(180, (1040 - 10) // max(len(comp_strs), 1))
             for ci, comp in enumerate(comp_strs):
                 comp_html += (
                     f'<div style="display:inline-block;margin:0 5px;padding:4px 10px;'
@@ -909,7 +913,7 @@ def _render_component_groups(
                     f'<p style="color:#FFFFFF;font-size:10px;font-weight:bold;margin:0;">{comp}</p></div>'
                 )
             parts.append(
-                f'<div style="position:absolute;left:60px;top:{top + 30}px;width:760px;'
+                f'<div style="position:absolute;left:80px;top:{top + 30}px;width:1013px;'
                 f'display:flex;flex-wrap:wrap;align-items:center;gap:4px;">{comp_html}</div>'
             )
     return "\n".join(parts)
@@ -923,11 +927,11 @@ def _render_pipeline_stages(
     if not stages:
         return ""
     n = min(len(stages), 8)
-    stage_w = min(150, (850 - (n - 1) * 40) // n)
+    stage_w = min(200, (1133 - (n - 1) * 40) // n)
     stage_h = 120
     total_w = n * stage_w + (n - 1) * 40
-    start_x = (880 - total_w) // 2
-    cy = 200
+    start_x = (1173 - total_w) // 2
+    cy = 267
 
     _type_colors = {
         "source": primary,
@@ -1004,8 +1008,8 @@ def _render_tech_matrix(
         return ""
 
     n_cols = len(all_options) + 1
-    col_w = min(200, 860 // n_cols)
-    cat_w = 860 - col_w * len(all_options)
+    col_w = min(200, 1147 // n_cols)
+    cat_w = 1147 - col_w * len(all_options)
 
     rows = []
     # 表头
