@@ -151,6 +151,7 @@ bullet 和 chart_suggestion 中的数字**严禁自相矛盾**：
 | chart_focus  | null              | 3-5 条图表解读 |
 | quote_emphasis | null            | 首条为核心结论 + 2-4 条支撑 |
 | parallel_points | null           | 4-6 条独立并列论据 |
+| image_text_grid | image_text_grid | 1 条总结 |
 
 ### 互斥规则
 chart_suggestion、diagram_spec、visual_block 三者只能有一个非null（由 primary_visual 决定）。

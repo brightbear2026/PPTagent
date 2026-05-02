@@ -409,6 +409,12 @@ class ContentAgent(StructuredLLMAgent):
             "每个 item 含 name(阶段名)、actor(执行者)、action(动作)、output(产出)。"
             "4-7 个阶段，箭头自动连接。text_blocks 仅 1 条流程总结。"
         ),
+        "image_text_grid": (
+            "图文卡片网格布局。必须填写 visual_block（type=image_text_grid），"
+            "每个 item 含 {title, description, image_caption}。3-4 张卡片，"
+            "image_caption 描述图片内容（如'系统架构图'、'部署拓扑'）。"
+            "text_blocks 仅 1 条总结。"
+        ),
     }
 
     @staticmethod

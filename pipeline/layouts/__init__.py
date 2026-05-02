@@ -22,6 +22,7 @@ from pipeline.layouts.capability_matrix import CapabilityMatrixLayout, Capabilit
 from pipeline.layouts.case_study import CaseStudyLayout, CaseStudyContent
 from pipeline.layouts.solution_comparison import SolutionComparisonLayout, SolutionComparisonContent
 from pipeline.layouts.end_to_end_flow import EndToEndFlowLayout, EndToEndFlowContent
+from pipeline.layouts.image_text_grid import ImageTextGridLayout, ImageTextGridContent
 
 
 class LayoutRegistry:
@@ -53,3 +54,4 @@ LayoutRegistry.register(CapabilityMatrixLayout())
 LayoutRegistry.register(CaseStudyLayout())
 LayoutRegistry.register(SolutionComparisonLayout())
 LayoutRegistry.register(EndToEndFlowLayout())
+LayoutRegistry.register(ImageTextGridLayout())

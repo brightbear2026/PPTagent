@@ -14,6 +14,7 @@ class TestRegistryAllLayouts:
             "framework_grid", "narrative",
             "tech_architecture", "capability_matrix", "case_study",
             "solution_comparison", "end_to_end_flow",
+            "image_text_grid",
         }
         assert LayoutRegistry.names() == expected
 
