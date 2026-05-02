@@ -127,9 +127,10 @@ class HTMLDesignAgent:
 
         slides_data = self._match_slides(outline_items, content_slides)
 
-        # Pre-extract section names for agenda/section_divider templates
-        self._sections_list: List[str] = [
-            sd.get("title") or sd.get("takeaway_message", "")
+        # Pre-extract section info for agenda/section_divider templates
+        self._sections_list: List[Dict] = [
+            {"title": sd.get("title") or sd.get("takeaway_message", ""),
+             "summary": sd.get("section_summary", "")}
             for sd in slides_data if sd.get("slide_type") == "section_divider"
         ]
 
@@ -279,7 +280,8 @@ class HTMLDesignAgent:
         if slide_data.get("slide_type") == "section_divider":
             sec_name = slide_data.get("title") or slide_data.get("takeaway_message", "")
             sections = getattr(self, "_sections_list", [])
-            sec_num = (sections.index(sec_name) + 1) if sec_name in sections else 1
+            sec_titles = [s.get("title", s) if isinstance(s, dict) else s for s in sections]
+            sec_num = (sec_titles.index(sec_name) + 1) if sec_name in sec_titles else 1
             return self.special_pages.section_divider_html(slide_index, slide_data, theme_colors, total_slides, task, sec_num)
 
         if slide_data.get("slide_type") == "agenda":

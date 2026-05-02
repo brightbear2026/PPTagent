@@ -657,6 +657,15 @@ class PlanAgent:
             title_slides = [s for s in slides if s.get("slide_type") == "title"]
             content_slides = [s for s in slides if s.get("slide_type") != "title"]
 
+            # Collect section summaries from first content slide per section
+            section_summaries: dict = {}
+            for s in content_slides:
+                sec = _strip_chapter_prefix(s.get("section", "").strip())
+                if sec and sec not in section_summaries:
+                    hint = s.get("supporting_hint", "")
+                    tm = s.get("takeaway_message", "")
+                    section_summaries[sec] = (hint or tm)[:60]
+
             agenda_slide = {
                 "slide_type": "agenda", "title": "目录", "takeaway_message": "目录",
                 "supporting_hint": "", "data_source": "", "primary_visual": "text_only",
@@ -679,6 +688,7 @@ class PlanAgent:
                     "narrative_arc": "context",
                     "section": chapter_title,
                     "page_weight": "transition",
+                    "section_summary": section_summaries.get(sec_name, ""),
                 })
                 # Update content slides' section to match the canonical form so
                 # downstream consumers (agenda lookup, etc.) see one source of truth

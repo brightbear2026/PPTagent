@@ -62,24 +62,41 @@ class SpecialPageBuilder:
         theme_colors: Dict[str, str],
         total_slides: int,
         task: Dict,
-        sections: List[str],
+        sections: List,
     ) -> str:
         """Fixed agenda/TOC slide — left panel with 目录 title, right panel with numbered chapters."""
         primary = theme_colors.get("primary", "#003D6E")
         accent = theme_colors.get("accent", "#FF6B35")
         text_color = theme_colors.get("text", "#2D3436")
 
+        # Normalize sections: accept both List[str] and List[Dict]
+        normalized = []
+        for sec in sections:
+            if isinstance(sec, dict):
+                normalized.append(sec)
+            else:
+                normalized.append({"title": str(sec), "summary": ""})
+
         items_html = ""
-        for i, sec in enumerate(sections[:8]):
-            top_px = 50 + i * 77
+        for i, sec_dict in enumerate(normalized[:8]):
+            top_px = 50 + i * 80
+            title = sec_dict.get("title", "")
+            summary = sec_dict.get("summary", "")
             items_html += (
                 f'<div style="position:absolute; left:373px; top:{top_px}px;'
                 f' width:43px; height:43px; background-color:{primary};">'
                 f'<p style="color:#FFFFFF; font-size:13px; font-weight:bold;'
                 f' text-align:center; margin:8px 0;">{i + 1:02d}</p>'
                 f'</div>'
-                f'<p style="position:absolute; left:436px; top:{top_px + 8}px;'
-                f' width:747px; font-size:14px; color:{text_color}; font-weight:500;">{sec}</p>'
+                f'<p style="position:absolute; left:436px; top:{top_px + 4}px;'
+                f' width:747px; font-size:14px; color:{text_color}; font-weight:500;">{title}</p>'
+            )
+            if summary:
+                items_html += (
+                    f'<p style="position:absolute; left:436px; top:{top_px + 26}px;'
+                    f' width:747px; font-size:11px; color:#999999;">{summary}</p>'
+                )
+            items_html += (
                 f'<div style="position:absolute; left:373px; top:{top_px + 67}px;'
                 f' width:853px; height:1px; background-color:#E8E8E8;"></div>'
             )
