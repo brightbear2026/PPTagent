@@ -84,6 +84,7 @@ class TestDensityGuardIntegration:
         """Section divider slides should not trigger density guard."""
         from pipeline.agents.html_design_agent import HTMLDesignAgent
         agent = HTMLDesignAgent.__new__(HTMLDesignAgent)
+        agent._degradation_log = []
         sparse_html = _make_html(_p_elements(2))
         slide_data = {"slide_type": "section_divider", "page_number": 1}
         result = agent._enforce_density_guard(sparse_html, slide_data, {}, 10)
@@ -93,6 +94,7 @@ class TestDensityGuardIntegration:
         """Sparse content slide should be replaced by dense fallback."""
         from pipeline.agents.html_design_agent import HTMLDesignAgent
         agent = HTMLDesignAgent.__new__(HTMLDesignAgent)
+        agent._degradation_log = []
         sparse_html = _make_html(_p_elements(3))
         slide_data = {
             "slide_type": "content",
@@ -122,6 +124,7 @@ class TestDensityGuardIntegration:
         """Dense content slide should pass through unchanged."""
         from pipeline.agents.html_design_agent import HTMLDesignAgent
         agent = HTMLDesignAgent.__new__(HTMLDesignAgent)
+        agent._degradation_log = []
         dense_html = _make_html(_p_elements(12))
         slide_data = {"slide_type": "content", "page_number": 1}
         result = agent._enforce_density_guard(dense_html, slide_data, {}, 10)

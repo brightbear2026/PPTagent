@@ -100,6 +100,15 @@ class HTMLDesignAgent:
         self.template_picker = TemplatePicker()
         self.special_pages = SpecialPageBuilder()
         self.fallback = FallbackBuilder()
+        self._degradation_log: List[Dict] = []
+
+    def _log_degradation(self, page: int, reason: str, fallback: str, layout: str = ""):
+        self._degradation_log.append({
+            "page": page,
+            "reason": reason,
+            "fallback": fallback,
+            "layout": layout,
+        })
 
     def run(self, context: Dict[str, Any]) -> Dict:
         from models.slide_spec import (
@@ -256,6 +265,7 @@ class HTMLDesignAgent:
             "chart_count": chart_count,
             "diagram_count": sum(1 for sd in slides_data if sd.get("diagram_spec")),
             "render_errors": errors,
+            "degradation_log": self._degradation_log,
         }
 
         logger.info(
@@ -294,6 +304,7 @@ class HTMLDesignAgent:
             from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp, detect_exact_duplicate as _ed
             if _dp(html) or _ed(html):
                 logger.warning("Slide %d: no-LLM fallback dup-prefix — minimal safe HTML", slide_index)
+                self._log_degradation(slide_index + 1, "dup_or_exact_dup", "minimal_safe")
                 return _minimal_safe_html(slide_data, theme_colors, slide_index + 1, total_slides)
             return html
 
@@ -313,6 +324,7 @@ class HTMLDesignAgent:
                         "Slide %d: registry layout '%s' produced dup-prefix — degrading to text_only: %s",
                         slide_index, hint, dup_err,
                     )
+                    self._log_degradation(slide_index + 1, "registry_dup_prefix", "heuristic", hint)
                     return self.fallback.heuristic_template_html(
                         slide_index, slide_data, theme_colors, total_slides,
                     )
@@ -425,6 +437,7 @@ class HTMLDesignAgent:
                         logger.warning("Slide %d: retry parse failed, using fallback", slide_index)
 
                 # Fallback to heuristic template
+                self._log_degradation(slide_index + 1, "llm_dup_retry_exhausted", "heuristic")
                 return self.fallback.heuristic_template_html(
                     slide_index, slide_data, theme_colors, total_slides,
                 )
@@ -460,6 +473,7 @@ class HTMLDesignAgent:
                     "Slide %d: heuristic fallback dup-prefix — returning minimal safe HTML: %s",
                     slide_index, dup,
                 )
+                self._log_degradation(slide_index + 1, "heuristic_dup_prefix", "minimal_safe")
                 return _minimal_safe_html(slide_data, theme_colors, slide_index + 1, total_slides)
             return html
 
@@ -481,6 +495,7 @@ class HTMLDesignAgent:
                 "Slide %d density violation: %s. Forcing dense fallback.",
                 slide_data.get("page_number"), err,
             )
+            self._log_degradation(slide_data.get("page_number", 0), "sparse_layout", "dense_fallback")
             return _force_dense_fallback(slide_data, theme_colors, total_slides)
 
         err = detect_placeholder_char(html)
@@ -489,6 +504,7 @@ class HTMLDesignAgent:
                 "Slide %d placeholder char violation: %s.",
                 slide_data.get("page_number"), err,
             )
+            self._log_degradation(slide_data.get("page_number", 0), "placeholder_char", "dense_fallback")
             return _force_dense_fallback(slide_data, theme_colors, total_slides)
 
         return html

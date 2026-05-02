@@ -47,6 +47,7 @@ def test_registry_path_degrades_on_dup_prefix():
     from pipeline.agents.html_design_agent import HTMLDesignAgent
 
     agent = HTMLDesignAgent.__new__(HTMLDesignAgent)
+    agent._degradation_log = []
     agent.fallback = MagicMock()
     agent.fallback.heuristic_template_html.return_value = CLEAN_HTML
     agent.special_pages = MagicMock()
@@ -80,6 +81,7 @@ def test_heuristic_fallback_degrades_on_dup_prefix():
     from pipeline.agents.html_design_agent import HTMLDesignAgent
 
     agent = HTMLDesignAgent.__new__(HTMLDesignAgent)
+    agent._degradation_log = []
     agent.fallback = MagicMock()
     agent.fallback.heuristic_template_html.return_value = DUP_PREFIX_HTML
     agent.special_pages = MagicMock()
@@ -108,6 +110,7 @@ def test_structural_slides_bypass_check():
     from pipeline.agents.html_design_agent import HTMLDesignAgent
 
     agent = HTMLDesignAgent.__new__(HTMLDesignAgent)
+    agent._degradation_log = []
     agent.special_pages = MagicMock()
     agent.special_pages.cover_slide_html.return_value = "<html>Cover</html>"
     agent.special_pages.section_divider_html.return_value = "<html>Section</html>"
