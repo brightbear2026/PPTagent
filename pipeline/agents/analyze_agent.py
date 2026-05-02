@@ -229,7 +229,18 @@ class AnalyzeAgent(StructuredLLMAgent):
         result = self._enrich_with_code_metrics(result, raw)
 
         # Chunk document for PlanAgent retrieval
-        result["chunks"] = self._chunk_document(raw.get("source_pages", []))
+        source_pages = raw.get("source_pages", [])
+        if not source_pages:
+            # Fallback: chunk from _raw_text when source_pages is empty (e.g. DOCX)
+            raw_text = raw.get("_raw_text", "")
+            if raw_text:
+                section_size = 2000
+                source_pages = [
+                    {"title": f"段落{i+1}", "content": raw_text[i:i+section_size]}
+                    for i in range(0, len(raw_text), section_size)
+                    if raw_text[i:i+section_size].strip()
+                ]
+        result["chunks"] = self._chunk_document(source_pages)
 
         report(29, "策略分析完成")
         return result

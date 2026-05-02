@@ -230,6 +230,8 @@ class PlanAgent:
 
         # Rule-based verify + one-shot fix
         raw_text_len = sum(len(p.get("content", "")) for p in raw.get("source_pages", []))
+        if raw_text_len == 0:
+            raw_text_len = len(raw.get("_raw_text", ""))
         issues = self._verify_plan(plan_data, chunks, framework_arc, raw_text_len)
         if issues and self.MAX_VERIFY_RETRIES > 0:
             logger.warning("[PlanAgent] 验证发现问题，尝试LLM修复: %s", issues)
@@ -283,6 +285,8 @@ class PlanAgent:
         # Compute hard target from document length
         raw_pages = raw.get("source_pages", [])
         raw_text_len = sum(len(p.get("content", "")) for p in raw_pages)
+        if raw_text_len == 0:
+            raw_text_len = len(raw.get("_raw_text", ""))
         min_slides, max_slides = self._compute_target_slides(raw_text_len, len(chunks))
         hard_constraint = (
             f"（硬性要求：内容页数必须在 {min_slides}-{max_slides} 页之间，"
@@ -291,6 +295,16 @@ class PlanAgent:
 
         # 章节结构（source_pages 摘要）
         source_pages = raw.get("source_pages", [])
+        if not source_pages:
+            # Fallback: split _raw_text into pseudo-sections for LLM context
+            raw_text = raw.get("_raw_text", "")
+            if raw_text:
+                section_size = 2000
+                source_pages = [
+                    {"title": f"段落{i+1}", "content": raw_text[i:i+section_size]}
+                    for i in range(0, len(raw_text), section_size)
+                    if raw_text[i:i+section_size].strip()
+                ]
         section_lines = []
         for i, sp in enumerate(source_pages[:40]):
             sec_title = sp.get("title", "")
@@ -774,4 +788,13 @@ class PlanAgent:
     def _build_chunks_from_raw(raw: Dict) -> List[Dict]:
         from pipeline.agents.analyze_agent import AnalyzeAgent
         source_pages = raw.get("source_pages", [])
+        if not source_pages:
+            raw_text = raw.get("_raw_text", "")
+            if raw_text:
+                section_size = 2000
+                source_pages = [
+                    {"title": f"段落{i+1}", "content": raw_text[i:i+section_size]}
+                    for i in range(0, len(raw_text), section_size)
+                    if raw_text[i:i+section_size].strip()
+                ]
         return AnalyzeAgent._chunk_document(source_pages)
