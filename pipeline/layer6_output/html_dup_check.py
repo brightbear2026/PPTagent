@@ -4,6 +4,7 @@ When LLM fills the same takeaway into multiple slots (e.g. headline + body),
 one slot truncates to fit width and becomes a strict prefix of the other.
 This module detects that pattern post-LLM, before commit to render.
 """
+import re
 from typing import Optional
 from bs4 import BeautifulSoup
 
@@ -47,4 +48,34 @@ def detect_dup_prefix(
                     f"per slot, or use a stat_highlight visual_block "
                     f"with separate title/value/description fields."
                 )
+    return None
+
+
+def detect_exact_duplicate(html: str, min_len: int = 20) -> Optional[str]:
+    """Return error message if any two identical text nodes ≥ min_len chars.
+
+    Normalizes text by stripping whitespace and punctuation before comparison.
+    Catches cases where LLM fills the exact same text into two slots (e.g. P4/P6
+    in v8 both had identical 80-char takeaway text).
+
+    Returns:
+        None if clean. Error string if duplicate found.
+    """
+    texts = [t.strip() for t in BeautifulSoup(html, "html.parser").stripped_strings]
+
+    def _normalize(s: str) -> str:
+        return re.sub(r'\s+', '', s)
+
+    normalized = [(t, _normalize(t)) for t in texts if len(t) >= min_len]
+
+    seen: dict[str, str] = {}
+    for original, norm in normalized:
+        if norm in seen:
+            return (
+                f"Detected exact duplicate text: '{original[:60]}' appears "
+                f"at least twice on this slide. Each text slot must contain "
+                f"distinct content — do not repeat the same takeaway or "
+                f"takeaway_message in multiple positions."
+            )
+        seen[norm] = original
     return None

@@ -145,6 +145,8 @@ class HTMLDesignAgent:
 
         def _design_one_slide(idx, sd):
             """Design a single slide (thread-safe). Returns (idx, html, chart_data)."""
+            # Override page_number to ensure sequential 1-based numbering
+            sd["page_number"] = idx + 1
             if report_progress:
                 pct = int(70 + (idx / max(total, 1)) * 15)
                 report_progress(pct, f"正在设计第 {idx+1}/{total} 页...")
@@ -289,8 +291,8 @@ class HTMLDesignAgent:
 
         if self.llm is None:
             html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
-            from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
-            if _dp(html):
+            from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp, detect_exact_duplicate as _ed
+            if _dp(html) or _ed(html):
                 logger.warning("Slide %d: no-LLM fallback dup-prefix — minimal safe HTML", slide_index)
                 return _minimal_safe_html(slide_data, theme_colors, slide_index + 1, total_slides)
             return html
@@ -304,8 +306,8 @@ class HTMLDesignAgent:
                 content = layout.from_slide_data(slide_data)
                 html = layout.build_html(content, theme_colors, slide_index + 1, total_slides)
                 # Dup-prefix guard: registry HTML is deterministic — degrade if bad
-                from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
-                dup_err = _dp(html)
+                from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp, detect_exact_duplicate as _ed
+                dup_err = _dp(html) or _ed(html)
                 if dup_err:
                     logger.error(
                         "Slide %d: registry layout '%s' produced dup-prefix — degrading to text_only: %s",
@@ -381,8 +383,8 @@ class HTMLDesignAgent:
             )
 
             # Dup-prefix check: detect if LLM filled same text into two slots
-            from pipeline.layer6_output.html_dup_check import detect_dup_prefix
-            dup_err = detect_dup_prefix(html)
+            from pipeline.layer6_output.html_dup_check import detect_dup_prefix, detect_exact_duplicate
+            dup_err = detect_dup_prefix(html) or detect_exact_duplicate(html)
             if dup_err:
                 logger.warning(
                     "Slide %d: dup-prefix detected, retrying once: %s",
@@ -416,7 +418,7 @@ class HTMLDesignAgent:
                                 theme_colors=theme_colors,
                                 page_number=slide_index + 1, total_slides=total_slides,
                             )
-                            if not detect_dup_prefix(retry_html):
+                            if not detect_dup_prefix(retry_html) and not detect_exact_duplicate(retry_html):
                                 return retry_html
                             logger.warning("Slide %d: retry still has dup-prefix, using fallback", slide_index)
                     except Exception:
@@ -451,8 +453,8 @@ class HTMLDesignAgent:
                 )
             html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
             # Dup-prefix check even on heuristic fallback — degrade if detected
-            from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp
-            dup = _dp(html)
+            from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp, detect_exact_duplicate as _ed
+            dup = _dp(html) or _ed(html)
             if dup:
                 logger.warning(
                     "Slide %d: heuristic fallback dup-prefix — returning minimal safe HTML: %s",
@@ -582,7 +584,7 @@ class HTMLDesignAgent:
             return html
 
         # Dup-prefix check on final output (after all fixes applied)
-        from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp_check
+        from pipeline.layer6_output.html_dup_check import detect_dup_prefix as _dp_check, detect_exact_duplicate as _ed_check
 
         logger.warning(
             "Slide %d: inspect errors (lint=%d, render=%d): %s",
@@ -657,7 +659,7 @@ class HTMLDesignAgent:
                         orig_ph = _re.search(r'<div class="placeholder"[^>]*>.*?</div>', html, _re.DOTALL)
                         if orig_ph:
                             fixed_html = fixed_html.replace('</body>', orig_ph.group(0) + '</body>')
-                    dup = _dp_check(fixed_html)
+                    dup = _dp_check(fixed_html) or _ed_check(fixed_html)
                     if dup:
                         logger.warning("Slide %d: LLM fix has dup-prefix: %s", slide_index, dup)
                     return fixed_html
@@ -673,7 +675,7 @@ class HTMLDesignAgent:
         # 4. Fix failed or no LLM — use heuristic template fallback
         logger.info("Slide %d: falling back to heuristic template", slide_index)
         html = self.fallback.heuristic_template_html(slide_index, slide_data, theme_colors, total_slides)
-        dup = _dp_check(html)
+        dup = _dp_check(html) or _ed_check(html)
         if dup:
             logger.warning("Slide %d: heuristic fallback has dup-prefix: %s", slide_index, dup)
         return html

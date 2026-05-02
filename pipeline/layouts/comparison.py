@@ -47,9 +47,13 @@ class ComparisonLayout:
         title_escaped = _html.escape(content.title)
 
         def _bullets(items):
+            n_items = len(items) or 1
+            col_h = 720 - 149 - 24 - 16  # 531px
+            per_h = max(48, col_h // n_items)
             return "\n".join(
                 f'<p style="font-size:13px; color:{text_color}; line-height:1.45; '
-                f'margin:0 0 6px 0;">- {_html.escape(b)}</p>'
+                f'margin:0; height:{per_h}px; display:flex; align-items:center;">'
+                f'- {_html.escape(b)}</p>'
                 for b in items
             )
 

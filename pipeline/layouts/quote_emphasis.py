@@ -54,11 +54,15 @@ class QuoteEmphasisLayout:
         footer = f"P{page_number} / {total_slides}"
 
         bullets_html = ""
+        n_sub = len(content.sub_bullets[:5]) or 1
+        bullet_container_h = 720 - 264 - 24 - 20  # 412px
+        per_bullet_h = max(48, bullet_container_h // n_sub)
         for b in content.sub_bullets[:5]:
             bullets_html += (
                 f'<p style="font-size:13px; color:{text_color}; line-height:1.5; '
-                f'margin:0 0 8px 16px; padding-left:12px; '
-                f'border-left:2px solid {primary};">'
+                f'margin:0; padding-left:12px; '
+                f'border-left:2px solid {primary}; '
+                f'height:{per_bullet_h}px; display:flex; align-items:center;">'
                 f'{_html.escape(b)}</p>\n'
             )
 
@@ -91,7 +95,7 @@ class QuoteEmphasisLayout:
             f'line-height:1.55; overflow:hidden;">{quote_escaped}</p>\n'
             '</div>\n'
             '\n'
-            f'<div style="position:absolute; left:53px; top:264px; width:1173px; height:400px; '
+            f'<div style="position:absolute; left:53px; top:264px; width:1173px; height:{bullet_container_h}px; '
             'overflow:hidden;">\n'
             f'{bullets_html}'
             '</div>\n'

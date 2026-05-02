@@ -58,6 +58,7 @@ class NarrativeLayout:
 
         n = len(content.phases) or 1
         phase_w = min(240, 1067 // max(n, 1))
+        card_h = 720 - 227 - 24 - 20  # 449px — fill available vertical space
         total_w = phase_w * n + 27 * (n - 1)
         start_x = (1173 - total_w) // 2 + 53
 
@@ -84,7 +85,7 @@ class NarrativeLayout:
             # Card below
             phases_html += (
                 f'<div style="position:absolute; left:{x}px; top:227px; width:{phase_w}px; '
-                f'height:240px; background-color:{bg}; border-radius:4px; padding:13px; '
+                f'height:{card_h}px; background-color:{bg}; border-radius:4px; padding:13px; '
                 f'overflow:hidden;">\n'
                 f'  <p style="font-size:13px; color:{primary}; font-weight:bold; '
                 f'margin:0 0 6px 0;">{_html.escape(ph.title)}</p>\n'

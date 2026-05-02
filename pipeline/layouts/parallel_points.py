@@ -46,11 +46,15 @@ class ParallelPointsLayout:
         content_w = 1173
 
         bullets_html = ""
+        n = len(content.bullets) or 1
+        container_h = 560  # 720 - header(101) - footer(24) - margin(35)
+        per_bullet_h = max(48, container_h // n)
         for b in content.bullets:
             bullets_html += (
                 f'<p style="font-size:13px; color:{text_color}; line-height:1.5; '
-                f'margin:0 0 8px 0; padding-left:14px; '
-                f'border-left:3px solid {primary};">'
+                f'margin:0; padding-left:14px; '
+                f'border-left:3px solid {primary}; '
+                f'height:{per_bullet_h}px; display:flex; align-items:center;">'
                 f'{_html.escape(b)}</p>\n'
             )
 
