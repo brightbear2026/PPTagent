@@ -353,6 +353,7 @@ class ChartRenderer:
         slides_data: list,
         output_path: str,
         theme=None,
+        render_errors: Optional[list] = None,
     ) -> str:
         """
         Inject native charts into an existing .pptx at placeholder positions.
@@ -366,6 +367,7 @@ class ChartRenderer:
             slides_data: Per-slide chart specs: [{"chart_spec": ChartSpec dict, "theme": VisualTheme}]
             output_path: Where to save the final .pptx
             theme: Default VisualTheme if per-slide theme is None
+            render_errors: [{"slide_index": int, ...}] from Node.js for dropped slides
 
         Returns:
             output_path
@@ -375,6 +377,23 @@ class ChartRenderer:
         from pptx.chart.data import CategoryChartData
 
         prs = Presentation(pptx_path)
+
+        # Build file_index → PPTX slide index mapping
+        failed_file_indices = set()
+        if render_errors:
+            for err in render_errors:
+                idx = err.get("slide_index", -1)
+                if idx >= 0:
+                    failed_file_indices.add(idx)
+
+        file_to_pptx = {}
+        offset = 0
+        total = max(len(slides_data), max(failed_file_indices, default=-1) + 1)
+        for i in range(total):
+            if i in failed_file_indices:
+                offset += 1
+                continue
+            file_to_pptx[i] = i - offset
 
         # Map ChartType to python-pptx XL_CHART_TYPE
         _CHART_TYPE_MAP = {
@@ -388,10 +407,16 @@ class ChartRenderer:
 
         for ph_entry in placeholders:
             slide_idx = ph_entry.get("slide_index", 0)
-            if slide_idx >= len(prs.slides) or slide_idx >= len(slides_data):
+            if slide_idx not in file_to_pptx:
+                logger.warning("Skipping placeholder for dropped slide (file index=%d)", slide_idx)
                 continue
 
-            slide = prs.slides[slide_idx]
+            pptx_idx = file_to_pptx[slide_idx]
+            if pptx_idx >= len(prs.slides):
+                logger.warning("PPTX index %d out of range (total slides=%d)", pptx_idx, len(prs.slides))
+                continue
+
+            slide = prs.slides[pptx_idx]
             data = slides_data[slide_idx] if slide_idx < len(slides_data) else {}
 
             # Skip chart injection on structural slides (H3)
@@ -495,16 +520,7 @@ class ChartRenderer:
             if chart_spec.so_what:
                 annotation_text = ''.join(c for c in chart_spec.so_what[:30] if c.isprintable() or c == ' ')
             else:
-                # Auto-generate: "+47% 同比" style label
-                if len(values) >= 2:
-                    prev = values[peak_idx - 1] if peak_idx > 0 else values[-1]
-                    if prev and prev != 0:
-                        pct = (peak_val - prev) / abs(prev) * 100
-                        annotation_text = f"{cat_label}: {peak_val:g} ({pct:+.0f}%)"
-                    else:
-                        annotation_text = f"{cat_label}: {peak_val:g}"
-                else:
-                    annotation_text = f"{cat_label}: {peak_val:g}"
+                annotation_text = f"{cat_label}: {peak_val:g}"
 
             if len(annotation_text) > 40:
                 annotation_text = annotation_text[:37] + "..."

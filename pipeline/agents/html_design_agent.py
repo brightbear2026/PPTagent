@@ -212,7 +212,8 @@ class HTMLDesignAgent:
             from pipeline.layer6_output.chart_renderer import ChartRenderer
             chart_renderer = ChartRenderer()
             chart_renderer.render_into_pptx(
-                intermediate_path, placeholders, chart_slides_data, output_path
+                intermediate_path, placeholders, chart_slides_data, output_path,
+                render_errors=render_result.get("errors", []),
             )
             chart_count = sum(len(p.get("items", [])) for p in placeholders)
         else:
