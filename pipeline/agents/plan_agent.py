@@ -689,6 +689,8 @@ class PlanAgent:
                     "section": chapter_title,
                     "page_weight": "transition",
                     "section_summary": section_summaries.get(sec_name, ""),
+                    "subtitle_cn": section_summaries.get(sec_name, ""),
+                    "subtitle_en": "",
                 })
                 # Update content slides' section to match the canonical form so
                 # downstream consumers (agenda lookup, etc.) see one source of truth

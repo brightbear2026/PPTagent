@@ -125,12 +125,29 @@ class SpecialPageBuilder:
         task: Dict,
         sec_num: int,
     ) -> str:
-        """Fixed section-divider slide — dark primary background with chapter number and title."""
+        """Fixed section-divider slide — dark primary background with chapter number, title, and bilingual subtitles."""
         primary = theme_colors.get("primary", "#003D6E")
         accent = theme_colors.get("accent", "#FF6B35")
         sec_name = slide_data.get("title") or slide_data.get("takeaway_message", "")
+        subtitle_cn = slide_data.get("subtitle_cn", "")
+        subtitle_en = slide_data.get("subtitle_en", "")
         cn_nums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
         cn_num = cn_nums[sec_num - 1] if 1 <= sec_num <= len(cn_nums) else str(sec_num)
+
+        # Optional subtitle layers (rendered only when present)
+        subtitle_html = ""
+        top_offset = 345
+        if subtitle_cn:
+            subtitle_html += (
+                f'<p style="position:absolute; left:107px; top:{top_offset}px;'
+                f' width:1000px; font-size:14px; color:#AECCE0; line-height:1.5;">{subtitle_cn}</p>'
+            )
+            top_offset += 28
+        if subtitle_en:
+            subtitle_html += (
+                f'<p style="position:absolute; left:107px; top:{top_offset}px;'
+                f' width:1000px; font-size:12px; color:#7FA8C9; font-style:italic; line-height:1.4;">{subtitle_en}</p>'
+            )
 
         return f"""<!DOCTYPE html>
 <html>
@@ -142,6 +159,6 @@ class SpecialPageBuilder:
 <p style="position:absolute; left:107px; top:224px; font-size:13px; color:{accent}; font-weight:600; letter-spacing:4px;">第 {cn_num} 章</p>
 <div style="position:absolute; left:107px; top:267px; width:640px; height:2px; background-color:{accent};"></div>
 <h1 style="position:absolute; left:107px; top:291px; width:1067px; font-size:30px; color:#FFFFFF; font-weight:bold; line-height:1.5;">{sec_name}</h1>
-
+{subtitle_html}
 </body>
 </html>"""
