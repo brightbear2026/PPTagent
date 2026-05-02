@@ -168,9 +168,10 @@ class AnalyzeAgent(StructuredLLMAgent):
             errors.append("key_messages 不能为空")
 
         # 非致命字段：缺失时填入合理默认值，不触发重试
-        if not strategy.get("recommended_page_range"):
-            strategy["recommended_page_range"] = "12-16页"
-            logger.warning("[AnalyzeAgent] recommended_page_range 缺失，使用默认值 '12-16页'")
+        # Override recommended_page_range with formula (document-length based, not LLM guess)
+        raw = getattr(self, "_context", {}).get("raw_content", {})
+        raw_text_len = sum(len(p.get("content", "")) for p in raw.get("source_pages", []))
+        strategy["recommended_page_range"] = self._compute_page_range(raw_text_len)
         if not strategy.get("recommended_structure"):
             strategy["recommended_structure"] = "开篇→背景→分析→结论→建议"
             logger.warning("[AnalyzeAgent] recommended_structure 缺失，使用默认值")
@@ -260,6 +261,28 @@ class AnalyzeAgent(StructuredLLMAgent):
                 ).hexdigest()[:8]
                 chunks.append({"id": chunk_id, "section": section, "text": chunk_text})
         return chunks
+
+    @staticmethod
+    def _compute_page_range(raw_text_len: int) -> str:
+        """Formula-based page range from document length.
+
+        Target: ~1200-1800 source chars per slide (after funnel losses,
+        each slide should carry 300-800 content chars).
+        """
+        if raw_text_len < 3000:
+            return "6-8页"
+        elif raw_text_len < 8000:
+            return "8-12页"
+        elif raw_text_len < 15000:
+            return "12-18页"
+        elif raw_text_len < 30000:
+            return "16-24页"
+        elif raw_text_len < 50000:
+            return "22-32页"
+        else:
+            lo = max(24, raw_text_len // 1800)
+            hi = max(32, raw_text_len // 1000)
+            return f"{lo}-{hi}页"
 
     # ------------------------------------------------------------------
     # 工具函数实现

@@ -124,6 +124,8 @@ bullet 和 chart_suggestion 中的数字**严禁自相矛盾**：
 
 ### 其他约束
 - text_blocks 必须包含 1 个 heading
+- text_blocks 总数必须 ≥ 4 条（content/data/diagram 页），不足则从材料中拆分更细粒度的论点
+- text_blocks 中所有 bullet 的总字数必须 ≥ 300 字，低于此值说明信息密度不够，需要补充具体数据和论据
 - bullet 内容必须来自原文材料，禁止编造
 - chart_type 必须是用户消息中"可用图表类型"列出的值之一
 - 输出单个 JSON 对象（不是数组），完整且有效

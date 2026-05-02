@@ -229,7 +229,8 @@ class PlanAgent:
         plan_data = self._parse_plan_json(raw_output)
 
         # Rule-based verify + one-shot fix
-        issues = self._verify_plan(plan_data, chunks, framework_arc)
+        raw_text_len = sum(len(p.get("content", "")) for p in raw.get("source_pages", []))
+        issues = self._verify_plan(plan_data, chunks, framework_arc, raw_text_len)
         if issues and self.MAX_VERIFY_RETRIES > 0:
             logger.warning("[PlanAgent] 验证发现问题，尝试LLM修复: %s", issues)
             plan_data = self._fix_plan(messages, plan_data, issues, chunks)
@@ -279,6 +280,15 @@ class PlanAgent:
         key_messages = strategy.get("key_messages", [])
         page_range = strategy.get("recommended_page_range", "12-18页")
 
+        # Compute hard target from document length
+        raw_pages = raw.get("source_pages", [])
+        raw_text_len = sum(len(p.get("content", "")) for p in raw_pages)
+        min_slides, max_slides = self._compute_target_slides(raw_text_len, len(chunks))
+        hard_constraint = (
+            f"（硬性要求：内容页数必须在 {min_slides}-{max_slides} 页之间，"
+            f"文档共{raw_text_len}字，每页承载约{raw_text_len // max(min_slides, 1)}字论点）"
+        )
+
         # 章节结构（source_pages 摘要）
         source_pages = raw.get("source_pages", [])
         section_lines = []
@@ -315,7 +325,7 @@ class PlanAgent:
 - **PPT标题**: {title}
 - **目标受众**: {target_audience}
 - **汇报场景**: {scenario or "通用汇报"}{arc_note}
-- **推荐页数**: {page_range}
+- **推荐页数**: {page_range}{hard_constraint}
 - **语言**: {"中文" if language == "zh" else "English"}
 
 ## 文档分析结论
@@ -341,19 +351,26 @@ class PlanAgent:
 - 每个 content/data 页的 takeaway_message 必须是含动词的完整句子
 - 幻灯片顺序是论证逻辑，不是文档章节顺序
 - supporting_hint 填写上方章节列表中的具体章节名
-- chunk_ids 从上方"文档 Chunk 参考"中选取相关 id，title/agenda 页留空列表"""
+- chunk_ids 从上方"文档 Chunk 参考"中选取相关 id，title/agenda 页留空列表
+- **页数硬性要求**: 输出 {min_slides}-{max_slides} 页（含 title/section_divider），每章至少 2 页内容"""
 
     # ------------------------------------------------------------------
     # Chunk 采样（按 section 均匀采样，避免长文档截断）
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _sample_chunks(chunks: List[Dict], max_per_section: int = 8) -> List[Dict]:
-        """按 section 均匀采样 chunks，每 section 最多 max_per_section 个。"""
+    def _sample_chunks(chunks: List[Dict], max_per_section: int = 0) -> List[Dict]:
+        """按 section 均匀采样 chunks。max_per_section defaults to ceil(total/sections)
+        so LLM sees proportionally more chunks for larger documents."""
         from collections import defaultdict
+        import math
         section_buckets: dict = defaultdict(list)
         for c in chunks:
             section_buckets[c.get("section", "_default")].append(c)
+
+        if max_per_section <= 0:
+            n_sections = max(1, len(section_buckets))
+            max_per_section = max(12, math.ceil(len(chunks) / n_sections))
 
         sampled = []
         for sec_chunks in section_buckets.values():
@@ -388,12 +405,39 @@ class PlanAgent:
     # 验证
     # ------------------------------------------------------------------
 
-    def _verify_plan(self, plan: Dict, chunks: List[Dict], framework_arc: str = "scqa") -> List[str]:
+    @staticmethod
+    def _compute_target_slides(raw_text_len: int, chunks_count: int) -> tuple[int, int]:
+        """Compute (min_slides, max_slides) from document size.
+
+        Formula: ~1200-1800 source chars per slide target.
+        """
+        if raw_text_len < 3000:
+            return (6, 8)
+        elif raw_text_len < 8000:
+            return (8, 12)
+        elif raw_text_len < 15000:
+            return (12, 18)
+        elif raw_text_len < 30000:
+            return (16, 24)
+        elif raw_text_len < 50000:
+            return (22, 32)
+        else:
+            lo = max(24, raw_text_len // 1800)
+            hi = max(32, raw_text_len // 1000)
+            return (lo, hi)
+
+    def _verify_plan(self, plan: Dict, chunks: List[Dict], framework_arc: str = "scqa",
+                     raw_text_len: int = 0) -> List[str]:
         issues = []
         slides = plan.get("slides", [])
 
-        if len(slides) < 4:
-            issues.append(f"幻灯片数量过少（{len(slides)}页），至少需要4页")
+        # Hard minimum from document length
+        min_slides, max_slides = self._compute_target_slides(raw_text_len, len(chunks))
+        if len(slides) < min_slides:
+            issues.append(
+                f"幻灯片数量不足（{len(slides)}页），文档约{raw_text_len}字至少需要{min_slides}页。"
+                f"请拆分论点、增加章节深度，使页数达到 {min_slides}-{max_slides} 页。"
+            )
 
         if not any(s.get("slide_type") == "title" for s in slides):
             issues.append("缺少封面页（slide_type=title），请在第1页添加封面")

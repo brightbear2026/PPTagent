@@ -32,6 +32,16 @@ from models.schema_adapter import (
 from models.slide_spec import NarrativeRole, PrimaryVisualType, SlideType
 
 
+def _min_text_blocks():
+    """Minimal text_blocks satisfying min_length=4 and density>=300 for content slides."""
+    return [
+        {"type": "heading", "text": "综合分析报告：技术架构优化与市场表现的全面评估总结与深度分析"},
+        {"type": "bullet", "text": "微服务架构改造完成后系统整体响应性能实现显著提升，核心接口平均响应时间从原先的八百毫秒大幅缩减至两百毫秒以内，P99尾延迟指标改善幅度达到百分之七十五以上，建议在下一阶段将此优化方案推广至全业务线", "level": 1},
+        {"type": "bullet", "text": "华东区域市场份额连续三个季度保持稳步增长态势，从百分之十八提升至百分之二十四，成功超越主要竞争对手成为该区域市场排名第二的参与者，该增长趋势与渠道下沉策略和本地化运营投入密切相关联", "level": 1},
+        {"type": "bullet", "text": "平台用户留存率和付费转化率双双创下历史最高纪录，月活跃用户规模突破一百二十万大关，充分验证了产品核心功能迭代升级与精细化用户运营双轮驱动策略的有效性与长期可持续发展潜力", "level": 1},
+    ]
+
+
 # ---------------------------------------------------------------------------
 # ContentSlideSchema — infer primary_visual
 # ---------------------------------------------------------------------------
@@ -52,6 +62,7 @@ class TestInferPrimaryVisual:
             page_number=1,
             primary_visual="",
             chart_suggestion={"chart_type": "bar", "series": [{"values": [1, 2]}]},
+            text_blocks=_min_text_blocks(),
         )
         assert s.primary_visual == PrimaryVisualType.CHART
 
@@ -60,11 +71,12 @@ class TestInferPrimaryVisual:
             page_number=1,
             primary_visual="text",
             diagram_spec={"diagram_type": "process_flow"},
+            text_blocks=_min_text_blocks(),
         )
         assert s.primary_visual == PrimaryVisualType.DIAGRAM
 
     def test_no_visual_infers_text_only(self):
-        s = ContentSlideSchema(page_number=1)
+        s = ContentSlideSchema(page_number=1, text_blocks=_min_text_blocks())
         assert s.primary_visual == PrimaryVisualType.TEXT_ONLY
 
     def test_explicit_pv_not_overridden(self):
@@ -72,6 +84,7 @@ class TestInferPrimaryVisual:
             page_number=1,
             primary_visual="chart",
             chart_suggestion={"chart_type": "bar", "series": [{"values": [1, 2]}]},
+            text_blocks=_min_text_blocks(),
         )
         assert s.primary_visual == PrimaryVisualType.CHART
 
@@ -87,6 +100,7 @@ class TestVisualContentPresent:
             page_number=1,
             primary_visual="chart",
             chart_suggestion={"chart_type": "bar", "series": [{"values": [10, 20]}]},
+            text_blocks=_min_text_blocks(),
         )
 
     def test_chart_with_labels_passes(self):
@@ -94,6 +108,7 @@ class TestVisualContentPresent:
             page_number=1,
             primary_visual="chart",
             chart_suggestion={"chart_type": "pie", "categories": ["A", "B"]},
+            text_blocks=_min_text_blocks(),
         )
 
     def test_chart_no_data_rejected(self):
@@ -125,6 +140,7 @@ class TestVisualContentPresent:
             page_number=1,
             primary_visual="diagram",
             diagram_spec={"diagram_type": "process_flow"},
+            text_blocks=_min_text_blocks(),
         )
 
     def test_vblock_no_type_rejected(self):
@@ -148,6 +164,7 @@ class TestVisualContentPresent:
             page_number=1,
             primary_visual="visual_block",
             visual_block={"type": "kpi_cards", "items": [{"title": "Revenue", "value": "$1B"}]},
+            text_blocks=_min_text_blocks(),
         )
 
 
@@ -158,7 +175,7 @@ class TestVisualContentPresent:
 
 class TestMutualExclusion:
     def test_text_only_with_no_visuals_passes(self):
-        ContentSlideSchema(page_number=1, primary_visual="text_only")
+        ContentSlideSchema(page_number=1, primary_visual="text_only", text_blocks=_min_text_blocks())
 
     def test_chart_with_diagram_rejected(self):
         with pytest.raises(ValidationError, match="chart.*diagram"):
@@ -191,6 +208,7 @@ class TestMutualExclusion:
             page_number=1,
             primary_visual="chart",
             chart_suggestion={"chart_type": "bar", "series": [{"values": [1]}]},
+            text_blocks=_min_text_blocks(),
         )
 
 
@@ -213,13 +231,14 @@ class TestDegradeToTextOnly:
         assert result.chart_suggestion is None
         assert result.diagram_spec is None
         assert result.visual_block is None
-        assert len(result.text_blocks) == 1
-        assert result.is_failed is False
+        # Padded to min_length=4 in fallback path
+        assert len(result.text_blocks) == 4
+        assert result.text_blocks[0]["text"] == "Revenue hit $1B"
 
     def test_error_message_cleared(self):
         raw = {"page_number": 2, "error_message": "some error"}
         result = degrade_to_text_only(raw)
-        assert result.error_message == ""
+        assert result.error_message == "degraded_from_schema_violation"
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +252,7 @@ class TestMakePlaceholder:
         assert p.is_failed is True
         assert p.error_message == "content_generation_failed"
         assert p.primary_visual == PrimaryVisualType.TEXT_ONLY
-        assert len(p.text_blocks) == 2
+        assert len(p.text_blocks) == 4
 
     def test_minimal(self):
         p = make_placeholder(page_number=5)
@@ -249,7 +268,7 @@ class TestMakePlaceholder:
 class TestParseResult:
     def test_ok_result(self):
         pr = ParseResult(
-            schema=ContentSlideSchema(page_number=1),
+            schema=ContentSlideSchema(page_number=1, text_blocks=_min_text_blocks()),
             error_kind="ok",
         )
         assert pr.error_kind == "ok"
@@ -278,7 +297,9 @@ class TestParseResult:
 
 class TestParseSlide:
     def test_valid_json(self):
-        json_text = '```json\n{"text_blocks": [{"text": "hello"}], "page_number": 1}\n```'
+        import json as _json
+        data = {"text_blocks": _min_text_blocks(), "page_number": 1}
+        json_text = f'```json\n{_json.dumps(data, ensure_ascii=False)}\n```'
         pr = parse_slide(json_text, 1)
         assert pr.error_kind == "ok"
         assert pr.schema.page_number == 1
@@ -330,16 +351,16 @@ class TestOutlineItemSchema:
 class TestContentResultSchema:
     def test_total_pages(self):
         r = ContentResultSchema(slides=[
-            ContentSlideSchema(page_number=1),
-            ContentSlideSchema(page_number=2),
+            ContentSlideSchema(page_number=1, text_blocks=_min_text_blocks()),
+            ContentSlideSchema(page_number=2, text_blocks=_min_text_blocks()),
         ])
         assert r.total_pages == 2
 
     def test_failed_pages(self):
         r = ContentResultSchema(slides=[
-            ContentSlideSchema(page_number=1, is_failed=True),
-            ContentSlideSchema(page_number=2),
-            ContentSlideSchema(page_number=3, is_failed=True),
+            ContentSlideSchema(page_number=1, is_failed=True, text_blocks=_min_text_blocks()),
+            ContentSlideSchema(page_number=2, text_blocks=_min_text_blocks()),
+            ContentSlideSchema(page_number=3, is_failed=True, text_blocks=_min_text_blocks()),
         ])
         assert r.failed_pages == [1, 3]
 
@@ -360,7 +381,7 @@ class TestRoundTrip:
             "page_number": 1,
             "slide_type": "content",
             "takeaway_message": "Revenue grew 20%",
-            "text_blocks": [{"type": "bullet", "text": "Revenue hit $1B"}],
+            "text_blocks": _min_text_blocks(),
             "primary_visual": "text_only",
         }
         schema = ContentSlideSchema.model_validate(data)
@@ -368,7 +389,7 @@ class TestRoundTrip:
         assert dumped["page_number"] == 1
         assert dumped["primary_visual"] == "text_only"
         assert dumped["slide_type"] == "content"
-        assert len(dumped["text_blocks"]) == 1
+        assert len(dumped["text_blocks"]) == 4
 
     def test_content_result_round_trip_via_adapter(self):
         slides = [
@@ -376,8 +397,9 @@ class TestRoundTrip:
                 page_number=1,
                 primary_visual="chart",
                 chart_suggestion={"chart_type": "bar", "series": [{"values": [10, 20]}]},
+                text_blocks=_min_text_blocks(),
             ),
-            ContentSlideSchema(page_number=2),
+            ContentSlideSchema(page_number=2, text_blocks=_min_text_blocks()),
         ]
         result = ContentResultSchema(slides=slides)
         dumped = content_schema_to_dict(result)
@@ -393,7 +415,7 @@ class TestRoundTrip:
 
 class TestEnumSerialization:
     def test_slide_type_enum_in_json(self):
-        s = ContentSlideSchema(page_number=1, slide_type="title")
+        s = ContentSlideSchema(page_number=1, slide_type="title", text_blocks=_min_text_blocks())
         dumped = s.model_dump(mode="json")
         assert dumped["slide_type"] == "title"
         assert isinstance(dumped["slide_type"], str)
@@ -409,6 +431,7 @@ class TestEnumSerialization:
             page_number=1,
             primary_visual="chart",
             chart_suggestion={"chart_type": "bar", "series": [{"values": [1]}]},
+            text_blocks=_min_text_blocks(),
         )
         dumped = s.model_dump(mode="json")
         assert dumped["primary_visual"] == "chart"
@@ -453,7 +476,7 @@ class TestPageWeightEnum:
 
     @pytest.mark.parametrize("pw", ["hero", "pillar", "supporting", "transition"])
     def test_content_slide_accepts_all_weights(self, pw):
-        slide = ContentSlideSchema(page_number=1, page_weight=pw)
+        slide = ContentSlideSchema(page_number=1, page_weight=pw, text_blocks=_min_text_blocks())
         assert slide.page_weight == pw
 
     def test_invalid_page_weight_rejected(self):
@@ -485,6 +508,8 @@ class TestBulletLengthCap:
                 text_blocks=[
                     {"type": "heading", "content": "标题"},
                     {"type": "bullet", "content": "X" * 121, "level": 1},
+                    {"type": "bullet", "content": "Y" * 50, "level": 1},
+                    {"type": "bullet", "content": "Z" * 50, "level": 1},
                 ],
             )
 
@@ -494,24 +519,32 @@ class TestBulletLengthCap:
             text_blocks=[
                 {"type": "heading", "content": "标题"},
                 {"type": "bullet", "content": "X" * 120, "level": 1},
+                {"type": "bullet", "content": "Y" * 90, "level": 1},
+                {"type": "bullet", "content": "Z" * 90, "level": 1},
             ],
         )
-        assert len(slide.text_blocks) == 2
+        assert len(slide.text_blocks) == 4
 
     def test_heading_not_capped(self):
         slide = ContentSlideSchema(
             page_number=1,
             text_blocks=[
                 {"type": "heading", "content": "X" * 200},
+                {"type": "bullet", "content": "Y" * 40, "level": 0},
+                {"type": "bullet", "content": "Z" * 40, "level": 0},
+                {"type": "bullet", "content": "W" * 40, "level": 0},
             ],
         )
-        assert len(slide.text_blocks) == 1
+        assert len(slide.text_blocks) == 4
 
     def test_level_zero_not_capped(self):
         slide = ContentSlideSchema(
             page_number=1,
             text_blocks=[
                 {"type": "bullet", "content": "X" * 200, "level": 0},
+                {"type": "bullet", "content": "Y" * 40, "level": 0},
+                {"type": "bullet", "content": "Z" * 40, "level": 0},
+                {"type": "bullet", "content": "W" * 40, "level": 0},
             ],
         )
-        assert len(slide.text_blocks) == 1
+        assert len(slide.text_blocks) == 4

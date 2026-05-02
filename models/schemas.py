@@ -2,12 +2,13 @@
 Pydantic schema contracts for pipeline stage boundaries.
 
 Each agent's output is validated against these schemas before being passed downstream.
-Five guarantees on ContentSlideSchema:
+Six guarantees on ContentSlideSchema:
   1. infer_primary_visual — LLM often omits primary_visual; infer from actual visual fields
   2. enforce_visual_content_present — chart must have series/data, diagram must have type, vblock must have type+items
   3. enforce_visual_mutual_exclusion — only one of chart_suggestion/diagram_spec/visual_block may be non-null
   4. enforce_bullet_length_cap — Chinese text bullets ≤120 chars
   5. enforce_chart_data_traceability — chart numbers must appear in source text (H4)
+  6. enforce_content_density — content slides must have ≥4 text_blocks and ≥300 chars total (H7)
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ class ContentSlideSchema(BaseModel):
     slide_type: SlideType = SlideType.CONTENT
     takeaway_message: str = ""
     primary_visual: PrimaryVisualType = PrimaryVisualType.TEXT_ONLY
-    text_blocks: list[dict] = Field(default_factory=list)
+    text_blocks: list[dict] = Field(default_factory=list, min_length=4)
     chart_suggestion: Optional[dict] = None
     diagram_spec: Optional[dict] = None
     visual_block: Optional[dict] = None
@@ -134,6 +135,27 @@ class ContentSlideSchema(BaseModel):
             raise ValueError(
                 f"P{self.page_number}: {len(overlong)} bullet(s) exceed 120 chars "
                 f"(lengths: {overlong}). Max 120 chars per bullet. Rewrite shorter."
+            )
+        return self
+
+    # -- Guarantee 6: content density (H7: ≥300 chars total) --
+
+    @model_validator(mode="after")
+    def enforce_content_density(self):
+        if self.slide_type in ("title", "section_divider", "agenda"):
+            return self
+        if self.is_failed:
+            return self
+        total_chars = 0
+        for tb in self.text_blocks:
+            if not isinstance(tb, dict):
+                continue
+            content = tb.get("content", tb.get("text", ""))
+            total_chars += len(content)
+        if total_chars < 300:
+            raise ValueError(
+                f"P{self.page_number}: content density too low ({total_chars} chars, need ≥300). "
+                f"Add more text_blocks or expand existing ones with specific data/examples."
             )
         return self
 

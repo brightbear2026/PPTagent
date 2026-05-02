@@ -42,13 +42,18 @@ def degrade_to_text_only(raw_data: dict) -> ContentSlideSchema:
     try:
         return ContentSlideSchema.model_validate(cleaned)
     except ValidationError:
-        # Last resort: strip down to bare minimum
+        # Last resort: strip down to bare minimum with structural blocks
+        blocks = raw_data.get("text_blocks", [])
+        while len(blocks) < 4:
+            blocks.append({"type": "bullet", "text": "", "level": 0})
         return ContentSlideSchema(
             page_number=raw_data.get("page_number", 0),
             slide_type=raw_data.get("slide_type", "content"),
             takeaway_message=raw_data.get("takeaway_message", ""),
-            text_blocks=raw_data.get("text_blocks", []),
+            text_blocks=blocks,
             primary_visual=PrimaryVisualType.TEXT_ONLY,
+            is_failed=True,
+            error_message="degraded_from_schema_violation",
         )
 
 
@@ -67,6 +72,8 @@ def make_placeholder(
         text_blocks=[
             {"type": "heading", "text": title or takeaway[:30]},
             {"type": "bullet", "text": takeaway, "level": 1},
+            {"type": "bullet", "text": "", "level": 0},
+            {"type": "bullet", "text": "", "level": 0},
         ],
         is_failed=True,
         error_message="content_generation_failed",

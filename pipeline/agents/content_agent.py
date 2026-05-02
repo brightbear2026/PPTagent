@@ -80,10 +80,17 @@ class ContentAgent(StructuredLLMAgent):
         for slide in all_slides:
             if slide.get("slide_type") in _STRUCTURAL_TYPES:
                 pn = slide.get("page_number", 0)
+                minimal_blocks = [
+                    {"type": "heading", "text": slide.get("title", slide.get("takeaway_message", ""))},
+                    {"type": "bullet", "text": "", "level": 0},
+                    {"type": "bullet", "text": "", "level": 0},
+                    {"type": "bullet", "text": "", "level": 0},
+                ]
                 self._page_contents[pn] = ContentSlideSchema(
                     page_number=pn,
                     slide_type=slide.get("slide_type", "content"),
                     primary_visual=PrimaryVisualType.TEXT_ONLY,
+                    text_blocks=minimal_blocks,
                 )
 
         llm_slide_count = sum(1 for s in all_slides if s.get("slide_type") not in _STRUCTURAL_TYPES)
@@ -410,7 +417,7 @@ class ContentAgent(StructuredLLMAgent):
         if w == "hero":
             return (
                 "\n⚠️ 这是全篇核心论点页（hero）。\n"
-                "text_blocks 最多2条支撑论据（不含数字本身）。\n"
+                "text_blocks 至少4条（1 heading + 3 bullet），每条含具体数据支撑核心论点。\n"
                 "必须填写 visual_block（type=stat_highlight），包含一个震撼数字。\n"
                 "示例：{\"type\":\"stat_highlight\",\"items\":[{\"title\":\"市场规模\",\"value\":\"1254亿元\",\"description\":\"2024年六大行金融科技投入合计\"}]}"
             )
