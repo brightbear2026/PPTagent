@@ -35,6 +35,7 @@
 | H3 | 0 处 chart 误注入扉页/封面/目录页 | `chart_renderer` 检查 `slide_type ∉ {section_divider, agenda, title}` |
 | H4 | 图表数据可溯源：图中所有百分比 / 大数字能在源文档 chunk 里找到（容忍 ±5%） | ContentAgent schema validator 强制 |
 | H5 | 章节扉页 + 目录的章节名与正文章节标题字符串完全一致 | 已由 `_to_outline_result._strip_chapter_prefix` 保证 |
+| H6 | Content slide 必须 ≥ 8 visible elements（slide_type ∈ {title, agenda, section_divider} 豁免），且不含禁止占位符 | parse pptx 检查 shape count + placeholder char scan |
 
 ### Soft requirements（≥95%）
 
@@ -99,6 +100,23 @@
 - 章节核心论断（1 句话副标题）
 - 可选：大数字 / 关键引言 / 主题图
 
+### 3.5 明确禁止的 layout 风格
+
+B2B 售前 deck 永远不允许出现的页面形态：
+
+**禁止 1: hero_splash 风格**
+- 特征：≤5 shapes / 中央巨型字符（fs ≥ 48pt）/ 仅 1-2 行文字
+- 已删除模板：slide_templates.py 的 "hero_splash"
+- 替代：page_weight=hero 强制 demote 到 framework_grid / parallel_points
+
+**禁止 2: 单引言 quote 风格（稀疏）**
+- 特征：仅 1 个引言 + 0-1 条副文，整页文字 < 100 字
+- 处理：quote_emphasis 必须含 ≥3 sub_bullets（schema min_length=3）
+
+**禁止 3: 任何中央装饰符号占位**
+- 特征：<>、◇、□、—、N/A 等占位字符以大字号（fs ≥ 24pt）渲染
+- 处理：所有 layout 的"无数据"分支必须隐藏整个元素，不允许显示占位符
+
 ---
 
 ## 四、必备 Layout 清单
@@ -130,6 +148,7 @@ LLM 多花一点没关系，但失败时要**优雅降级**而非崩溃。
 | 3 次 retry 仍失败 | 降级到 text_only layout，记录到 task metadata 的 warnings 数组 |
 | 图表数据无法溯源 | 加标签 "基于行业平均估算" 或 "估算值，待校对"，**不删图表** |
 | 单页 build_html 命中 dup-prefix detector | 重试 1 次；仍命中 → 降级 text_only |
+| Layout 命中"明确禁止"风格（H6 失败 / shape < 8 / 含禁止占位符） | 直接降级 framework_grid（text_blocks 转 grid items），记 ERROR 日志 |
 | Chart 误判要注入到 section_divider | 直接跳过注入，不报错 |
 | 整个 deck 失败率 > 30% | 整个任务标 failed，但已生成的部分保留供用户参考 |
 
@@ -238,8 +257,9 @@ LLM 多花一点没关系，但失败时要**优雅降级**而非崩溃。
 
 提交 PR 前自查：
 
-- [ ] 改动是否对 Hard requirements (H1-H5) 有正向影响？哪一条？
+- [ ] 改动是否对 Hard requirements (H1-H6) 有正向影响？哪一条？
 - [ ] 改动是否引入新的 Hard requirement 风险？跑了 fallback 测试？
+- [ ] 改动是否违反 §3.5 禁止 layout 列表？
 - [ ] 改动是否符合"内容密度高 + 信息密集"方向，而非 MBB 极简？
 - [ ] 改动是否在 v4 audit 表里有对应 fix？哪一项？
 - [ ] 改动有对应单测吗？测试 fixture 是否覆盖 fallback path？
