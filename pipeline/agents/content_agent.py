@@ -468,7 +468,18 @@ class ContentAgent(StructuredLLMAgent):
         # 材料注入：chart 页优先注入表格；非 chart 页在数据相关时也注入
         material_text = ""
         table_injected = False
-        if shared["tables"]:
+
+        # R31: Check for table-type chunks bound to this slide
+        table_chunk_prebuilt = self._prebuilt_chart_from_table_chunks(slide, shared)
+        if table_chunk_prebuilt:
+            material_text = (
+                f"\n## 直接可用的 chart_suggestion（从源文档表格生成，100%真实数据）\n"
+                f"```json\n{json.dumps(table_chunk_prebuilt, ensure_ascii=False, indent=2)}\n```\n"
+                f"请直接使用上述 chart_suggestion 作为你的输出。你可以补充 so_what 注释字段，"
+                f"但 categories、series.values 必须原样保留，禁止修改任何数字。\n"
+            )
+            table_injected = True
+        elif shared["tables"]:
             chart_data = self._find_chart_table(slide, shared["tables"])
             if chart_data:
                 material_text = f"\n## 数据表格（直接使用，禁止编造数字）\n{chart_data}\n"
@@ -652,6 +663,63 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
     # ------------------------------------------------------------------
     # 材料匹配（静态，线程安全）
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _prebuilt_chart_from_table_chunks(slide: Dict, shared: Dict) -> Optional[Dict]:
+        """R31: Build chart_suggestion directly from table-type chunks bound to this slide.
+        Returns None if no table chunks or primary_visual is not chart."""
+        if slide.get("primary_visual") != "chart":
+            return None
+        bound_ids = set(slide.get("chunk_ids", []))
+        if not bound_ids:
+            return None
+        chunks = shared.get("chunks", [])
+        table_chunks = [c for c in chunks if c.get("id") in bound_ids and c.get("type") == "table"]
+        if not table_chunks:
+            return None
+        tc = table_chunks[0]
+        table_data = tc.get("table_data")
+        if not table_data or not table_data.get("headers") or not table_data.get("rows"):
+            return None
+        headers = table_data["headers"]
+        rows = table_data["rows"]
+        if len(headers) < 2 or not rows:
+            return None
+
+        # Build chart spec from table
+        import re
+        def _parse_num(v):
+            if isinstance(v, (int, float)):
+                return float(v)
+            s = str(v).strip().replace(",", "").replace("%", "").replace("亿", "e8").replace("万", "e4")
+            try:
+                return float(re.sub(r"[^\d.\-eE]", "", s))
+            except (ValueError, TypeError):
+                return None
+
+        categories = [str(r[0])[:20] for r in rows if r]
+        series_list = []
+        for col_idx in range(1, len(headers)):
+            name = str(headers[col_idx])[:20]
+            values = []
+            for r in rows:
+                if col_idx < len(r):
+                    values.append(_parse_num(r[col_idx]))
+                else:
+                    values.append(None)
+            if any(v is not None for v in values):
+                series_list.append({"name": name, "values": values})
+
+        if not series_list or not categories:
+            return None
+
+        chart_type = "column" if len(categories) <= 8 else "line"
+        return {
+            "chart_type": chart_type,
+            "categories": categories,
+            "series": series_list,
+            "source_table_id": tc.get("id", ""),
+        }
 
     @staticmethod
     def _get_slide_context(slide: Dict, shared: Dict) -> str:
