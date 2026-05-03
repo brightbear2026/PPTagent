@@ -67,6 +67,7 @@ export interface OutlineItem {
   data_source: string;
   narrative_arc?: string;   // "opening" | "context" | "evidence" | "solution" | "recommendation" | "closing"
   section?: string;
+  framework_phase?: string; // e.g. "situation", "complication" — set by PlanAgent
 }
 
 export interface OutlineResult {
@@ -75,6 +76,7 @@ export interface OutlineResult {
   data_gap_suggestions: string[];
   scqa?: Record<string, string>;
   root_claim?: string;
+  framework_chapter_map?: Record<string, string>; // framework key → chapter list label
 }
 
 // ── 内容 ──

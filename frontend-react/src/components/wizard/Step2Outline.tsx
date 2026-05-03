@@ -224,7 +224,14 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
                 const isLast = key === nonEmptyKeys[nonEmptyKeys.length - 1];
                 return (
                   <div key={key}>
-                    <Text style={{ fontSize: 11, color: '#8C8C8C' }}>{STRUCTURE_KEY_LABELS[key] || key}</Text>
+                    <Text style={{ fontSize: 11, color: '#8C8C8C' }}>
+                      {STRUCTURE_KEY_LABELS[key] || key}
+                      {outline.framework_chapter_map?.[key] && (
+                        <span style={{ marginLeft: 6, color: '#48A9E6', fontSize: 11 }}>
+                          ({outline.framework_chapter_map[key]})
+                        </span>
+                      )}
+                    </Text>
                     <div style={{
                       fontSize: 13,
                       color: isLast ? '#003D6E' : '#262626',
@@ -265,6 +272,11 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
                       第{secIndex + 1}章
                     </span>
                     {item.title || item.takeaway_message}
+                    {item.framework_phase && (
+                      <Tag size="small" color="blue" style={{ marginLeft: 4, fontSize: 11 }}>
+                        {STRUCTURE_KEY_LABELS[item.framework_phase] || item.framework_phase}
+                      </Tag>
+                    )}
                     <span style={{ color: '#8B9DAF', fontWeight: 400, marginLeft: 'auto', fontSize: 12 }}>
                       P{item.page_number} – P{endPage}
                     </span>
