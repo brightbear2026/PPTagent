@@ -112,7 +112,7 @@ FRAMEWORK_STRUCTURES: Dict[str, dict] = {
 NARRATIVE_ARC_TO_FRAMEWORK_KEY: Dict[str, Dict[str, str]] = {
     "scqa": {
         "opening": "situation", "context": "complication",
-        "evidence": "question", "solution": "answer",
+        "evidence": "complication", "solution": "answer",
         "recommendation": "answer", "closing": "answer",
     },
     "scr": {
@@ -670,7 +670,8 @@ class PlanAgent:
     ) -> Dict[str, str]:
         """Compute which framework phase each chapter belongs to.
 
-        Returns {"situation": "第一章", "complication": "第二到三章", ...}
+        Returns {"situation": "第一章", "complication": "第二章, 第三章", ...}
+        Discrete chapter list, no synthetic ranges.
         """
         from collections import Counter
 
@@ -705,36 +706,39 @@ class PlanAgent:
             return {}
 
         # Determine dominant framework key per chapter
+        # Tie-break: first non-opening arc wins
         chapter_fw_keys: list = []
         for idx, arcs in chapters:
-            fw_key_counts = Counter()
+            fw_key_counts: Dict[str, int] = {}
+            first_non_opening = ""
             for arc in arcs:
                 fw_key = arc_map.get(arc, "")
                 if fw_key:
-                    fw_key_counts[fw_key] += 1
-            dominant_key = fw_key_counts.most_common(1)[0][0] if fw_key_counts else ""
+                    fw_key_counts[fw_key] = fw_key_counts.get(fw_key, 0) + 1
+                    if not first_non_opening and arc != "opening":
+                        first_non_opening = fw_key
+            if not fw_key_counts:
+                chapter_fw_keys.append((idx, ""))
+                continue
+            max_count = max(fw_key_counts.values())
+            top_keys = [k for k, v in fw_key_counts.items() if v == max_count]
+            if len(top_keys) == 1:
+                dominant_key = top_keys[0]
+            else:
+                # Tie: prefer first non-opening
+                dominant_key = first_non_opening if first_non_opening in top_keys else top_keys[0]
             chapter_fw_keys.append((idx, dominant_key))
 
-        # Group consecutive chapters by framework key, build range labels
+        # Build discrete chapter list per framework key
         result_map: Dict[str, str] = {}
-        i = 0
-        while i < len(chapter_fw_keys):
-            idx, fw_key = chapter_fw_keys[i]
+        for idx, fw_key in chapter_fw_keys:
             if not fw_key:
-                i += 1
                 continue
-            start_idx = idx
-            end_idx = idx
-            while i + 1 < len(chapter_fw_keys) and chapter_fw_keys[i + 1][1] == fw_key:
-                i += 1
-                end_idx = chapter_fw_keys[i][0]
-            label = (
-                f"第{_chapter_label(start_idx)}到{_chapter_label(end_idx)}章"
-                if start_idx != end_idx
-                else f"第{_chapter_label(start_idx)}章"
-            )
-            result_map[fw_key] = label
-            i += 1
+            label = f"第{_chapter_label(idx)}章"
+            if fw_key in result_map:
+                result_map[fw_key] += f", {label}"
+            else:
+                result_map[fw_key] = label
 
         return result_map
 
@@ -1007,12 +1011,48 @@ class PlanAgent:
             content_items[-1]["narrative_arc"] = "closing"
             content_items[-1]["layout_hint"] = "call_to_action"
 
+        # R36: Compute framework→chapter mapping and annotate section_dividers
+        framework_chapter_map = self._compute_framework_chapter_map(slides, arc)
+        if arc and framework_chapter_map:
+            from collections import Counter
+            arc_mapping = NARRATIVE_ARC_TO_FRAMEWORK_KEY.get(arc, {})
+            ch_idx = 0
+            for i, s in enumerate(slides):
+                if s.get("slide_type") != "section_divider":
+                    continue
+                ch_idx += 1
+                chapter_arcs: list = []
+                for j in range(i + 1, len(slides)):
+                    if slides[j].get("slide_type") == "section_divider":
+                        break
+                    if slides[j].get("slide_type") not in ("title", "agenda"):
+                        na = slides[j].get("narrative_arc", "evidence")
+                        if na in ("analysis", "comparison", "counterpoint", "problem_statement"):
+                            na = "evidence"
+                        chapter_arcs.append(na)
+                if chapter_arcs and arc_mapping:
+                    fw_key_counts: Dict[str, int] = {}
+                    first_non_opening = ""
+                    for a in chapter_arcs:
+                        fk = arc_mapping.get(a, "")
+                        if fk:
+                            fw_key_counts[fk] = fw_key_counts.get(fk, 0) + 1
+                            if not first_non_opening and a != "opening":
+                                first_non_opening = fk
+                    if fw_key_counts:
+                        max_c = max(fw_key_counts.values())
+                        top = [k for k, v in fw_key_counts.items() if v == max_c]
+                        s["framework_phase"] = (
+                            first_non_opening if first_non_opening in top else top[0]
+                        ) if len(top) > 1 else top[0]
+
         result = {
             "narrative_logic": narrative_logic,
             "scqa": scqa,
             "root_claim": root_claim,
             "items": slides,
             "data_gap_suggestions": [],
+            "framework_chapter_map": framework_chapter_map,
         }
 
         # Schema validation
