@@ -568,6 +568,62 @@ class PlanAgent:
                 item["page_weight"] = "pillar"
         return result
 
+    def _ensure_chunk_coverage(self, result: Dict, chunks: List[Dict]) -> Dict:
+        """R25: Ensure all chunks are referenced by at least one slide.
+        Uncovered chunks get expansion slides appended."""
+        items = result.get("items", [])
+        covered = set()
+        for item in items:
+            covered.update(item.get("chunk_ids", []))
+
+        all_ids = {c["id"] for c in chunks if c.get("id")}
+        uncovered = all_ids - covered
+
+        if not uncovered:
+            return result
+
+        chunks_by_id = {c["id"]: c for c in chunks if c.get("id")}
+        # Find the last section_divider's section for placement
+        last_section = ""
+        for item in reversed(items):
+            if item.get("slide_type") == "section_divider" and item.get("section"):
+                last_section = item["section"]
+                break
+
+        added = 0
+        for cid in uncovered:
+            chunk = chunks_by_id.get(cid)
+            if not chunk:
+                continue
+            text = chunk.get("text", "")
+            section = chunk.get("section", chunk.get("heading_path", [""])[-1] if chunk.get("heading_path") else "")
+            tm = text[:80] if text else f"补充内容 {added + 1}"
+            new_slide = {
+                "page_number": len(items) + added + 1,
+                "slide_type": "content",
+                "title": tm,
+                "takeaway_message": tm,
+                "supporting_hint": "",
+                "data_source": "",
+                "primary_visual": "text_only",
+                "narrative_arc": "evidence",
+                "section": section or last_section,
+                "layout_hint": "",
+                "page_weight": "supporting",
+                "chunk_ids": [cid],
+            }
+            items.append(new_slide)
+            added += 1
+
+        if added:
+            logger.info("[PlanAgent] R25: added %d expansion slides for uncovered chunks", added)
+            # Renumber all pages
+            for i, item in enumerate(items, 1):
+                item["page_number"] = i
+            result["items"] = items
+
+        return result
+
     # ------------------------------------------------------------------
     # 转换为 OutlineResult 兼容格式
     # ------------------------------------------------------------------
@@ -745,6 +801,10 @@ class PlanAgent:
         if schema_errors:
             logger.warning("[PlanAgent] outline schema violations: %s", schema_errors)
             result = self._fix_schema_errors(result, schema_errors)
+
+        # R25: Ensure all chunks are covered by at least one slide
+        if chunks:
+            result = self._ensure_chunk_coverage(result, chunks)
 
         return result
 
