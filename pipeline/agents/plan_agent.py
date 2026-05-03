@@ -200,6 +200,7 @@ class PlanAgent:
         )
 
         system_msg = self._build_system_prompt(framework_desc, framework_arc)
+        actual_structure = analysis.get("actual_structure", "")
         user_msg = self._build_user_prompt(
             title=title,
             scenario=scenario,
@@ -209,6 +210,7 @@ class PlanAgent:
             chunks=chunks,
             raw=raw,
             framework_arc=framework_arc,
+            actual_structure=actual_structure,
         )
 
         messages = [
@@ -279,6 +281,7 @@ class PlanAgent:
         chunks: List[Dict],
         raw: Dict,
         framework_arc: str,
+        actual_structure: str = "",
     ) -> str:
         strategy = analysis.get("strategy", {})
         doc_summary = strategy.get("document_summary", "")
@@ -337,12 +340,27 @@ class PlanAgent:
 
         arc_note = f"\n**指定叙事框架**: {framework_arc}（narrative_arc 字段必须使用此值）" if framework_arc else ""
 
+        # R34: Adaptive structure constraint based on actual document structure
+        structure_note = ""
+        if actual_structure == "report":
+            structure_note = (
+                "\n**文档结构提示**: 源文档是标准报告结构（≥4个一级标题）。"
+                "请保留源文档的章节划分作为section字段值，"
+                "不要合并或重新发明章节名称。框架（SCQA/SCR）用于组织论证逻辑，"
+                "但section名必须与源文档标题对应。"
+            )
+        elif actual_structure == "comparative":
+            structure_note = (
+                "\n**文档结构提示**: 源文档包含多个数据表格，适合对比分析框架。"
+                "请充分利用表格数据，为关键数据表格分配chart类型幻灯片。"
+            )
+
         return f"""请为以下材料生成PPT大纲。
 
 ## 任务信息
 - **PPT标题**: {title}
 - **目标受众**: {target_audience}
-- **汇报场景**: {scenario or "通用汇报"}{arc_note}
+- **汇报场景**: {scenario or "通用汇报"}{arc_note}{structure_note}
 - **推荐页数**: {page_range}{hard_constraint}
 - **语言**: {"中文" if language == "zh" else "English"}
 

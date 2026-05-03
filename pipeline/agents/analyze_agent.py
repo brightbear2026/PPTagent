@@ -228,6 +228,9 @@ class AnalyzeAgent(StructuredLLMAgent):
         raw = context.get("raw_content", {})
         result = self._enrich_with_code_metrics(result, raw)
 
+        # R34: Infer actual document structure for PlanAgent adaptive framework
+        result["actual_structure"] = self._infer_actual_structure(raw)
+
         # Chunk document for PlanAgent retrieval
         # R30: Use structured_blocks for typed chunks when available
         structured_blocks = raw.get("structured_blocks", [])
@@ -557,6 +560,27 @@ class AnalyzeAgent(StructuredLLMAgent):
             logger.warning(f"代码指标计算失败（非致命）: {e}")
 
         return result
+
+    @staticmethod
+    def _infer_actual_structure(raw: Dict) -> str:
+        """R34: Infer document structure type from raw_content metadata.
+
+        Returns one of: "report", "comparative", "narrative", "tutorial".
+        """
+        headings = raw.get("headings", [])
+        h1_count = sum(1 for h in headings if isinstance(h, dict) and h.get("level") == 1)
+        tables = raw.get("_tables", raw.get("tables", []))
+        n_tables = len(tables) if tables else 0
+        blocks = raw.get("structured_blocks", [])
+        n_images = sum(1 for b in blocks if isinstance(b, dict) and b.get("type") == "image")
+
+        if h1_count >= 4:
+            return "report"
+        if n_tables > 3:
+            return "comparative"
+        if n_images >= 3 or h1_count <= 1:
+            return "narrative"
+        return "tutorial"
 
     @staticmethod
     def _analyze_table_code(table) -> tuple:
