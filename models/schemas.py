@@ -129,12 +129,12 @@ class ContentSlideSchema(BaseModel):
                 continue
             content = tb.get("content", tb.get("text", ""))
             level = tb.get("level", 0)
-            if level > 0 and len(content) > 120:
+            if level > 0 and len(content) > 150:
                 overlong.append(len(content))
         if overlong:
             raise ValueError(
-                f"P{self.page_number}: {len(overlong)} bullet(s) exceed 120 chars "
-                f"(lengths: {overlong}). Max 120 chars per bullet. Rewrite shorter."
+                f"P{self.page_number}: {len(overlong)} bullet(s) exceed 150 chars "
+                f"(lengths: {overlong}). Max 150 chars per bullet. Rewrite shorter."
             )
         return self
 

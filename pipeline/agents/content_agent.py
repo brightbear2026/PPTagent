@@ -621,7 +621,7 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
         last_parse: Optional[ParseResult] = None
         chunk_text = self._get_slide_context(slide, shared)
 
-        for attempt in range(3):
+        for attempt in range(4):
             try:
                 response = self.llm.chat(
                     messages=messages,
