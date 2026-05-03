@@ -237,7 +237,11 @@ class PlanAgent:
             logger.warning("[PlanAgent] 验证发现问题，尝试LLM修复: %s", issues)
             plan_data = self._fix_plan(messages, plan_data, issues, chunks)
 
-        return self._to_outline_result(plan_data, scenario, framework_desc, chunks)
+        # Extract source headings for R33 chapter name anchoring
+        raw_headings = raw.get("headings", [])
+        h1_texts = [h["text"] for h in raw_headings if isinstance(h, dict) and h.get("level") == 1] if raw_headings else []
+
+        return self._to_outline_result(plan_data, scenario, framework_desc, chunks, h1_texts)
 
     # ------------------------------------------------------------------
     # Prompt 构建
@@ -568,6 +572,46 @@ class PlanAgent:
                 item["page_weight"] = "pillar"
         return result
 
+    @staticmethod
+    def _anchor_chapter_names(slides: list, source_h1_texts: list) -> None:
+        """R33: Replace LLM-invented section names with closest source H1 heading.
+
+        Uses difflib fuzzy matching. Only replaces when similarity > 0.5.
+        Mutates slides in-place.
+        """
+        from difflib import SequenceMatcher
+
+        def _best_match(name: str, candidates: list) -> str:
+            best, best_score = "", 0.0
+            for c in candidates:
+                score = SequenceMatcher(None, name, c).ratio()
+                if score > best_score:
+                    best, best_score = c, score
+            return best if best_score > 0.5 else name
+
+        # Collect unique LLM section names
+        llm_sections = set()
+        for s in slides:
+            sec = s.get("section", "").strip()
+            if sec and s.get("slide_type") not in ("title", "agenda"):
+                llm_sections.add(sec)
+
+        if not llm_sections or not source_h1_texts:
+            return
+
+        # Build mapping: llm_name → anchored_name
+        mapping = {}
+        for sec in llm_sections:
+            anchored = _best_match(sec, source_h1_texts)
+            if anchored != sec:
+                mapping[sec] = anchored
+
+        # Apply mapping to all slides
+        for s in slides:
+            sec = s.get("section", "").strip()
+            if sec in mapping:
+                s["section"] = mapping[sec]
+
     def _ensure_chunk_coverage(self, result: Dict, chunks: List[Dict]) -> Dict:
         """R25: Ensure all chunks are referenced by at least one slide.
         Uncovered chunks get expansion slides appended."""
@@ -629,7 +673,8 @@ class PlanAgent:
     # ------------------------------------------------------------------
 
     def _to_outline_result(
-        self, plan: Dict, scenario: str, framework_desc: str, chunks: Optional[List[Dict]] = None
+        self, plan: Dict, scenario: str, framework_desc: str,
+        chunks: Optional[List[Dict]] = None, source_h1_texts: Optional[List[str]] = None,
     ) -> Dict:
         slides = plan.get("slides", [])
 
@@ -712,6 +757,10 @@ class PlanAgent:
                 continue
             raw_sec = s.get("section", "").strip()
             s["section"] = _strip_chapter_prefix(raw_sec)
+
+        # R33: Anchor LLM chapter names to source document H1 headings
+        if source_h1_texts:
+            self._anchor_chapter_names(slides, source_h1_texts)
 
         # Collect unique cleaned section names in order of first appearance
         sections_order: list = []
