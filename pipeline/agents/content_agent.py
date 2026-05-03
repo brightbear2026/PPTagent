@@ -491,6 +491,15 @@ class ContentAgent(StructuredLLMAgent):
             elif shared.get("raw_text_fallback"):
                 material_text = f"\n## 原文材料（节选）\n{shared['raw_text_fallback']}\n"
 
+        # R26: Explicit chunk text injection with source binding
+        chunks_source = self._resolve_chunks_source(slide, shared)
+        if chunks_source:
+            material_text += (
+                f"\n\n## 本页绑定的源文档原文（所有数据必须来自此处）\n"
+                f"{chunks_source}\n"
+                f"要求：所有数据、案例、引用必须来自上述原文，不允许编造不存在的数字或案例。"
+            )
+
         # 视觉要求
         has_table_data = bool(table_injected)
         if slide.get("_forbid_charts"):
@@ -720,6 +729,29 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
             "series": series_list,
             "source_table_id": tc.get("id", ""),
         }
+
+    @staticmethod
+    def _resolve_chunks_source(slide: Dict, shared: Dict) -> str:
+        """R26: Resolve bound chunks into explicit source text for LLM prompt."""
+        bound_ids = set(slide.get("chunk_ids", []))
+        if not bound_ids:
+            return ""
+        chunks = shared.get("chunks", [])
+        relevant = [c for c in chunks if c.get("id") in bound_ids]
+        if not relevant:
+            return ""
+        parts = []
+        for c in relevant:
+            cid = c.get("id", "")
+            text = c.get("text", "")
+            ctype = c.get("type", "text")
+            section = c.get("section", "")
+            header = f"[{ctype} chunk {cid}"
+            if section:
+                header += f" · {section}"
+            header += "]"
+            parts.append(f"{header}\n{text}")
+        return "\n\n".join(parts)
 
     @staticmethod
     def _get_slide_context(slide: Dict, shared: Dict) -> str:
