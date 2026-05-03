@@ -756,6 +756,15 @@ class PlanAgent:
         if not uncovered:
             return result
 
+        # Cap expansion slides to prevent runaway (e.g. 300+ chunks all uncovered)
+        MAX_EXPANSION = 20
+        if len(uncovered) > MAX_EXPANSION:
+            logger.warning(
+                "[PlanAgent] R38: %d uncovered chunks, capping expansion to %d",
+                len(uncovered), MAX_EXPANSION,
+            )
+            uncovered = set(sorted(uncovered)[:MAX_EXPANSION])
+
         chunks_by_id = {c["id"]: c for c in chunks if c.get("id")}
 
         # Build: normalized_section_name → insert_index (right before next section_divider)
