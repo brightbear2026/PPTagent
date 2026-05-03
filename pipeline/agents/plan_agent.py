@@ -107,6 +107,41 @@ FRAMEWORK_STRUCTURES: Dict[str, dict] = {
     },
 }
 
+# Maps narrative_arc values → framework structure keys per framework type.
+# Used to determine which framework phase each chapter belongs to.
+NARRATIVE_ARC_TO_FRAMEWORK_KEY: Dict[str, Dict[str, str]] = {
+    "scqa": {
+        "opening": "situation", "context": "complication",
+        "evidence": "question", "solution": "answer",
+        "recommendation": "answer", "closing": "answer",
+    },
+    "scr": {
+        "opening": "situation", "context": "complication",
+        "evidence": "complication", "solution": "resolution",
+        "recommendation": "resolution", "closing": "resolution",
+    },
+    "aida": {
+        "opening": "attention", "context": "interest",
+        "evidence": "desire", "solution": "action",
+        "recommendation": "action", "closing": "action",
+    },
+    "explanation": {
+        "opening": "objective", "context": "current_state",
+        "evidence": "gap", "solution": "solution",
+        "recommendation": "evaluation", "closing": "evaluation",
+    },
+    "issue_tree": {
+        "opening": "core_question", "context": "decomposition_logic",
+        "evidence": "key_finding", "solution": "key_finding",
+        "recommendation": "key_finding", "closing": "key_finding",
+    },
+    "problem_solution": {
+        "opening": "problem_statement", "context": "problem_statement",
+        "evidence": "problem_statement", "solution": "solution_statement",
+        "recommendation": "solution_statement", "closing": "solution_statement",
+    },
+}
+
 SLIDE_ROLE_TO_NARRATIVE_ARC = {
     "cover":       "opening",
     "opener":      "opening",
@@ -511,10 +546,10 @@ class PlanAgent:
                     f"章节'{sec}'只有 1 页内容，偏薄。"
                     f"建议拆分该章节的论点为 2-3 张幻灯片，或合并到相邻章节。"
                 )
-            elif count >= 8:
+            elif count >= 7:
                 issues.append(
-                    f"章节'{sec}'有 {count} 页，过详。"
-                    f"建议拆分为两个独立章节（每章 4-5 页），或精简至 5-6 页。"
+                    f"章节'{sec}'有 {count} 页，偏多。"
+                    f"建议精简至 3-4 页或拆分为两个独立章节。"
                 )
 
         # Soft warning: check if content slide titles look descriptive (no verb).
@@ -630,9 +665,82 @@ class PlanAgent:
             if sec in mapping:
                 s["section"] = mapping[sec]
 
+    def _compute_framework_chapter_map(
+        self, slides: list, framework_arc: str,
+    ) -> Dict[str, str]:
+        """Compute which framework phase each chapter belongs to.
+
+        Returns {"situation": "第一章", "complication": "第二到三章", ...}
+        """
+        from collections import Counter
+
+        arc_map = NARRATIVE_ARC_TO_FRAMEWORK_KEY.get(framework_arc, {})
+        if not arc_map:
+            return {}
+
+        struct = FRAMEWORK_STRUCTURES.get(framework_arc, {})
+        fw_keys = struct.get("keys", [])
+        if not fw_keys:
+            return {}
+
+        # Collect chapters: (chapter_index_1based, [narrative_arc_values])
+        chapters: list = []
+        current_arcs: list = []
+        current_chapter_idx = 0
+        for s in slides:
+            if s.get("slide_type") == "section_divider":
+                if current_chapter_idx > 0 and current_arcs:
+                    chapters.append((current_chapter_idx, current_arcs))
+                current_chapter_idx += 1
+                current_arcs = []
+            elif s.get("slide_type") not in ("title", "agenda") and current_chapter_idx > 0:
+                arc = s.get("narrative_arc", "evidence")
+                if arc in ("analysis", "comparison", "counterpoint", "problem_statement"):
+                    arc = "evidence"
+                current_arcs.append(arc)
+        if current_chapter_idx > 0 and current_arcs:
+            chapters.append((current_chapter_idx, current_arcs))
+
+        if not chapters:
+            return {}
+
+        # Determine dominant framework key per chapter
+        chapter_fw_keys: list = []
+        for idx, arcs in chapters:
+            fw_key_counts = Counter()
+            for arc in arcs:
+                fw_key = arc_map.get(arc, "")
+                if fw_key:
+                    fw_key_counts[fw_key] += 1
+            dominant_key = fw_key_counts.most_common(1)[0][0] if fw_key_counts else ""
+            chapter_fw_keys.append((idx, dominant_key))
+
+        # Group consecutive chapters by framework key, build range labels
+        result_map: Dict[str, str] = {}
+        i = 0
+        while i < len(chapter_fw_keys):
+            idx, fw_key = chapter_fw_keys[i]
+            if not fw_key:
+                i += 1
+                continue
+            start_idx = idx
+            end_idx = idx
+            while i + 1 < len(chapter_fw_keys) and chapter_fw_keys[i + 1][1] == fw_key:
+                i += 1
+                end_idx = chapter_fw_keys[i][0]
+            label = (
+                f"第{_chapter_label(start_idx)}到{_chapter_label(end_idx)}章"
+                if start_idx != end_idx
+                else f"第{_chapter_label(start_idx)}章"
+            )
+            result_map[fw_key] = label
+            i += 1
+
+        return result_map
+
     def _ensure_chunk_coverage(self, result: Dict, chunks: List[Dict]) -> Dict:
-        """R25: Ensure all chunks are referenced by at least one slide.
-        Uncovered chunks get expansion slides appended."""
+        """R25/R38: Ensure all chunks are referenced by at least one slide.
+        Expansion slides are inserted INTO their chapter's position (not appended at end)."""
         items = result.get("items", [])
         covered = set()
         for item in items:
@@ -645,41 +753,76 @@ class PlanAgent:
             return result
 
         chunks_by_id = {c["id"]: c for c in chunks if c.get("id")}
-        # Find the last section_divider's section for placement
+
+        # Build: normalized_section_name → insert_index (right before next section_divider)
+        divider_indices = [i for i, item in enumerate(items)
+                           if item.get("slide_type") == "section_divider"]
+        section_insert_points: Dict[str, int] = {}
+        for d_idx, item_idx in enumerate(divider_indices):
+            sec = items[item_idx].get("section", "")
+            norm_sec = _strip_chapter_prefix(sec)
+            insert_at = divider_indices[d_idx + 1] if d_idx + 1 < len(divider_indices) else len(items)
+            section_insert_points[norm_sec] = insert_at
+
+        # Fallback: last chapter's section
         last_section = ""
         for item in reversed(items):
             if item.get("slide_type") == "section_divider" and item.get("section"):
-                last_section = item["section"]
+                last_section = _strip_chapter_prefix(item["section"])
                 break
 
-        added = 0
+        # Group expansion slides by section
+        expansion_by_section: Dict[str, list] = {}
         for cid in uncovered:
             chunk = chunks_by_id.get(cid)
             if not chunk:
                 continue
-            text = chunk.get("text", "")
-            section = chunk.get("section", chunk.get("heading_path", [""])[-1] if chunk.get("heading_path") else "")
-            tm = text[:80] if text else f"补充内容 {added + 1}"
-            new_slide = {
-                "page_number": len(items) + added + 1,
-                "slide_type": "content",
-                "title": tm,
-                "takeaway_message": tm,
-                "supporting_hint": "",
-                "data_source": "",
-                "primary_visual": "text_only",
-                "narrative_arc": "evidence",
-                "section": section or last_section,
-                "layout_hint": "",
-                "page_weight": "supporting",
-                "chunk_ids": [cid],
-            }
-            items.append(new_slide)
-            added += 1
+            section = chunk.get("section",
+                                chunk.get("heading_path", [""])[-1]
+                                if chunk.get("heading_path") else "")
+            norm_section = _strip_chapter_prefix(section) or last_section
+            expansion_by_section.setdefault(norm_section, []).append((cid, chunk))
 
-        if added:
-            logger.info("[PlanAgent] R25: added %d expansion slides for uncovered chunks", added)
-            # Renumber all pages
+        # Insert into chapter positions — reverse-order sections & items to keep indices stable
+        total_added = 0
+        for norm_section in sorted(expansion_by_section.keys(),
+                                    key=lambda s: section_insert_points.get(s, len(items))):
+            chunk_list = expansion_by_section[norm_section]
+            insert_at = section_insert_points.get(norm_section, len(items))
+
+            for cid, chunk in reversed(chunk_list):
+                text = chunk.get("text", "")
+                tm = text[:80] if text else f"补充内容 {total_added + 1}"
+                chunk_section = chunk.get("section",
+                                          chunk.get("heading_path", [""])[-1]
+                                          if chunk.get("heading_path") else "")
+                new_slide = {
+                    "page_number": 0,
+                    "slide_type": "content",
+                    "title": tm,
+                    "takeaway_message": tm,
+                    "supporting_hint": "",
+                    "data_source": "",
+                    "primary_visual": "text_only",
+                    "narrative_arc": "evidence",
+                    "section": chunk_section,
+                    "layout_hint": "",
+                    "page_weight": "supporting",
+                    "chunk_ids": [cid],
+                }
+                items.insert(insert_at, new_slide)
+                total_added += 1
+
+        # Fill section from chapter divider for slides that have no section yet
+        current_section = ""
+        for item in items:
+            if item.get("slide_type") == "section_divider":
+                current_section = item.get("section", "")
+            elif item.get("slide_type") == "content" and not item.get("section"):
+                item["section"] = current_section
+
+        if total_added:
+            logger.info("[PlanAgent] R38: inserted %d expansion slides into chapter positions", total_added)
             for i, item in enumerate(items, 1):
                 item["page_number"] = i
             result["items"] = items
@@ -793,6 +936,15 @@ class PlanAgent:
         if len(sections_order) >= 2:
             title_slides = [s for s in slides if s.get("slide_type") == "title"]
             content_slides = [s for s in slides if s.get("slide_type") != "title"]
+
+            # R39: Assign orphan slides (section="") to nearest preceding chapter
+            current_chapter = ""
+            for s in content_slides:
+                sec = s.get("section", "").strip()
+                if sec:
+                    current_chapter = sec
+                elif current_chapter:
+                    s["section"] = current_chapter
 
             # Collect section summaries from first content slide per section
             section_summaries: dict = {}

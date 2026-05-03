@@ -234,7 +234,7 @@ class TestSectionPageBalance:
         }
         agent = _make_agent()
         issues = agent._verify_plan(plan, [], "scr")
-        assert any("Big" in i and "过详" in i for i in issues)
+        assert any("Big" in i and "偏多" in i for i in issues)
 
     def test_balanced_chapters_no_flag(self):
         agent = _make_agent()
