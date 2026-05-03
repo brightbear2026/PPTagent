@@ -113,6 +113,7 @@ class PipelineModelConfig(BaseModel):
             "content": self.content,
             "design": self.design,
             "build": self.build,   # 向后兼容
+            "visual_plan": self.design,  # 复用 design 配置
         }
         if stage_name not in mapping:
             raise ValueError(
@@ -123,7 +124,7 @@ class PipelineModelConfig(BaseModel):
 
     def set_stage_config(self, stage_name: str, config: StageModelConfig) -> None:
         """更新指定阶段的配置"""
-        valid_stages = {"analyze", "outline", "content", "design", "build"}
+        valid_stages = {"analyze", "outline", "content", "design", "build", "visual_plan"}
         if stage_name not in valid_stages:
             raise ValueError(
                 f"未知阶段 '{stage_name}'，"
