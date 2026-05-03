@@ -346,6 +346,12 @@ class ContentAgent(StructuredLLMAgent):
             "narrative_ctx": narrative_ctx,
             "metrics_text": metrics_text,
             "audience_ctx": audience_ctx,
+            # R27: Full outline takeaway list for cross-slide dedup
+            "all_takeaways": [
+                item.get("takeaway_message", item.get("takeaway", ""))
+                for item in outline.get("items", [])
+                if item.get("takeaway_message") or item.get("takeaway")
+            ],
         }
 
     # ------------------------------------------------------------------
@@ -465,6 +471,28 @@ class ContentAgent(StructuredLLMAgent):
                     f"P{next_slide.get('page_number')}: {next_kw}\n"
                 )
 
+        # R27: Deck context window — broader cross-slide awareness
+        deck_dedup_ctx = ""
+        all_takeaways = shared.get("all_takeaways", [])
+        current_pn = slide.get("page_number", 0)
+        if all_takeaways and current_pn > 0:
+            # Find current slide's position in the takeaway list
+            current_takeaway = slide.get("takeaway_message", "")
+            prev_takeaways = []
+            found_current = False
+            for tm in all_takeaways:
+                if tm == current_takeaway and not found_current:
+                    found_current = True
+                    continue
+                if not found_current:
+                    prev_takeaways.append(tm)
+            if prev_takeaways:
+                recent = prev_takeaways[-5:]
+                deck_dedup_ctx = (
+                    f"\n## 已讲过的论点（禁止重复这些内容）\n"
+                    + "\n".join(f"- {tm}" for tm in recent) + "\n"
+                )
+
         # 材料注入：chart 页优先注入表格；非 chart 页在数据相关时也注入
         material_text = ""
         table_injected = False
@@ -561,7 +589,7 @@ class ContentAgent(StructuredLLMAgent):
 - 叙事角色: {slide.get('narrative_arc', '未指定')}
 - 所属章节: {slide.get('section', '未指定')}
 - 目标受众: {task.get('target_audience', '管理层')}
-{self._weight_guide(slide)}{prev_ctx}{next_ctx}{material_text}{shared.get('narrative_ctx', '')}{shared.get('metrics_text', '')}{shared.get('audience_ctx', '')}{shared.get('skill_section', '')}{layout_guide}---
+{self._weight_guide(slide)}{prev_ctx}{next_ctx}{deck_dedup_ctx}{material_text}{shared.get('narrative_ctx', '')}{shared.get('metrics_text', '')}{shared.get('audience_ctx', '')}{shared.get('skill_section', '')}{layout_guide}---
 {visual_req}
 bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_weight 策略执行（见系统提示）。
 
