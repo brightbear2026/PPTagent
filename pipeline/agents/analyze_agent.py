@@ -229,18 +229,26 @@ class AnalyzeAgent(StructuredLLMAgent):
         result = self._enrich_with_code_metrics(result, raw)
 
         # Chunk document for PlanAgent retrieval
-        source_pages = raw.get("source_pages", [])
-        if not source_pages:
-            # Fallback: chunk from _raw_text when source_pages is empty (e.g. DOCX)
-            raw_text = raw.get("_raw_text", "")
-            if raw_text:
-                section_size = 2000
-                source_pages = [
-                    {"title": f"段落{i+1}", "content": raw_text[i:i+section_size]}
-                    for i in range(0, len(raw_text), section_size)
-                    if raw_text[i:i+section_size].strip()
-                ]
-        result["chunks"] = self._chunk_document(source_pages)
+        # R30: Use structured_blocks for typed chunks when available
+        structured_blocks = raw.get("structured_blocks", [])
+        tables = raw.get("_tables", raw.get("tables", []))
+        images = raw.get("_images", raw.get("images", []))
+
+        if structured_blocks:
+            result["chunks"] = self._chunk_typed(structured_blocks, tables, images)
+        else:
+            # Legacy fallback: chunk from source_pages
+            source_pages = raw.get("source_pages", [])
+            if not source_pages:
+                raw_text = raw.get("_raw_text", "")
+                if raw_text:
+                    section_size = 2000
+                    source_pages = [
+                        {"title": f"段落{i+1}", "content": raw_text[i:i+section_size]}
+                        for i in range(0, len(raw_text), section_size)
+                        if raw_text[i:i+section_size].strip()
+                    ]
+            result["chunks"] = self._chunk_document(source_pages)
 
         report(29, "策略分析完成")
         return result
@@ -271,6 +279,97 @@ class AnalyzeAgent(StructuredLLMAgent):
                     (section + str(i) + chunk_text[:30]).encode()
                 ).hexdigest()[:8]
                 chunks.append({"id": chunk_id, "section": section, "text": chunk_text})
+        return chunks
+
+    @staticmethod
+    def _chunk_typed(
+        blocks: List[Dict],
+        tables: List[Dict],
+        images: List[Dict],
+        chunk_chars: int = 1000,
+    ) -> List[Dict]:
+        """R30: Typed chunking from structured_blocks. Produces text/table/image chunks."""
+        chunks = []
+        current_heading_path = []
+        text_buffer = []
+        buffer_chars = 0
+        buffer_section = ""
+
+        def _flush_buffer():
+            if not text_buffer:
+                return
+            text = "\n".join(text_buffer)
+            chunk_id = "ch_" + hashlib.sha256(
+                (buffer_section + text[:50]).encode()
+            ).hexdigest()[:8]
+            chunks.append({
+                "id": chunk_id,
+                "type": "text",
+                "section": buffer_section,
+                "text": text,
+                "heading_path": current_heading_path.copy(),
+            })
+            text_buffer.clear()
+
+        for block in blocks:
+            btype = block.get("type", "paragraph")
+            text = block.get("text", "")
+            heading_path = block.get("heading_path", [])
+
+            if btype == "heading":
+                _flush_buffer()
+                current_heading_path = heading_path
+                buffer_section = text if text else ""
+                continue
+
+            if btype == "table":
+                _flush_buffer()
+                t_idx = block.get("table_idx", -1)
+                table_data = tables[t_idx] if 0 <= t_idx < len(tables) else None
+                summary = text
+                if table_data and not summary:
+                    headers = table_data.get("headers", [])
+                    summary = f"表格: {' | '.join(str(h) for h in headers[:6])}"
+                chunk_id = "ch_" + hashlib.sha256(
+                    (summary[:50] + str(t_idx)).encode()
+                ).hexdigest()[:8]
+                chunks.append({
+                    "id": chunk_id,
+                    "type": "table",
+                    "section": buffer_section,
+                    "text": summary,
+                    "heading_path": heading_path,
+                    "table_data": table_data,
+                })
+                continue
+
+            if btype == "image":
+                _flush_buffer()
+                i_idx = block.get("image_idx", -1)
+                img = images[i_idx] if 0 <= i_idx < len(images) else None
+                caption = text or (img.get("description", "") if img else "")
+                img_path = img.get("file_path", "") if img else ""
+                chunk_id = "ch_" + hashlib.sha256(
+                    (caption[:50] + str(i_idx)).encode()
+                ).hexdigest()[:8]
+                chunks.append({
+                    "id": chunk_id,
+                    "type": "image",
+                    "section": buffer_section,
+                    "text": caption,
+                    "heading_path": heading_path,
+                    "image_path": img_path,
+                    "image_caption": caption,
+                })
+                continue
+
+            # paragraph / list: accumulate into text buffer
+            if len(text) + buffer_chars > chunk_chars and text_buffer:
+                _flush_buffer()
+            text_buffer.append(text)
+            buffer_chars += len(text)
+
+        _flush_buffer()
         return chunks
 
     @staticmethod
