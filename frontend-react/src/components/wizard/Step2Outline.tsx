@@ -273,7 +273,7 @@ const Step2Outline: React.FC<Step2Props> = ({ taskId, outline, generation, onCon
                     </span>
                     {item.title || item.takeaway_message}
                     {item.framework_phase && (
-                      <Tag size="small" color="blue" style={{ marginLeft: 4, fontSize: 11 }}>
+                      <Tag color="blue" style={{ marginLeft: 4, fontSize: 11, lineHeight: '18px' }}>
                         {STRUCTURE_KEY_LABELS[item.framework_phase] || item.framework_phase}
                       </Tag>
                     )}
