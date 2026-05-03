@@ -106,7 +106,26 @@ async function handleRender(req, res, body) {
           });
         }
       } catch (err) {
-        errors.push({ slide_index: i, file: files[i], error: err.message });
+        // R35: Insert placeholder slide instead of skipping
+        errors.push({ slide_index: i, file: files[i], error: err.message, recovered_with_placeholder: true });
+        try {
+          const placeholderHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="width:1280px;height:720px;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-family:'Microsoft YaHei',Arial,sans-serif;">
+<div style="text-align:center;">
+<p style="font-size:24px;color:#999;">⚠ 该页生成失败</p>
+<p style="font-size:14px;color:#666;">Page ${i + 1} / ${files.length}</p>
+<p style="font-size:12px;color:#999;">原因: ${err.message.substring(0, 100)}</p>
+<p style="font-size:12px;color:#999;">请联系管理员重试</p>
+</div></body></html>`;
+          const phPath = path.join(html_dir, `_placeholder_${i}.html`);
+          fs.writeFileSync(phPath, placeholderHtml, 'utf8');
+          await html2pptx(phPath, pptx, { tmpDir: html_dir, browser: browser });
+          fs.unlinkSync(phPath);
+        } catch (phErr) {
+          // Last resort: add empty slide
+          const slide = pptx.addSlide();
+          slide.addText(`Page ${i + 1}: render failed`, { x: 1, y: 3, fontSize: 14, color: '999999' });
+        }
       }
       pagesSinceLaunch++;
     }
