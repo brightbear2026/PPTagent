@@ -20,6 +20,8 @@ from .slide_spec import (
     ImageData,
     SourcePage,
     StructuredSection,
+    Heading,
+    StructuredBlock,
     RawContent,
 
     # Layer 2: Content Analysis
@@ -88,6 +90,8 @@ __all__ = [
     "ImageData",
     "SourcePage",
     "StructuredSection",
+    "Heading",
+    "StructuredBlock",
     "RawContent",
 
     # Layer 2

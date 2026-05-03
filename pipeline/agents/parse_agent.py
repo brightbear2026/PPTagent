@@ -62,4 +62,16 @@ class ParseAgent(CodeAgent):
             "structured_sections": [
                 s.to_dict() for s in raw_content.structured_sections
             ],
+            "headings": [
+                {"level": h.level, "text": h.text, "page_idx": h.page_idx, "char_offset": h.char_offset}
+                for h in raw_content.headings
+            ],
+            "structured_blocks": [
+                {
+                    "type": b.type, "level": b.level, "text": b.text,
+                    "table_idx": b.table_idx, "image_idx": b.image_idx,
+                    "page_idx": b.page_idx, "heading_path": b.heading_path,
+                }
+                for b in raw_content.structured_blocks
+            ],
         }

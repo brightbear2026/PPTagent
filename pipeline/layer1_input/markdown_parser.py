@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from typing import Optional
 from models import RawContent, TableData
+from models.slide_spec import Heading, StructuredBlock
 
 try:
     import mistune
@@ -43,6 +44,9 @@ class MarkdownParser:
         # 用mistune解析AST，构建结构化文本
         structured_text = self._build_structured_text(content)
 
+        # Extract flat headings and structured blocks (R29)
+        headings, structured_blocks = self._extract_flat_structure(content, tables)
+
         # 语言检测
         language = self._detect_language(content)
 
@@ -56,6 +60,8 @@ class MarkdownParser:
             images=[],
             metadata=metadata,
             detected_language=language,
+            headings=headings,
+            structured_blocks=structured_blocks,
         )
 
     def _build_structured_text(self, content: str) -> str:
@@ -141,6 +147,69 @@ class MarkdownParser:
                 items.append(f"{prefix} {text}")
 
         return items
+
+    def _extract_flat_structure(self, content: str, tables: list[TableData]) -> tuple[list[Heading], list[StructuredBlock]]:
+        """Extract flat headings and sequential blocks from markdown AST."""
+        if mistune is None:
+            return [], []
+        md = mistune.create_markdown(renderer='ast')
+        ast = md(content)
+
+        headings = []
+        blocks = []
+        current_heading_path = []
+        table_idx = 0
+
+        for node in ast:
+            node_type = node.get("type", "")
+            if node_type == "heading":
+                level = node.get("attrs", {}).get("level", 1)
+                text = self._extract_text(node.get("children", []))
+                headings.append(Heading(level=level, text=text))
+                current_heading_path = current_heading_path[:level - 1] + [text]
+                blocks.append(StructuredBlock(
+                    type="heading", level=level, text=text,
+                    heading_path=current_heading_path.copy(),
+                ))
+            elif node_type == "paragraph":
+                text = self._extract_text(node.get("children", []))
+                if text:
+                    blocks.append(StructuredBlock(
+                        type="paragraph", text=text,
+                        heading_path=current_heading_path.copy(),
+                    ))
+            elif node_type == "list":
+                items = self._extract_list_items(node)
+                for item in items:
+                    blocks.append(StructuredBlock(
+                        type="list", text=item,
+                        heading_path=current_heading_path.copy(),
+                    ))
+            elif node_type == "table":
+                if table_idx < len(tables):
+                    t = tables[table_idx]
+                    summary = f"表格: {' | '.join(t.headers[:6])}"
+                    blocks.append(StructuredBlock(
+                        type="table", text=summary, table_idx=table_idx,
+                        heading_path=current_heading_path.copy(),
+                    ))
+                    table_idx += 1
+            elif node_type == "block_code":
+                code = node.get("raw", "").strip()
+                if code:
+                    blocks.append(StructuredBlock(
+                        type="paragraph", text=code[:200],
+                        heading_path=current_heading_path.copy(),
+                    ))
+            elif node_type == "quote":
+                text = self._extract_text(node.get("children", []))
+                if text:
+                    blocks.append(StructuredBlock(
+                        type="paragraph", text=f"> {text}",
+                        heading_path=current_heading_path.copy(),
+                    ))
+
+        return headings, blocks
 
     def _extract_tables(self, content: str) -> list[TableData]:
         """

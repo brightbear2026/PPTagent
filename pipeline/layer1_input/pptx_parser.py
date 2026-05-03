@@ -8,6 +8,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches
 from models import RawContent, TableData, SourcePage
+from models.slide_spec import Heading, StructuredBlock
 
 
 class PptxParser:
@@ -54,6 +55,18 @@ class PptxParser:
         raw_text = "\n\n".join(all_text_parts)
         metadata = self._extract_metadata(prs, file_path)
 
+        # Extract headings from slide titles (R29)
+        headings = []
+        structured_blocks = []
+        for sp in source_pages:
+            if sp.title:
+                headings.append(Heading(level=1, text=sp.title, page_idx=sp.page_number - 1))
+            blocks_from_page = self._extract_blocks_from_text(
+                sp.content, sp.page_number - 1,
+                headings[-1].text if headings and sp.title else "",
+            )
+            structured_blocks.extend(blocks_from_page)
+
         # 检测语言
         from .text_parser import TextParser
         lang = TextParser()._detect_language(raw_text)
@@ -65,7 +78,24 @@ class PptxParser:
             metadata=metadata,
             detected_language=lang,
             source_pages=source_pages,
+            headings=headings,
+            structured_blocks=structured_blocks,
         )
+
+    @staticmethod
+    def _extract_blocks_from_text(text: str, page_idx: int, section: str) -> list[StructuredBlock]:
+        """Split slide text into structured blocks (one per paragraph)."""
+        blocks = []
+        heading_path = [section] if section else []
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            blocks.append(StructuredBlock(
+                type="paragraph", text=line, page_idx=page_idx,
+                heading_path=heading_path.copy(),
+            ))
+        return blocks
 
     def _extract_slide_title(self, slide) -> str:
         """提取幻灯片标题：优先 title placeholder，其次首个短文本。"""

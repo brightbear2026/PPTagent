@@ -260,6 +260,27 @@ class StructuredSection:
 
 
 @dataclass
+class Heading:
+    """Flat heading extracted from source document."""
+    level: int          # 1, 2, 3
+    text: str
+    page_idx: int = 0
+    char_offset: int = 0
+
+
+@dataclass
+class StructuredBlock:
+    """Sequential content block for typed chunking (R30)."""
+    type: str           # "paragraph" | "heading" | "table" | "image" | "list"
+    level: int = 0
+    text: str = ""
+    table_idx: int = -1     # index into RawContent.tables
+    image_idx: int = -1     # index into RawContent.images
+    page_idx: int = 0
+    heading_path: list = field(default_factory=list)
+
+
+@dataclass
 class RawContent:
     """第1层输出：统一的原始内容对象"""
     source_type: str              # "doc", "excel", "text", "ppt"
@@ -271,6 +292,8 @@ class RawContent:
     source_pages: list[SourcePage] = field(default_factory=list)  # 检测到的页面结构
     is_structured: bool = False     # 原文是否已按页/章节组织
     structured_sections: list[StructuredSection] = field(default_factory=list)  # 层级章节树
+    headings: list[Heading] = field(default_factory=list)             # flat heading list (R29)
+    structured_blocks: list[StructuredBlock] = field(default_factory=list)  # sequential blocks (R29)
 
 
 # ============================================================

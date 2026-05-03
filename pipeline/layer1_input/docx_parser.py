@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from models import RawContent, ImageData
-from models.slide_spec import StructuredSection, TableData
+from models.slide_spec import StructuredSection, TableData, Heading, StructuredBlock
 
 
 class DocxParser:
@@ -95,6 +95,14 @@ class DocxParser:
         if is_structured:
             print(f"[docx] 结构化文档: {len(source_pages)}页, {len(structured_sections)}章节")
 
+        # Extract flat headings and structured blocks (R29)
+        headings = []
+        structured_blocks = []
+        try:
+            headings, structured_blocks = self._extract_flat_structure(doc, images)
+        except Exception as e:
+            print(f"[docx] flat structure extraction failed: {e}")
+
         return RawContent(
             source_type="doc",
             raw_text=raw_text,
@@ -104,6 +112,8 @@ class DocxParser:
             source_pages=source_pages,
             is_structured=is_structured,
             structured_sections=structured_sections,
+            headings=headings,
+            structured_blocks=structured_blocks,
         )
 
     def _extract_structure(self, doc) -> list[StructuredSection]:
@@ -202,6 +212,83 @@ class DocxParser:
                     stack[-1][0].tables.append(content)
 
         return sections if sections else []
+
+    def _extract_flat_structure(self, doc, images: list) -> tuple[list[Heading], list[StructuredBlock]]:
+        """Extract flat headings list and sequential structured blocks from docx."""
+        HEADING_MAP = {
+            "Heading 1": 1, "Heading1": 1, "heading 1": 1,
+            "Heading 2": 2, "Heading2": 2, "heading 2": 2,
+            "Heading 3": 3, "Heading3": 3, "heading 3": 3,
+        }
+        LIST_STYLES = {"List Paragraph", "list paragraph"}
+
+        headings = []
+        blocks = []
+        current_heading_path = []
+        char_offset = 0
+        image_idx = 0
+
+        for para in doc.paragraphs:
+            style_name = ""
+            try:
+                style_name = para.style.name if para.style else ""
+            except Exception:
+                pass
+
+            text = (para.text or "").strip()
+            if not text:
+                continue
+
+            if style_name in HEADING_MAP:
+                level = HEADING_MAP[style_name]
+                headings.append(Heading(level=level, text=text, char_offset=char_offset))
+                current_heading_path = current_heading_path[:level - 1] + [text]
+                blocks.append(StructuredBlock(
+                    type="heading", level=level, text=text,
+                    heading_path=current_heading_path.copy(),
+                ))
+                char_offset += len(text)
+            elif style_name in LIST_STYLES or style_name.startswith("List"):
+                blocks.append(StructuredBlock(
+                    type="list", text=text,
+                    heading_path=current_heading_path.copy(),
+                ))
+                char_offset += len(text)
+            else:
+                blocks.append(StructuredBlock(
+                    type="paragraph", text=text,
+                    heading_path=current_heading_path.copy(),
+                ))
+                char_offset += len(text)
+
+        # Tables: insert at end, after their preceding paragraph position
+        for t_idx, table in enumerate(doc.tables):
+            try:
+                headers = []
+                rows = []
+                for row in table.rows:
+                    cells = [(cell.text or "").strip() for cell in row.cells]
+                    if not headers:
+                        headers = cells
+                    else:
+                        rows.append(cells)
+                if headers:
+                    summary = f"表格: {' | '.join(headers[:6])}"
+                    blocks.append(StructuredBlock(
+                        type="table", text=summary, table_idx=t_idx,
+                        heading_path=current_heading_path.copy(),
+                    ))
+            except Exception:
+                continue
+
+        # Images: referenced by index into the images list
+        for i_idx in range(min(image_idx, len(images))):
+            blocks.append(StructuredBlock(
+                type="image", text=images[i_idx].description or f"图片{i_idx + 1}",
+                image_idx=i_idx, heading_path=current_heading_path.copy(),
+            ))
+
+        return headings, blocks
 
     def _extract_text_fallback(self, doc) -> str:
         """文本提取降级：仅尝试段落，不碰表格"""
