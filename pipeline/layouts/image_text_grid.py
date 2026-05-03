@@ -8,6 +8,7 @@ class GridImageItem(BaseModel):
     title: str = Field(default="")
     description: str = Field(default="")
     image_caption: str = Field(default="")
+    image_path: str = Field(default="", description="Real image file path (R32)")
 
 
 class ImageTextGridContent(BaseModel):
@@ -29,6 +30,7 @@ class ImageTextGridLayout:
                     title=it.get("title", "")[:30],
                     description=it.get("description", it.get("desc", ""))[:80],
                     image_caption=it.get("image_caption", "")[:20],
+                    image_path=it.get("image_path", ""),
                 ))
         else:
             text_blocks = slide_data.get("text_blocks", [])
@@ -50,6 +52,7 @@ class ImageTextGridLayout:
     def build_html(self, content: ImageTextGridContent, theme_colors: dict,
                    page_number: int = 1, total_slides: int = 1) -> str:
         import html as _html
+        import os as _os
         primary = theme_colors.get("primary", "#003D6E")
         accent = theme_colors.get("accent", "#FF6B35")
         bg = theme_colors.get("bg", "#EEF4FA")
@@ -72,14 +75,27 @@ class ImageTextGridLayout:
             x = start_x + i * (card_w + gap)
             y = 101
             cap = _html.escape(item.image_caption) if item.image_caption else "示意图"
+
+            # R32: Real image if path exists and file exists
+            img_html = ""
+            if item.image_path and _os.path.isfile(item.image_path):
+                img_html = (
+                    f'<img src="{_html.escape(item.image_path)}" '
+                    f'style="width:{card_w}px; height:{img_h}px; object-fit:cover;" />'
+                )
+            else:
+                img_html = (
+                    f'<p style="font-size:11px; color:#BBBBBB; text-align:center;">{cap}</p>'
+                )
+
             items_html += (
                 f'<div style="position:absolute; left:{x}px; top:{y}px; '
                 f'width:{card_w}px; height:{card_h}px; background-color:#FFFFFF; '
                 f'border:1px solid #E0E0E0; border-radius:4px; overflow:hidden;">\n'
                 f'  <div style="width:{card_w}px; height:{img_h}px; '
                 f'background-color:#F0F0F0; display:flex; align-items:center; '
-                f'justify-content:center;">\n'
-                f'    <p style="font-size:11px; color:#BBBBBB; text-align:center;">{cap}</p>\n'
+                f'justify-content:center; overflow:hidden;">\n'
+                f'    {img_html}\n'
                 f'  </div>\n'
                 f'  <div style="padding:8px 10px;">\n'
                 f'    <p style="font-size:12px; color:{primary}; font-weight:bold; '
