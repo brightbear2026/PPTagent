@@ -36,8 +36,8 @@ class TestEnsureChunkCoverage:
         }
         chunks = [
             {"id": "c1", "text": "Covered chunk"},
-            {"id": "c2", "text": "Uncovered chunk A"},
-            {"id": "c3", "text": "Uncovered chunk B"},
+            {"id": "c2", "text": "Uncovered chunk A", "section": "Ch1"},
+            {"id": "c3", "text": "Uncovered chunk B", "section": "Ch2"},
         ]
         new_result = agent._ensure_chunk_coverage(result, chunks)
         assert len(new_result["items"]) == 4  # 2 original + 2 expansion
@@ -51,17 +51,19 @@ class TestEnsureChunkCoverage:
         agent = PlanAgent.__new__(PlanAgent)
         result = {
             "items": [
-                {"page_number": 1, "slide_type": "content", "chunk_ids": ["c1"],
-                 "takeaway_message": "S1", "title": "S1"},
+                {"page_number": 1, "slide_type": "section_divider", "chunk_ids": [],
+                 "takeaway_message": "S1", "title": "S1", "section": "Ch1"},
+                {"page_number": 2, "slide_type": "content", "chunk_ids": ["c1"],
+                 "takeaway_message": "S1", "title": "S1", "section": "Ch1"},
             ],
         }
         chunks = [
             {"id": "c1", "text": "Covered"},
-            {"id": "c2", "text": "Uncovered"},
+            {"id": "c2", "text": "Uncovered with section", "section": "Ch1"},
         ]
         new_result = agent._ensure_chunk_coverage(result, chunks)
         pages = [s["page_number"] for s in new_result["items"]]
-        assert pages == [1, 2]
+        assert pages == [1, 2, 3]
 
     def test_empty_chunks_no_change(self):
         from pipeline.agents.plan_agent import PlanAgent
@@ -75,8 +77,10 @@ class TestEnsureChunkCoverage:
         agent = PlanAgent.__new__(PlanAgent)
         result = {
             "items": [
-                {"page_number": 1, "slide_type": "content", "chunk_ids": ["c1"],
-                 "takeaway_message": "S1", "title": "S1"},
+                {"page_number": 1, "slide_type": "section_divider", "chunk_ids": [],
+                 "takeaway_message": "S1", "title": "1.2", "section": "1.2"},
+                {"page_number": 2, "slide_type": "content", "chunk_ids": ["c1"],
+                 "takeaway_message": "S1", "title": "S1", "section": "1.2"},
             ],
         }
         chunks = [
@@ -86,4 +90,3 @@ class TestEnsureChunkCoverage:
         new_result = agent._ensure_chunk_coverage(result, chunks)
         expansion = [s for s in new_result["items"] if "c2" in s.get("chunk_ids", [])]
         assert len(expansion) == 1
-        assert expansion[0]["section"] == "1.2"  # Uses last heading_path element

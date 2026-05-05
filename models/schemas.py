@@ -283,3 +283,4 @@ class ParseResult:
     error_kind: Literal["ok", "json_parse", "schema"] = "ok"
     error_msg: str = ""
     raw_data: Optional[dict] = None
+    raw_response: str = ""

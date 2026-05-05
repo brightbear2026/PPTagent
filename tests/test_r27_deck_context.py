@@ -53,7 +53,7 @@ class TestDeckContextWindow:
             "chunks": [],
             "all_takeaways": ["第一页论点", "第二页论点", "第三页论点", "第四页论点"],
         }
-        msgs = agent._build_slide_messages(slide, None, None, shared)
+        msgs, section_text = agent._build_slide_messages(slide, None, None, shared)
         user_msg = msgs[0].content
 
         assert "已讲过的论点" in user_msg
@@ -74,5 +74,5 @@ class TestDeckContextWindow:
             "tables": [], "source_pages": [], "chunks": [],
             "all_takeaways": ["第一页"],
         }
-        msgs = agent._build_slide_messages(slide, None, None, shared)
+        msgs, section_text = agent._build_slide_messages(slide, None, None, shared)
         assert "已讲过的论点" not in msgs[0].content

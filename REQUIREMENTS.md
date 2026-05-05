@@ -36,6 +36,8 @@
 | H4 | 图表数据可溯源：图中所有百分比 / 大数字能在源文档 chunk 里找到（容忍 ±5%） | ContentAgent schema validator 强制 |
 | H5 | 章节扉页 + 目录的章节名与正文章节标题字符串完全一致 | 已由 `_to_outline_result._strip_chapter_prefix` 保证 |
 | H6 | Content slide 必须 ≥ 8 visible elements（slide_type ∈ {title, agenda, section_divider} 豁免），且不含禁止占位符 | parse pptx 检查 shape count + placeholder char scan |
+| H7 | 每张 content slide 字符数 300-800 字（4-7 条 bullet × 60-120 字）| ContentSlideSchema `enforce_content_density` validator |
+| H8 | Deck content slide 总数 ≥ `raw_text_chars/1500`，最少 25 张 | PlanAgent `_compute_target_slides` 公式 |
 
 ### Soft requirements（≥95%）
 

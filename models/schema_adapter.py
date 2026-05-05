@@ -94,15 +94,16 @@ def parse_slide(text: str, page_number: int, context: Optional[dict] = None) -> 
     """
     data = _extract_json(text, page_number)
     if data is None:
-        return ParseResult(error_kind="json_parse", error_msg="no JSON found")
+        return ParseResult(error_kind="json_parse", error_msg="no JSON found", raw_response=text)
     try:
         schema = ContentSlideSchema.model_validate(data, context=context)
-        return ParseResult(schema=schema, error_kind="ok")
+        return ParseResult(schema=schema, error_kind="ok", raw_response=text)
     except ValidationError as e:
         return ParseResult(
             error_kind="schema",
             error_msg=str(e),
             raw_data=data,
+            raw_response=text,
         )
 
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
@@ -441,8 +442,8 @@ class ContentAgent(StructuredLLMAgent):
 
     def _build_slide_messages(
         self, slide: Dict, prev_slide: Optional[Dict], next_slide: Optional[Dict], shared: Dict
-    ) -> List[ChatMessage]:
-        """为单个页面构建 LLM 消息（无状态，可多线程并发调用）。"""
+    ) -> tuple[List[ChatMessage], str]:
+        """为单个页面构建 LLM 消息（无状态，可多线程并发调用）。返回 (messages, section_text)。"""
         pn = slide.get("page_number", "?")
         st = slide.get("slide_type", "content")
         takeaway = slide.get("takeaway_message", slide.get("takeaway", ""))
@@ -512,6 +513,7 @@ class ContentAgent(StructuredLLMAgent):
             if chart_data:
                 material_text = f"\n## 数据表格（直接使用，禁止编造数字）\n{chart_data}\n"
                 table_injected = True
+        section_text = ""
         if not material_text:
             section_text = self._get_slide_context(slide, shared)
             if section_text:
@@ -595,7 +597,7 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
 
 请直接输出 JSON 对象，放在 ```json ... ``` 代码块中。"""
 
-        return [ChatMessage(role="user", content=user_msg)]
+        return [ChatMessage(role="user", content=user_msg)], section_text
 
     def _generate_one_slide(
         self, slide: Dict, prev_slide: Optional[Dict], next_slide: Optional[Dict],
@@ -603,9 +605,10 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
     ) -> Optional[ContentSlideSchema]:
         """调用 LLM 生成单页内容，含截断检测和重试。线程安全（无写共享状态）。"""
         pn = slide.get("page_number", "?")
+        slide_msgs, chunk_text = self._build_slide_messages(slide, prev_slide, next_slide, shared)
         messages = [
             ChatMessage(role="system", content=self.system_prompt),
-            *self._build_slide_messages(slide, prev_slide, next_slide, shared),
+            *slide_msgs,
         ]
 
         if user_feedback:
@@ -619,7 +622,6 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
             ))
 
         last_parse: Optional[ParseResult] = None
-        chunk_text = self._get_slide_context(slide, shared)
 
         for attempt in range(4):
             try:
@@ -633,7 +635,7 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                     raise RuntimeError(f"LLM调用失败: {response.error}")
 
                 # finish_reason 截断检测
-                if response.finish_reason in ("length", "max_tokens") and attempt == 0:
+                if response.finish_reason in ("length", "max_tokens") and attempt < 3:
                     logger.warning(f"[ContentAgent] P{pn} 输出截断，要求重新输出...")
                     messages.append(ChatMessage(role="assistant", content=response.content or ""))
                     messages.append(ChatMessage(
@@ -648,10 +650,36 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                 )
 
                 if last_parse.error_kind == "ok":
+                    # Cross-slide topic overlap check
+                    all_takeaways = shared.get("all_takeaways", [])
+                    current_takeaway = slide.get("takeaway_message", "")
+                    if all_takeaways and current_takeaway:
+                        prev_tms = [tm for tm in all_takeaways if tm != current_takeaway][:all_takeaways.index(current_takeaway) if current_takeaway in all_takeaways else 10]
+                        overlap = self._topic_overlap(last_parse.schema.takeaway_message, prev_tms)
+                        if overlap > 0.6:
+                            if attempt < 3:
+                                messages.append(ChatMessage(
+                                    role="assistant",
+                                    content=json.dumps(last_parse.schema.model_dump(mode="json"), ensure_ascii=False),
+                                ))
+                                messages.append(ChatMessage(
+                                    role="user",
+                                    content=(
+                                        f"你的核心观点与已生成页面高度重复（相似度{overlap:.0%}）。\n"
+                                        f"已讲过的论点：{prev_tms[-3:]}\n"
+                                        "请换一个不同的角度或论点。必须用不同的措辞和不同的数据/案例支撑。"
+                                    ),
+                                ))
+                                last_parse = ParseResult(
+                                    error_kind="schema",
+                                    error_msg=f"topic overlap {overlap:.0%} with previous slides",
+                                    raw_data=last_parse.schema.model_dump(mode="json"),
+                                )
+                                continue
                     return last_parse.schema
 
                 # Construct retry message based on error type
-                if attempt < 2:
+                if attempt < 3:
                     if last_parse.error_kind == "json_parse":
                         messages.append(ChatMessage(role="assistant", content=response.content or ""))
                         messages.append(ChatMessage(
@@ -677,7 +705,7 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
                     continue
 
             except Exception as e:
-                if attempt < 2:
+                if attempt < 3:
                     logger.warning(f"[ContentAgent] P{pn} 第{attempt+1}次失败({e})，重试...")
                     continue
                 logger.error(f"[ContentAgent] P{pn} 最终失败: {e}")
@@ -688,14 +716,88 @@ bullet 内容必须来自原文材料，禁止编造。bullet 数量按 page_wei
         if last_parse and last_parse.error_kind == "schema" and last_parse.raw_data:
             # LLM produced text but visual schema violated → keep text, clear visuals
             return degrade_to_text_only(last_parse.raw_data)
-        else:
-            # LLM produced nothing (json_parse all failed / exception) → placeholder
-            return make_placeholder(
+
+        # Salvage: extract bullets from raw LLM response if available
+        raw_text = last_parse.raw_response if last_parse else ""
+        salvaged = self._salvage_bullets_from_raw(raw_text, slide.get("takeaway_message", ""))
+        if salvaged:
+            return ContentSlideSchema(
                 page_number=pn,
                 slide_type=slide.get("slide_type", "content"),
-                title=slide.get("title", ""),
-                takeaway=slide.get("takeaway_message", ""),
+                takeaway_message=slide.get("takeaway_message", ""),
+                primary_visual=PrimaryVisualType.TEXT_ONLY,
+                text_blocks=salvaged,
+                is_failed=True,
+                error_message="salvaged_from_raw_response",
             )
+
+        # Last resort: placeholder stub
+        return make_placeholder(
+            page_number=pn,
+            slide_type=slide.get("slide_type", "content"),
+            title=slide.get("title", ""),
+            takeaway=slide.get("takeaway_message", ""),
+        )
+
+    # ------------------------------------------------------------------
+    # 失败抢救（静态，线程安全）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _salvage_bullets_from_raw(raw_response: str, takeaway: str) -> list[dict]:
+        """Extract readable bullets from raw LLM response when JSON parsing fails."""
+        if not raw_response:
+            return []
+        # Try extracting list items: "- text" or "• text" or "1. text" etc.
+        bullets: list[str] = []
+        for m in re.finditer(
+            r'(?:^|\n)\s*(?:[-•*]|\d+[.、）)])\s*(.+)',
+            raw_response,
+        ):
+            line = m.group(1).strip()
+            if len(line) >= 8 and len(line) <= 300:
+                bullets.append(line)
+        if len(bullets) < 3:
+            # Fallback: grab any substantial non-JSON lines
+            for line in raw_response.split("\n"):
+                line = line.strip().rstrip(",;；，。")
+                if (len(line) >= 15
+                        and len(line) <= 300
+                        and not line.startswith(("{", "}", "[", "]", "```", '"', "//"))
+                        and not line.startswith("page_number")
+                        and not line.startswith("slide_type")):
+                    bullets.append(line)
+        bullets = bullets[:8]
+        if len(bullets) < 2:
+            return []
+        blocks: list[dict] = []
+        if takeaway:
+            blocks.append({"type": "heading", "text": takeaway[:60], "level": 0})
+        for i, b in enumerate(bullets[:7]):
+            blocks.append({"type": "bullet", "text": b, "level": 1})
+        while len(blocks) < 4:
+            blocks.append({"type": "bullet", "text": "", "level": 0})
+        return blocks
+
+    @staticmethod
+    def _topic_overlap(takeaway: str, prev_takeaways: list[str]) -> float:
+        """Character bigram overlap between takeaway and previous takeaways. Returns max overlap."""
+        if not takeaway or not prev_takeaways:
+            return 0.0
+        def bigrams(s):
+            return set(s[i:i+2] for i in range(len(s)-1) if len(s[i:i+2].strip()) >= 2)
+        t_bg = bigrams(takeaway)
+        if not t_bg:
+            return 0.0
+        max_overlap = 0.0
+        for pt in prev_takeaways[-10:]:
+            p_bg = bigrams(pt)
+            if not p_bg:
+                continue
+            overlap = len(t_bg & p_bg) / max(len(t_bg), len(p_bg))
+            if overlap > max_overlap:
+                max_overlap = overlap
+        return max_overlap
 
     # ------------------------------------------------------------------
     # 材料匹配（静态，线程安全）

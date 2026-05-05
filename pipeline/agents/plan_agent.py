@@ -777,15 +777,18 @@ class PlanAgent:
             insert_at = divider_indices[d_idx + 1] if d_idx + 1 < len(divider_indices) else len(items)
             section_insert_points[norm_sec] = insert_at
 
-        # Fallback: last chapter's section
-        last_section = ""
-        for item in reversed(items):
-            if item.get("slide_type") == "section_divider" and item.get("section"):
-                last_section = _strip_chapter_prefix(item["section"])
-                break
-
         # Group expansion slides by section
+        # Collect all valid outline section names for fuzzy matching
+        outline_sections = set(section_insert_points.keys())
+        for item in items:
+            sec = _strip_chapter_prefix(item.get("section", ""))
+            if sec:
+                outline_sections.add(sec)
+                if sec not in section_insert_points:
+                    # No section_divider for this section; insert at end of matching content
+                    section_insert_points[sec] = len(items)
         expansion_by_section: Dict[str, list] = {}
+        unmatched = 0
         for cid in uncovered:
             chunk = chunks_by_id.get(cid)
             if not chunk:
@@ -793,8 +796,35 @@ class PlanAgent:
             section = chunk.get("section",
                                 chunk.get("heading_path", [""])[-1]
                                 if chunk.get("heading_path") else "")
-            norm_section = _strip_chapter_prefix(section) or last_section
+            norm_section = _strip_chapter_prefix(section)
+
+            # Try exact match first
+            if norm_section in outline_sections:
+                pass
+            # Fuzzy: keyword overlap between chunk text and outline section names
+            elif outline_sections:
+                best_sec, best_score = "", 0
+                chunk_words = set(re.findall(r'[一-鿿\w]{2,}', chunk.get("text", "")))
+                for osec in outline_sections:
+                    sec_words = set(re.findall(r'[一-鿿\w]{2,}', osec))
+                    if not sec_words:
+                        continue
+                    overlap = len(chunk_words & sec_words) / len(sec_words)
+                    if overlap > best_score:
+                        best_score, best_sec = overlap, osec
+                if best_score >= 0.3:
+                    norm_section = best_sec
+                else:
+                    unmatched += 1
+                    continue
+            else:
+                unmatched += 1
+                continue
+
             expansion_by_section.setdefault(norm_section, []).append((cid, chunk))
+
+        if unmatched:
+            logger.info("[PlanAgent] dropped %d uncovered chunks (no section match)", unmatched)
 
         # Insert into chapter positions — reverse-order sections & items to keep indices stable
         total_added = 0
