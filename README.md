@@ -48,7 +48,8 @@ PPT Agent 是一个自托管的 AI 演示文稿生成系统。输入一份业务
 - **信息不丢失** — 为每页幻灯片单独注入最相关的原文段落，核心数据和关键结论完整保留
 - **图表数据来自原文** — 优先从真实表格提取，纯文本文档则从文本中提炼可量化论据
 - **原生矢量图表** — PowerPoint 原生图表对象，可直接编辑数据、换色、调字体
-- **论证型大纲** — 叙事框架驱动（SCQA/SCR/AIDA 等），不是章节堆砌
+- **论证型大纲** — 叙事框架驱动（SCQA/SCR/AIDA 等），不是章节堆砌；框架自动映射到章节，大纲确认页可直观看到对应关系
+- **智能重试与容错** — LLM 输出截断/schema 违规自动重试（最多 4 次），跨页主题重复检测（>60% 相似度强制改写），失败页从原始输出抢救可读内容而非空白占位
 - **流水线透明** — 6 个 Agent 串行执行，每步输出可审阅、可编辑、可回退
 - **任意 LLM** — 支持 DeepSeek、SiliconFlow、阿里云百炼、智谱、Moonshot 等所有 OpenAI 兼容接口，每个阶段可独立配置模型
 - **用户认证与配额** — JWT 认证，可配置每用户并发任务上限
@@ -81,12 +82,12 @@ PPT Agent 是一个自托管的 AI 演示文稿生成系统。输入一份业务
   AnalyzeAgent        ── 分析受众与场景，生成叙事策略 + chunk 索引
        │
        ▼
-  PlanAgent           ── 金字塔原则大纲（SCQA/SCR/AIDA + 页面论点序列）
+  PlanAgent           ── 金字塔原则大纲（SCQA/SCR/AIDA + 页面论点序列）+ 章节名锚定 + chunk 覆盖
        │
-  ◆ 检查点 1：用户审阅大纲，可编辑后确认
+  ◆ 检查点 1：用户审阅大纲（框架→章节映射），可编辑后确认
        │
        ▼
-  ContentAgent        ── per-slide 并行生成每页内容 + 图表/图示规格
+  ContentAgent        ── per-slide 并行生成每页内容 + 图表/图示规格 + 跨页去重 + 智能重试
        │
   ◆ 检查点 2：用户审阅内容，可单页重跑 + 反馈
        │
@@ -236,7 +237,7 @@ PPT Agent is a self-hosted AI presentation generator. Feed it a business documen
 
 Unlike simply asking an LLM to "write a PPT," PPT Agent is built on **transparency and control**:
 
-- **Argument-driven outlines** — Based on the Pyramid Principle, auto-selects narrative frameworks (SCQA/SCR/AIDA) per presentation scenario, with clear claims and narrative roles per slide
+- **Argument-driven outlines** — Based on the Pyramid Principle, auto-selects narrative frameworks (SCQA/SCR/AIDA) per presentation scenario, with clear claims and narrative roles per slide; framework-to-chapter mapping shown in outline review
 - **2 mandatory checkpoints** — Users must review and approve the outline and content before proceeding; every field is editable
 - **Charts from real data** — Prioritizes actual tables from uploaded files; never fabricates numbers
 - **Native vector charts** — Generates PowerPoint native chart objects (editable, not screenshots)
@@ -246,7 +247,8 @@ Unlike simply asking an LLM to "write a PPT," PPT Agent is built on **transparen
 - **No information loss** — Each slide gets the most relevant source paragraphs injected; key data and conclusions are preserved
 - **Charts from source data** — Extracts from real tables in Excel/CSV, or quantifies evidence from plain text
 - **Native vector charts** — PowerPoint native chart objects: editable data, colors, and fonts
-- **Argument-driven outlines** — Narrative framework-driven (SCQA/SCR/AIDA), not chapter stacking
+- **Argument-driven outlines** — Narrative framework-driven (SCQA/SCR/AIDA), not chapter stacking; framework-to-chapter mapping visible in outline review
+- **Smart retry & fault tolerance** — Auto-retry on truncation/schema violations (up to 4 attempts), cross-slide topic overlap detection (>60% similarity forces rewrite), salvage readable bullets from failed LLM output instead of blank placeholders
 - **Transparent pipeline** — 6 agents run sequentially; every stage output is reviewable, editable, and reversible
 - **Any LLM provider** — DeepSeek, SiliconFlow, Alibaba Cloud, Zhipu, Moonshot, or self-hosted Ollama/vLLM. Per-stage model configuration supported
 - **Authentication & quotas** — JWT auth with configurable per-user concurrency limits
@@ -279,12 +281,12 @@ User Input (text/file)
   AnalyzeAgent        ── Analyze audience & scenario, generate narrative strategy + chunks
        │
        ▼
-  PlanAgent           ── Pyramid Principle outline (SCQA/SCR/AIDA + slide claim sequence)
+  PlanAgent           ── Pyramid Principle outline (SCQA/SCR/AIDA + slide claim sequence) + chapter anchoring + chunk coverage
        │
-  ◆ Checkpoint 1: User reviews outline, can edit any field then confirm
+  ◆ Checkpoint 1: User reviews outline (framework→chapter mapping), can edit any field then confirm
        │
        ▼
-  ContentAgent        ── Per-slide parallel content generation + chart/diagram specs
+  ContentAgent        ── Per-slide parallel content generation + chart/diagram specs + cross-slide dedup + smart retry
        │
   ◆ Checkpoint 2: User reviews content, can rerun single slide with feedback
        │
